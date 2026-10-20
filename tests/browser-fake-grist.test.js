@@ -2016,23 +2016,43 @@ test(
   },
 );
 
+/** Lectures complètes faites par le widget (la table Projects n'est lue que par fetchAll, jamais par fetchRow). */
+const fullReads = () => w(`return W.__reads.filter((t) => t === 'Projects').length;`);
+
+/**
+ * Attend la fin de tout ce qu'une écriture déclenche, sur l'état et non sur une durée : l'écriture n° n est notée,
+ * les deux relectures qui la suivent ont eu lieu (après l'écriture, puis onRecords du faux Grist, à 500 ms) et
+ * aucune n'est en cours. Une relecture tardive redessinerait la vue et fermerait un menu ouvert entre-temps.
+ */
+const writeSettled = (n, readsBefore) =>
+  until(
+    `W.__writes.length === ${n} && W.__reads.filter((t) => t === 'Projects').length >= ${readsBefore + 2} && !D.getElementById('btn-refresh')?.disabled`,
+  );
+
+/** Focalise la première entrée du menu ouvert qui n'est pas le statut actuel ; attend que le focus y soit. */
+async function focusOtherStatus() {
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  const value = await w(
+    `const b = [...D.querySelectorAll('#qs-menu [data-qs-value]')].find((x) => x.getAttribute('aria-checked') !== 'true'); b.focus(); return b.dataset.qsValue;`,
+  );
+  await until(`D.activeElement?.matches('#qs-menu [data-qs-value="${value}"]')`);
+  return value;
+}
+
 test('menu de statut (P-UX-6) : Entrée et Espace sur une entrée écrivent ce statut', { skip: SKIP }, async () => {
   const id = await openTableMenu(EDIT);
-  await w(
-    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
-  );
-  const first = await w(`return D.activeElement.dataset.qsValue;`);
+  const first = await focusOtherStatus();
+  let reads = await fullReads();
   await press('Enter');
-  await until(`W.__writes.length === 1 && D.activeElement?.dataset.qsFocus === '${id}'`);
+  await writeSettled(1, reads);
   assert.equal((await writes())[0][0][3].statut, first);
+  // Vue redessinée par les relectures : le focus est revenu au bouton de la ligne, qui rouvre le menu
+  await until(`D.activeElement?.dataset.qsFocus === '${id}' && !D.getElementById('qs-menu')`);
   await press('Enter');
-  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
-  await w(
-    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
-  );
-  const second = await w(`return D.activeElement.dataset.qsValue;`);
+  const second = await focusOtherStatus();
+  reads = await fullReads();
   await press(' ');
-  await until(`W.__writes.length === 2`);
+  await writeSettled(2, reads);
   assert.equal((await writes())[1][0][3].statut, second);
 });
 
