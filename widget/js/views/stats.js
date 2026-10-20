@@ -1,10 +1,10 @@
 /**
  * Vue Statistiques (lecture seule) : vue d'ensemble de l'équipe ISD sur les tâches filtrées.
- * « Données à compléter », graphiques en barres HTML (valeurs toujours écrites, tableau de valeurs repliable)
+ * « Contrôle qualité des données » (carte repliable), graphiques en barres HTML (valeurs toujours écrites, tableau de valeurs repliable)
  * puis le plan de charge personnes × mois.
  */
 import { raw } from '../core/sanitize.js';
-import { MONTHS_FR } from '../core/dates.js';
+import { MONTHS_FR, monthKey } from '../core/dates.js';
 import {
   barPercent,
   countBy,
@@ -12,6 +12,9 @@ import {
   delays,
   priorityTones,
   qualityRows,
+  qualityTotal,
+  roleLoad,
+  roleSeries,
   statusTone,
   timeline,
   topN,
@@ -20,7 +23,7 @@ import {
 } from '../core/stats-data.js';
 import { h } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
-import { label, taskCount } from '../labels.js';
+import { etpLabel, label, taskCount } from '../labels.js';
 import { mountLoadPlan } from './load-plan.js';
 
 export const id = 'stats';
@@ -104,6 +107,62 @@ function timelineBars(line) {
   </ul>`;
 }
 
+const etp1 = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const ZERO = etp1(0);
+const roleName = (k) => (k === 'Mgmt' ? label('stats.roles.Mgmt') : etpLabel(k));
+const roleTone = (k) => `role-${k.toLowerCase()}`;
+
+/**
+ * Charge par profil : une ligne par mois, barre empilée par profil (ordre fixe PO DA DS DE Mgmt Autre, mêmes
+ * teintes que l'onglet Équipe), total écrit au bout ; le mois courant est marqué. Pas d'infobulle (ni clavier
+ * ni tactile) : le détail par profil est dans le tableau de valeurs. Un segment qui s'afficherait « 0,0 » est omis.
+ */
+function roleBars(rows, keys, current) {
+  const max = Math.max(...rows.map((r) => r.total));
+  return h`<div class="rbars">
+    <p class="rbars__axis rbars__axis--y" aria-hidden="true">${label('stats.roles.axisMonth')}</p>
+    <ul class="list hbars rbars__list" aria-label="${label('stats.chart.roles')}">
+      ${rows.map((r) => {
+        const m = monthLabel(r.month);
+        const cur = r.month === current;
+        return h`<li class="hbars__row${raw(cur ? ' rbars__row--current' : '')}">
+          <span class="hbars__label">${m}${cur ? h`<span class="fr-sr-only"> (${label('stats.roles.current')})</span>` : ''}</span>
+          <span class="hbars__track">
+            <span class="rbars__stack" style="--p:${barPercent(r.total, max).toFixed(1)}">
+              ${keys
+                .filter((k) => etp1(r[k]) !== ZERO)
+                .map(
+                  (k) => h`<span class="rbars__seg tone--${roleTone(k)}" style="flex-grow:${r[k].toFixed(4)}"></span>`,
+                )}
+            </span>
+            <span class="hbars__value">${etp1(r.total)}</span>
+          </span>
+        </li>`;
+      })}
+    </ul>
+    <p class="rbars__axis rbars__axis--x" aria-hidden="true">${label('stats.roles.axisEtp')}</p>
+  </div>`;
+}
+
+export function rolesCard(rows, keys, ctx) {
+  const T = label('stats.chart.roles');
+  if (!rows.length) return card('roles', T, empty(), { wide: true });
+  const sub = label('stats.roles.sub', { debut: monthLabel(rows[0].month), fin: monthLabel(rows.at(-1).month) });
+  const other = keys.includes('Autre') ? label('stats.roles.other') : label('stats.roles.noOther');
+  return card(
+    'roles',
+    T,
+    h`${legend(keys.map((k) => [roleTone(k), roleName(k)]))}${roleBars(rows, keys, monthKey(ctx.today))}
+      <p class="stats__foot">${other}</p>
+      ${dataTable(
+        T,
+        [label('stats.col.month'), ...keys.map(roleName), label('stats.roles.total')],
+        rows.map((r) => [monthLabel(r.month), ...keys.map((k) => etp1(r[k])), etp1(r.total)]),
+      )}`,
+    { wide: true, sub },
+  );
+}
+
 function legend(items) {
   return h`<ul class="list stats__legend">${items.map(([tone, text]) => h`<li><span class="stats__swatch tone--${tone}" aria-hidden="true"></span>${text}</li>`)}</ul>`;
 }
@@ -131,10 +190,27 @@ function todoHtml(it) {
   </li>`;
 }
 
-function qualityCard(rows, n) {
+/**
+ * Carte « Contrôle qualité des données », repliable en entier (repliée par défaut, état dans les préférences) : l'en-tête
+ * (bouton dans le titre h3) donne toujours le total, ou « Aucune anomalie ».
+ */
+export function qualityCard(rows, n, open) {
+  const total = qualityTotal(rows);
+  const count = total
+    ? h`<span class="stats__count">${total.toLocaleString('fr-FR')}</span>`
+    : h`<span class="stats__count stats__count--ok"><span aria-hidden="true">✓</span>${label('stats.quality.zero')}</span>`;
   return h`<section class="stats__card stats__card--wide card stats__quality" aria-labelledby="stats-quality">
-    <h3 class="stats__card-title" id="stats-quality">${label('stats.quality.title')}</h3>
-    <p class="stats__sub">${label('stats.todo.help')}</p>
+    <h3 class="stats__card-title stats__quality-title">
+      <button type="button" class="stats__quality-toggle" id="stats-quality" data-quality-toggle aria-expanded="${String(open)}" aria-controls="stats-quality-body">
+        <span class="stats__chev" aria-hidden="true">${open ? '▾' : '▸'}</span>
+        <span class="stats__quality-name">${label('stats.quality.title')}</span>
+        <span class="stats__quality-sep" aria-hidden="true">·</span>
+        ${count}
+      </button>
+    </h3>
+    <p class="stats__sub">${label('stats.quality.sub')}</p>
+    <div id="stats-quality-body" ${raw(open ? '' : 'hidden')}>
+    <p class="stats__help">${label('stats.todo.help')}</p>
     <ul class="list stats__issues">
       ${rows.map((r) => {
         const count = r.items.length;
@@ -159,6 +235,7 @@ function qualityCard(rows, n) {
       })}
     </ul>
     <p class="stats__foot">${label('stats.scope', { taches: taskCount(n).toLowerCase() })}</p>
+    </div>
   </section>`;
 }
 
@@ -176,13 +253,14 @@ export function render(el, ctx) {
   const person = countBy(ctx.model, ids, 'person');
   const line = timeline(ctx.model, ids, ctx.today);
   const dl = delays(ctx.model, ids);
+  const roles = roleLoad(ctx.model, ids, ctx.today);
   const people = topN(person, TOP_PEOPLE);
   const T = (k) => label(`stats.chart.${k}`);
 
   el.innerHTML = h`<div class="stats">
     ${viewHeading(label('stats.title'), label('stats.subtitle'))}
     <div class="stats__cards">
-      ${qualityCard(quality, ids.length)}
+      ${qualityCard(quality, ids.length, ctx.prefs?.statsQualityOpen === true)}
       ${card(
         'status',
         T('status'),
@@ -242,6 +320,7 @@ export function render(el, ctx) {
             : '',
         },
       )}
+      ${rolesCard(roles, roleSeries(roles), ctx)}
       <section class="stats__card stats__card--wide card" aria-labelledby="stats-plan">
         <h3 class="stats__card-title" id="stats-plan">${label('plan.title')}</h3>
         <div data-plan></div>
@@ -252,6 +331,15 @@ export function render(el, ctx) {
   mountLoadPlan(el.querySelector('[data-plan]'), ctx);
 
   el.onclick = (e) => {
+    const q = e.target.closest('[data-quality-toggle]');
+    if (q) {
+      const on = q.getAttribute('aria-expanded') !== 'true';
+      q.setAttribute('aria-expanded', String(on));
+      q.querySelector('.stats__chev').textContent = on ? '▾' : '▸';
+      el.querySelector('#stats-quality-body').hidden = !on;
+      ctx.setPrefs?.({ statsQualityOpen: on });
+      return;
+    }
     const k = e.target.closest('[data-kind]');
     if (k) {
       const on = k.getAttribute('aria-expanded') !== 'true';

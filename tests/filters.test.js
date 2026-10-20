@@ -28,43 +28,107 @@ test('hors périmètre et projets masqués', () => {
   assert.equal(run({}, { hiddenProjects: [30] }).taskIds.has(2010), true); // toujours visible sous ChatDPI
 });
 
-test('personne, profil, périmètre « Mes tâches »', () => {
+test('personne, profil ; ancien périmètre « Mes tâches » sans effet sur le filtrage', () => {
   assert.deepEqual([...run({ person: 5 }).taskIds].sort(), [2001, 2010]);
   assert.deepEqual([...run({ profile: 'PO' }).taskIds].sort(), [1001]);
-  assert.deepEqual([...run({ scope: 'tasks' }, { me: 1 }).taskIds].sort(), [1002]);
-  assert.equal(run({ scope: 'tasks' }, { me: null }).taskIds.size, 8); // sans « Je suis », le filtre est sans effet
+  assert.equal(run({ scope: 'tasks' }, { me: 1 }).taskIds.size, 8);
 });
 
-test('périmètre « Mes chantiers » : chantiers dont je suis responsable ou contributeur, avec toutes leurs tâches', () => {
-  // Bob (2) est responsable du chantier 100 : toutes ses tâches, même sans lui
+test('périmètre « Mes chantiers » : responsable ou contributeur, ou une tâche du chantier ; toutes ses tâches', () => {
+  const chantiers = (r) => r.tree.flatMap((c) => c.children.flatMap((p) => p.children.map((ch) => ch.title)));
+  // Bob (2) est responsable du chantier 100 : toutes ses tâches, même celles sans lui
   assert.deepEqual([...run({ scope: 'chantiers' }, { me: 2 }).taskIds].sort(), [1000, 1001, 1002]);
-  // Alice (1) est responsable de WP1 (sans tâche visible ailleurs) : chantier gardé, avec ses tâches
+  // Alice (1) : responsable de WP1, et assignée et chargée sur une sous-tâche du chantier 100 → les deux chantiers,
+  // avec toutes leurs tâches (1000 et 1001 ne la concernent pas)
   const alice = run({ scope: 'chantiers' }, { me: 1 });
-  assert.deepEqual([...alice.taskIds].sort(), [2000]);
-  assert.deepEqual(
-    alice.tree.flatMap((c) => c.children.flatMap((p) => p.children.map((ch) => ch.title))),
-    ['WP1 : Modèle LLM'],
-  );
-  // Contributeur : Eve (5) ajoutée aux contributeurs du chantier partagé
+  assert.deepEqual([...alice.taskIds].sort(), [1000, 1001, 1002, 2000]);
+  assert.deepEqual(chantiers(alice), ['Produit de Données Patient', 'WP1 : Modèle LLM']);
+  // Eve (5) : assignée sur une tâche du chantier partagé (retenu sous chacun de ses projets), et chargée sur une
+  // tâche sans chantier (2001), gardée sous « (sans chantier) » : passer à « Mes chantiers » ne masque aucune de
+  // ses tâches
+  const eve = run({ scope: 'chantiers' }, { me: 5 });
+  assert.deepEqual([...eve.taskIds].sort(), [2001, 2010]);
+  assert.deepEqual(chantiers(eve), ['Chantier partagé', 'Chantier partagé', '(sans chantier)']);
+  // Contributeur seul : Fanny (6) ajoutée aux contributeurs du chantier partagé
   const model = buildModel(feuille());
-  model.chantiers.get(201).contributeurs.push(5);
-  const eve = applyFilters(model, { ...DEFAULT_FILTERS, scope: 'chantiers' }, { ...DEFAULT_PREFS, me: 5 });
-  assert.deepEqual([...eve.taskIds], [2010]);
-  // Personne sans chantier : rien ; sans « Je suis… » : sans effet
+  model.chantiers.get(201).contributeurs.push(6);
+  const scoped = (mo, me) => applyFilters(mo, { ...DEFAULT_FILTERS, scope: 'chantiers' }, { ...DEFAULT_PREFS, me });
+  assert.deepEqual([...scoped(model, 6).taskIds], [2010]);
+  // Responsable d'une tâche seulement : Gus (7) responsable de la tâche 3000 → tout le chantier Reporting
+  model.tasks.get(3000).responsable = 7;
+  assert.deepEqual([...scoped(model, 7).taskIds], [3000]);
+  // Chargé seulement (sans assignation) sur une tâche d'un chantier : chantier retenu
+  model.tasks.get(2000).charges.push({ personId: 3, heures: 7 });
+  assert.deepEqual([...scoped(model, 3).taskIds], [2000]);
+  // Personne sans chantier ni tâche : rien ; sans « Je suis… » : sans effet
   assert.equal(run({ scope: 'chantiers' }, { me: 6 }).taskIds.size, 0);
   assert.equal(run({ scope: 'chantiers' }, { me: null }).taskIds.size, 8);
-  // Étiquettes de filtre actif
+  // Étiquettes de filtre actif : seul « Mes chantiers » existe encore
   assert.deepEqual(activeFilterChips({ ...DEFAULT_FILTERS, scope: 'chantiers' }, m), [
     { field: 'scope', label: 'Mes chantiers' },
   ]);
-  assert.deepEqual(activeFilterChips({ ...DEFAULT_FILTERS, scope: 'tasks' }, m), [
-    { field: 'scope', label: 'Mes tâches' },
-  ]);
+  assert.deepEqual(activeFilterChips({ ...DEFAULT_FILTERS, scope: 'tasks' }, m), []);
 });
 
-test('préférences : ancienne case « Mes chantiers » (mine) → périmètre « Mes tâches » ; périmètre inconnu → tout', () => {
+test('Mes chantiers, « (sans chantier) » : seules mes tâches, ni celles des autres ni ce chantier sans tâche à moi', () => {
+  const raw = feuille();
+  const t = raw.tables.Tasks;
+  // Deux tâches sans chantier dans le projet de 2001 : une à Eve (sous-tâche d'une tâche de Bob), une à personne
+  const add = (row) => Object.keys(t).forEach((k) => t[k].push(k in row ? row[k] : null));
+  add({
+    id: 2002,
+    titre: 'Sans chantier, Bob',
+    Chantier: 0,
+    projet: 20,
+    parentTask: 0,
+    statut: 'todo',
+    assignees: ['L', 2],
+  });
+  add({
+    id: 2003,
+    titre: 'Sous-tâche d’Eve',
+    Chantier: 0,
+    projet: 20,
+    parentTask: 2002,
+    statut: 'todo',
+    assignees: ['L', 5],
+  });
+  add({ id: 2004, titre: 'Sans chantier, personne', Chantier: 0, projet: 20, parentTask: 0, statut: 'todo' });
+  const model = buildModel(raw);
+  const scoped = (me, f = {}) =>
+    applyFilters(model, { ...DEFAULT_FILTERS, scope: 'chantiers', ...f }, { ...DEFAULT_PREFS, me });
+  // Eve : 2001 et sa sous-tâche 2003 (la tâche de Bob 2002 reste affichée comme parent, sans être comptée)
+  const eve = scoped(5);
+  assert.deepEqual([...eve.taskIds].sort(), [2001, 2003, 2010]);
+  const loose = eve.tree.flatMap((c) => c.children.flatMap((p) => p.children)).find((c) => !c.ref);
+  const kids = Object.fromEntries(loose.children.map((n) => [n.taskId, n.children.map((x) => x.taskId)]));
+  assert.deepEqual(kids, { 2001: [], 2002: [2003] });
+  // Bob : sa tâche sans chantier, en plus de son chantier
+  assert.ok(scoped(2).taskIds.has(2002));
+  assert.ok(!scoped(2).taskIds.has(2004));
+  // Recherche dans « Mes chantiers » : la règle « seulement mes tâches » tient toujours
+  assert.deepEqual([...scoped(5, { search: 'sans chantier' }).taskIds].sort(), [2001, 2003]);
+  // Sans « Mes chantiers » : toutes les tâches sans chantier
+  assert.ok(applyFilters(model, DEFAULT_FILTERS, DEFAULT_PREFS).taskIds.has(2004));
+});
+
+test('Mes chantiers : une tâche terminée ne rend pas un chantier « mien » ; responsable ou contributeur, si', () => {
+  const raw = feuille();
+  const t = raw.tables.Tasks;
+  t.statut[t.id.indexOf(1002)] = 'done';
+  const model = buildModel(raw);
+  const scoped = (me) => applyFilters(model, { ...DEFAULT_FILTERS, scope: 'chantiers' }, { ...DEFAULT_PREFS, me });
+  // Alice (1) n'était dans le chantier 100 que par la tâche 1002, terminée : seul WP1 (dont elle est responsable)
+  assert.deepEqual([...scoped(1).taskIds], [2000]);
+  // Bob (2), responsable du chantier 100 : toujours retenu, tâches terminées comprises
+  assert.deepEqual([...scoped(2).taskIds].sort(), [1000, 1001, 1002]);
+});
+
+test('préférences : ancien périmètre « Mes tâches » et case « mine » → « Mes chantiers » ; inconnu → tout', () => {
   const load = (v) => loadPrefs({ getItem: () => JSON.stringify(v), setItem() {} });
-  assert.equal(load({ filters: { mine: true } }).filters.scope, 'tasks');
+  assert.equal(load({ filters: { mine: true } }).filters.scope, 'chantiers');
+  assert.equal(load({ filters: { scope: 'tasks' } }).filters.scope, 'chantiers');
+  assert.equal(load({ filters: { scope: 'all' } }).filters.scope, 'all');
   assert.equal(load({ filters: { mine: false } }).filters.scope, 'all');
   assert.equal(load({ filters: { scope: 'chantiers', mine: true } }).filters.scope, 'chantiers');
   assert.equal(load({ filters: { scope: 'nimporte' } }).filters.scope, 'all');
@@ -308,12 +372,14 @@ test('préférences du tableau : anciennes colonnes famille / produit / tâche r
   assert.deepEqual(load('{"tableSort":{"key":"task"}}').tableSort, { key: 'tache', dir: 'asc' });
 });
 
-test('Mes tâches : un projet hors périmètre ISD où la personne du Management est assignée reste visible', () => {
+test('Mes chantiers : un projet hors périmètre ISD où la personne du Management est assignée reste visible', () => {
   const model = buildModel(feuille());
   const out = [...model.projects.values()].find((p) => !p.inScope);
-  const task = [...model.tasks.values()].find((t) => model.nodes.get(`P${out.id}`) && inProject(model, out, t));
+  const task = [...model.tasks.values()].find(
+    (t) => t.chantierId && model.nodes.get(`P${out.id}`) && inProject(model, out, t),
+  );
   task.assignees.push(6);
-  const f = { ...DEFAULT_FILTERS, scope: 'tasks' };
+  const f = { ...DEFAULT_FILTERS, scope: 'chantiers' };
   const mine = applyFilters(model, f, { ...DEFAULT_PREFS, me: 6 });
   assert.deepEqual([...mine.taskIds], [task.id]);
   // sans ciblage, le projet reste hors périmètre

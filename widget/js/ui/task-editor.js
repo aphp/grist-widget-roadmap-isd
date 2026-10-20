@@ -31,6 +31,7 @@ import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { tagsWriteProblem } from '../core/tags-edit.js';
 import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags-field.js';
+import { draftChangeRight, quickStatusRight } from '../core/write-rights.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargeEqText,
@@ -233,6 +234,21 @@ export function createTaskEditor(deps) {
     if (msg) msg.innerHTML = chargeRowMsgs(st, model(), line, peopleCtx(st)).toString();
   }
 
+  /**
+   * Brouillon modifié par un bouton, un menu ou une saisie de charge : les droits sont relus au moment d'agir
+   * (colonnes touchées, writer courant), pas seulement au rendu. Refus (session passée en lecture, colonne
+   * retirée, bouton périmé) : rien ne change et le formulaire est redessiné avec les droits du moment.
+   * @returns {boolean} vrai si le brouillon a été remplacé
+   */
+  function applyDraft(next, focusId) {
+    if (!draftChangeRight(writer(), st, st.draft, next).ok) {
+      render(focusId);
+      return false;
+    }
+    st.draft = next;
+    return true;
+  }
+
   /** Charge saisie sur une ligne : brouillon mis à jour si la valeur est valide, sinon erreur sous la ligne. */
   function chargeInput(t) {
     const id = Number(t.dataset.chargeInput);
@@ -243,7 +259,7 @@ export function createTaskEditor(deps) {
       st.chargeInputs.set(id, t.value);
       t.setAttribute('aria-invalid', 'true');
     } else {
-      st.draft.charges = r.charges;
+      if (!applyDraft({ ...st.draft, charges: r.charges })) return;
       st.chargeErrors.delete(id);
       st.chargeInputs.delete(id);
       st.chargeRefDays.set(id, days);
@@ -521,6 +537,12 @@ export function createTaskEditor(deps) {
   async function quickStatus(ref, status) {
     const w = writer();
     if (!w || quickBusy || st?.busy) return 'busy';
+    // Droit relu au moment d'agir : le menu a pu être affiché avant un passage en lecture ; rien n'est lu ni envoyé
+    const right = quickStatusRight(w, ref.table);
+    if (!right.ok) {
+      deps.toast.show(label('form.fail.refused', { raison: refusedText(right.reason) }), { tone: 'error' });
+      return `refused:${right.reason}`;
+    }
     quickBusy = true;
     const cur = st && st.ref.table === ref.table && st.ref.id === ref.id ? st : null;
     const result = await runQuickStatus({
@@ -633,7 +655,7 @@ export function createTaskEditor(deps) {
   function addTag(item) {
     if (!item || !st.can('tags').ok || tagsBlocked(st)) return;
     const tags = st.draft.tags ?? [];
-    if (!tags.includes(item.value)) st.draft.tags = [...tags, item.value];
+    if (!tags.includes(item.value) && !applyDraft({ ...st.draft, tags: [...tags, item.value] }, 'tf-tags')) return;
     st.tagQuery = '';
     st.tagOpen = false;
     st.tagActive = 0;
@@ -646,7 +668,7 @@ export function createTaskEditor(deps) {
     const tags = st.draft.tags ?? [];
     if (!st.can('tags').ok || tagsBlocked(st) || !Number.isInteger(i) || i < 0 || i >= tags.length) return;
     const name = tags[i];
-    st.draft.tags = tags.filter((_, k) => k !== i);
+    if (!applyDraft({ ...st.draft, tags: tags.filter((_, k) => k !== i) }, 'tf-tags')) return;
     st.tagOpen = false;
     render('tf-tags');
     speakTags(label('form.tags.removed', { nom: name }));
@@ -777,18 +799,24 @@ export function createTaskEditor(deps) {
       refresh();
     } else if (t.dataset.addProjet !== undefined && t.value) {
       const id = Number(t.value);
-      if (!st.draft.Projets.includes(id)) st.draft.Projets = [...st.draft.Projets, id];
+      if (
+        !st.draft.Projets.includes(id) &&
+        !applyDraft({ ...st.draft, Projets: [...st.draft.Projets, id] }, 'tf-Projets')
+      )
+        return;
       render(`tf-Projets`);
     } else if (t.dataset.addContrib !== undefined && t.value) {
       const id = Number(t.value);
-      if (!st.draft.Contributeurs.includes(id)) st.draft.Contributeurs = [...st.draft.Contributeurs, id];
+      const next = [...st.draft.Contributeurs, id];
+      if (!st.draft.Contributeurs.includes(id) && !applyDraft({ ...st.draft, Contributeurs: next }, 'tf-Contributeurs'))
+        return;
       render('tf-Contributeurs');
     } else if (t.dataset.reattach !== undefined) {
       st.reattachTo = Number(t.value) || null;
     } else if (t.dataset.personAdd !== undefined && t.value) {
       // « Ajouter une personne… » : elle est assignée, sa charge (facultative) est à saisir sur sa ligne
       const id = Number(t.value);
-      st.draft = addPersonLine(st.draft, id);
+      if (!applyDraft(addPersonLine(st.draft, id), 'tf-people-title')) return;
       st.chargeRefDays.set(id, periodDays(st.draft.dateDebut, st.draft.dateEcheance));
       renderCharges();
       document.getElementById(lineFocus(id))?.focus();
@@ -860,23 +888,23 @@ export function createTaskEditor(deps) {
     if (!st || st.busy) return;
     if (t.dataset.removeProjet) {
       const id = Number(t.dataset.removeProjet);
-      st.draft.Projets = st.draft.Projets.filter((x) => x !== id);
+      if (!applyDraft({ ...st.draft, Projets: st.draft.Projets.filter((x) => x !== id) })) return;
       render('tf-Projets');
     } else if (t.dataset.removeContrib) {
       const id = Number(t.dataset.removeContrib);
-      st.draft.Contributeurs = st.draft.Contributeurs.filter((x) => x !== id);
+      if (!applyDraft({ ...st.draft, Contributeurs: st.draft.Contributeurs.filter((x) => x !== id) })) return;
       render('tf-Contributeurs');
     } else if (t.dataset.personRemove) {
       // Retirer une ligne : assignation et charge de la personne, dans le même brouillon (un seul lot)
       const id = Number(t.dataset.personRemove);
-      st.draft = removePersonLine(st.draft, id);
+      if (!applyDraft(removePersonLine(st.draft, id), 'tf-people-title')) return;
       st.chargeErrors.delete(id);
       st.chargeInputs.delete(id);
       renderCharges(document.getElementById('tf-assignees') ? 'tf-assignees' : 'tf-people-title');
     } else if (t.dataset.personAssign) {
       // Charge sans assignation : assignée seulement sur demande (jamais d'office)
       const id = Number(t.dataset.personAssign);
-      st.draft = assignPerson(st.draft, id);
+      if (!applyDraft(assignPerson(st.draft, id), 'tf-people-title')) return;
       renderCharges();
       document.getElementById(lineFocus(id))?.focus();
     } else if (t.dataset.removeTag !== undefined) {
@@ -889,21 +917,21 @@ export function createTaskEditor(deps) {
       render(a === 'ask' ? 'tf-tags-replace-confirm' : a === 'confirm' ? 'tf-tags' : 'tf-tags-replace');
     } else if (t.dataset.removeDep) {
       const id = Number(t.dataset.removeDep);
-      st.draft.dependDe = st.draft.dependDe.filter((x) => x !== id);
+      if (!applyDraft({ ...st.draft, dependDe: st.draft.dependDe.filter((x) => x !== id) })) return;
       render('tf-dep-search');
     } else if (t.dataset.addDep) {
-      st.draft.dependDe = [...st.draft.dependDe, Number(t.dataset.addDep)];
+      if (!applyDraft({ ...st.draft, dependDe: [...st.draft.dependDe, Number(t.dataset.addDep)] })) return;
       st.depQuery = '';
       render('tf-dep-search');
     } else if (t.dataset.chargeMerge) {
       const id = Number(t.dataset.chargeMerge);
-      st.draft.charges = mergeDuplicates(st.draft.charges, id);
+      if (!applyDraft({ ...st.draft, charges: mergeDuplicates(st.draft.charges, id) }, 'tf-people-title')) return;
       renderCharges(`tf-ch-${id}`);
     } else if (t.dataset.charges) {
       // Cellule illisible : remplacement par une saisie vide, seulement après confirmation
       const a = t.dataset.charges;
+      if (a === 'replace-confirm' && !applyDraft({ ...st.draft, charges: '[]' }, 'tf-people-title')) return;
       st.confirmReplace = a === 'replace-ask';
-      if (a === 'replace-confirm') st.draft.charges = '[]';
       renderCharges(
         a === 'replace-ask'
           ? 'tf-charges-replace-confirm'
@@ -928,7 +956,7 @@ export function createTaskEditor(deps) {
       else if (action === 'save-nocheck') save({ skipCheck: true });
       else if (action === 'cancel') close();
       else if (action === 'clear-closure') {
-        st.draft.dateCloture = null;
+        if (!applyDraft({ ...st.draft, dateCloture: null })) return;
         st.badDates.delete('dateCloture');
         render('tf-dateCloture');
       } else if (action === 'leave-continue') {

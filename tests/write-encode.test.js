@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EncodeError,
+  changedFields,
   SECONDS_PER_DAY,
   dayFromInput,
   decodeValue,
@@ -121,4 +122,15 @@ test('sameValue compare les listes élément par élément', () => {
   assert.ok(!sameValue([1], [1, 2]));
   assert.ok(sameValue('a', 'a'));
   assert.ok(!sameValue(null, 0));
+});
+
+test('changedFields : champs modifiés entre deux brouillons (listes comparées dans l’ordre)', () => {
+  const a = { assignees: [1, 2], charges: '[]', titre: 'T' };
+  assert.deepEqual(changedFields(a, { ...a }), []);
+  assert.deepEqual(changedFields(a, { ...a, assignees: [1] }), ['assignees']);
+  assert.deepEqual(changedFields(a, { ...a, assignees: [2, 1], charges: '[{"teamId":1,"heures":7}]' }), [
+    'assignees',
+    'charges',
+  ]);
+  assert.deepEqual(changedFields(null, { x: 1 }), ['x']);
 });

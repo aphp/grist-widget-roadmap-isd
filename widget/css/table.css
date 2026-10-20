@@ -430,9 +430,9 @@
 .tbl-chip--de {
   --tbl-role: var(--viz-4);
 }
-/* Management : violet des badges (comme la teinte « mgmt » de l'onglet Équipe), ≥ 3:1 dans les deux thèmes */
+/* Management : --viz-mgmt (comme la teinte « mgmt » de l'onglet Équipe), ≥ 3:1 dans les deux thèmes */
 .tbl-chip--mgmt {
-  --tbl-role: var(--badge-purple-text);
+  --tbl-role: var(--viz-mgmt);
 }
 
 /* ---- Chantier (point indigo) et projet (pilule claire) ---- */

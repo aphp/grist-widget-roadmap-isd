@@ -396,7 +396,7 @@ body {
 .filters__checks .fr-label {
   white-space: nowrap;
 }
-/* Périmètre « Tout / Mes tâches / Mes chantiers » : légende à gauche du contrôle segmenté, sur la ligne des filtres */
+/* Périmètre « Tout / Mes chantiers » : légende à gauche du contrôle segmenté, sur la ligne des filtres */
 .filters__scope {
   flex: none;
   margin: 0;

@@ -40,16 +40,23 @@ export function capacityControl(st) {
   return h`<input type="text" inputmode="decimal" id="${p}-capaciteHebdo" class="fr-input tf-num" value="${v}" placeholder="35" data-input="capaciteHebdo" ${attrs(st, 'capaciteHebdo', true)}>`;
 }
 
-/** N+1 : sélection simple, équipe ISD d'abord ; la personne elle-même n'est pas proposée. */
+/**
+ * N+1 : sélection simple, Management de tous les Domaines d'abord, puis l'équipe ISD par profil ; la personne
+ * elle-même n'est pas proposée. Une valeur actuelle hors de ces groupes reste affichée et sélectionnée.
+ */
 export function n1Control(st, model, personId = null) {
   const p = st.prefix ?? 'tf';
   const cur = st.draft.n_1;
-  const { isd, others } = n1Candidates(model, personId, cur);
+  const { management, isd, kept } = n1Candidates(model, personId, cur);
   const opt = (x) => h`<option value="${x.id}" ${sel(x.id === cur)}>${untitled(x.nom)}</option>`;
+  const keptOpt = kept
+    ? h`<option value="${kept.id}" selected>${untitled(kept.person?.nom ?? `n° ${kept.id}`)} (${label(kept.inactive ? 'form.person.inactive' : 'form.person.unlisted')})</option>`
+    : '';
   return h`<select id="${p}-n_1" class="fr-select" data-input="n_1" ${attrs(st, 'n_1')}>
     <option value="" ${sel(cur === null)}>${label('form.field.n_1.none')}</option>
-    ${isd.length ? h`<optgroup label="${label('form.group.isdTeam')}">${isd.map(opt)}</optgroup>` : ''}
-    ${others.length ? h`<optgroup label="${label('form.group.others')}">${others.map(opt)}</optgroup>` : ''}
+    ${keptOpt}
+    ${management.length ? h`<optgroup label="${label('form.group.management')}">${management.map(opt)}</optgroup>` : ''}
+    ${isd.map((g) => h`<optgroup label="${label('form.group.isd', { profil: label(`profile.group.${g.role}`) })}">${g.people.map(opt)}</optgroup>`)}
   </select>`;
 }
 

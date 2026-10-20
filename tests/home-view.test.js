@@ -34,8 +34,15 @@ test('vue d’accueil proposée : Mes tâches (DE, DS, DA), Gantt (PO), Synthès
     'mytasks',
     'mytasks',
   ]);
-  assert.deepEqual([de, da, po, mg, null].map(defaultScope), ['tasks', 'tasks', 'chantiers', 'all', 'tasks']);
-  assert.deepEqual(SCOPES, ['all', 'tasks', 'chantiers']);
+  // Périmètre : Mes chantiers pour tous les profils, sauf le Management (tout) ; plus de périmètre « Mes tâches »
+  assert.deepEqual([de, da, po, mg, null].map(defaultScope), [
+    'chantiers',
+    'chantiers',
+    'chantiers',
+    'all',
+    'chantiers',
+  ]);
+  assert.deepEqual(SCOPES, ['all', 'chantiers']);
   // Toutes les vues proposées sont des onglets ; « Mes tâches » est le premier
   for (const p of [de, po, mg]) assert.ok(TABS.includes(defaultHomeView(p)));
   assert.equal(TABS[0], 'mytasks');
