@@ -871,8 +871,8 @@
 
 @media (max-width: 640px) {
   .cdlg {
-    width: 100vw;
-    max-width: 100vw;
+    width: 100%;
+    max-width: 100%;
     max-height: 100dvh;
     margin: auto 0 0;
     border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;

@@ -3279,3 +3279,27 @@ test(
     }
   },
 );
+
+test(
+  'Fenêtre de création à 390 px : la feuille tient dans la fenêtre, sans passer sous la barre de défilement',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    try {
+      await until(`D.documentElement.clientWidth <= 390`);
+      await clickOn('#btn-new-task');
+      await until(`D.querySelector('dialog.cdlg[open]')`);
+      const r = await w(`const d = D.querySelector('dialog.cdlg[open]').getBoundingClientRect();
+        return { l: d.left, r: d.right, cw: D.documentElement.clientWidth };`);
+      assert.ok(r.l >= -0.5 && r.r <= r.cw + 0.5, `fenêtre ${r.l}-${r.r} pour ${r.cw} px`);
+    } finally {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: 1440,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+    }
+  },
+);
