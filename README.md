@@ -3,9 +3,10 @@
 Vue de pilotage de l'équipe ISD (avancement et charge) sur les tables de la Feuille de route EDS.
 Par défaut, **lecture seule** : le widget ne modifie jamais le document. La phase 2 (lots 2a à 2d) permet de modifier
 une tâche depuis sa fiche, dont le bloc « Personnes » (assignés et charges réunis ; charge facultative en ETP ou en
-heures, 1 ETP = 35 h par semaine sur les jours calendaires de la tâche, heures stockées à 0,5 h près ; si les dates
-changent, l'ETP de chaque personne est conservé et ses heures recalculées, avec l'écart « 70 h → 140 h (ETP conservé) »
-sous la ligne ; une charge qui dépasserait la borne sur la nouvelle période garde ses heures et est signalée), de modifier un
+heures, 1 ETP = 35 h par semaine sur les jours calendaires de la tâche, heures stockées à 0,5 h près ; si la
+période change, l'ETP de chaque personne est conservé et ses heures recalculées, avec l'écart « 70 h → 140 h (ETP
+conservé) » sous la ligne ; une charge qui dépasserait la borne sur la nouvelle période garde ses heures et est
+signalée), de modifier un
 chantier, de créer tâches, sous-tâches et chantiers (« Nouvelle tâche » et « Nouveau chantier » au bout de la ligne des
 onglets, « Ajouter une sous-tâche », « + Tâche ») et de changer une tâche
 de chantier (ses sous-tâches suivent). Onglet Équipe (lot 2d) : ajouter une personne à l'équipe ISD, modifier sa

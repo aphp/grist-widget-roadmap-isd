@@ -6,7 +6,7 @@
  * construite ici. Chaque enregistrement travaille sur un instantané : si le formulaire change pendant l'attente,
  * le résultat est quand même annoncé et appliqué au modèle, mais le nouveau formulaire n'est pas touché.
  */
-import { createPeopleBlock, peopleState } from './people-block.js';
+import { createPeopleBlock, followBase, peopleState } from './people-block.js';
 import { conflictBatch, failureKind, runQuickStatus, runSave } from '../core/task-session.js';
 import { FORM_FIELDS, diffDraft, draftFrom, rebaseDraft, setMilestone, validateTask } from '../core/task-form.js';
 import {
@@ -270,6 +270,7 @@ export function createTaskEditor(deps) {
     if (!fresh) return;
     st.draft = spec(st).rebase(st.base, st.draft, fresh);
     st.base = fresh;
+    followBase(st);
     const task = st.ref.table === 'Tasks' ? model().tasks.get(st.ref.id) : null;
     const w = writer();
     st.canMove = Boolean(task && !task.parentId && w?.can('Tasks', 'Chantier').ok && w.can('Tasks', 'projet').ok);
@@ -362,6 +363,7 @@ export function createTaskEditor(deps) {
     if (result.stored) {
       cur.draft = spec(cur).rebase(cur.base, cur.draft, result.stored);
       cur.base = { ...cur.base, ...result.stored };
+      followBase(cur);
     }
     deps.onUnknown?.();
     return {
@@ -471,9 +473,11 @@ export function createTaskEditor(deps) {
     if (choices.charges === 'theirs') {
       st.chargeErrors.clear();
       st.chargeInputs.clear();
+      st.chargesTyped.clear();
     }
     st.draft = draft;
     st.base = { ...st.base, ...fresh };
+    followBase(st);
     st.conflict = null;
     if (!Object.keys(batch.changes).length) return close();
     await save(batch);
@@ -529,6 +533,7 @@ export function createTaskEditor(deps) {
         if (result.stored) {
           cur.draft = spec(cur).rebase(cur.base, cur.draft, result.stored);
           cur.base = { ...cur.base, ...result.stored };
+          followBase(cur);
         }
         render('btn-status-menu');
       }
@@ -850,6 +855,8 @@ export function createTaskEditor(deps) {
       if (f === 'charges') {
         st.chargeErrors.clear();
         st.chargeInputs.clear();
+        st.chargesTyped.clear();
+        followBase(st);
       }
       render('btn-form-save');
     } else {

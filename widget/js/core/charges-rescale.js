@@ -49,6 +49,21 @@ export function refFromInput({ heures, etp, days }) {
 }
 
 /**
+ * Références après une nouvelle base (ligne relue, conflit résolu) : celles des personnes saisies dans le formulaire
+ * (typed) sont gardées, les autres suivent la cellule de la base (absentes de la base : retirées).
+ * @param {Map<number, ChargeRef>} refs
+ * @param {Set<number>} typed personnes dont la charge a été saisie dans le formulaire
+ * @param {string|null} baseRaw cellule de la nouvelle base
+ * @param {number|null} baseDays jours calendaires de sa période
+ * @returns {Map<number, ChargeRef>}
+ */
+export function followBaseRefs(refs, typed, baseRaw, baseDays) {
+  const out = new Map([...refs].filter(([teamId]) => typed.has(teamId)));
+  for (const [teamId, ref] of chargeRefs(baseRaw, baseDays)) if (!typed.has(teamId)) out.set(teamId, ref);
+  return out;
+}
+
+/**
  * Heures de la référence sur une autre période : gardées sans ETP, sans période d'arrivée ou à période égale ;
  * sinon ETP × 35 × jours / 7 arrondi à 0,5 h, au moins 0,5 h pour un ETP non nul.
  * @param {ChargeRef} ref

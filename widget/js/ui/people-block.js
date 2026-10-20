@@ -12,7 +12,7 @@ import {
   periodDays,
   readChargesCell,
 } from '../core/charges-edit.js';
-import { chargeRefs, refFromInput, rescaleCharges } from '../core/charges-rescale.js';
+import { chargeRefs, followBaseRefs, refFromInput, rescaleCharges } from '../core/charges-rescale.js';
 import { addPersonLine, assignPerson, lineInput, removePersonLine } from '../core/task-people.js';
 import { chargeEqText, chargeRowMsgs, peopleBlockHtml, peopleCtx } from '../views/task-form.js';
 
@@ -34,7 +34,9 @@ export function storedUnit(storage) {
 /**
  * État propre au bloc, à fusionner dans celui du formulaire hôte. chargeRefs : ETP de référence de chaque personne
  * (l'ETP fait foi quand les dates changent), pris sur la ligne à l'ouverture de la fiche (base), puis à chaque
- * saisie ; chargesKeptOver : personnes laissées au-dessus de la borne au dernier changement de dates.
+ * saisie ; chargesTyped : personnes dont la charge a été saisie (ou retirée) ici, leur référence ne suit plus la
+ * base ; chargesDays : période du dernier recalcul ; chargesKeptOver : personnes laissées au-dessus de la borne au
+ * dernier changement de période.
  * @param {Storage} [storage]
  * @param {{charges?:string|null, dateDebut:number|null, dateEcheance:number|null}|null} [base] ligne de la tâche
  */
@@ -42,10 +44,24 @@ export const peopleState = (storage, base = null) => ({
   chargeErrors: new Map(),
   chargeInputs: new Map(),
   chargeRefs: base ? chargeRefs(base.charges ?? null, periodDays(base.dateDebut, base.dateEcheance)) : new Map(),
+  chargesTyped: new Set(),
+  chargesDays: base ? periodDays(base.dateDebut, base.dateEcheance) : null,
   chargesKeptOver: new Set(),
   chargesUnit: storedUnit(storage),
   confirmReplace: false,
 });
+
+/**
+ * Nouvelle base de la fiche (ligne relue, conflit résolu, rebaseDraft) : les références des personnes non saisies ici
+ * suivent ses charges ; la période du brouillon, éventuellement suivie elle aussi, ne déclenche pas de recalcul.
+ * @param {object} s état du formulaire (draft, base, chargeRefs, chargesTyped)
+ */
+export function followBase(s) {
+  if (!s?.chargeRefs || !s.base || !('charges' in s.draft)) return;
+  const baseDays = periodDays(s.base.dateDebut, s.base.dateEcheance);
+  s.chargeRefs = followBaseRefs(s.chargeRefs, s.chargesTyped, s.base.charges ?? null, baseDays);
+  s.chargesDays = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+}
 
 /**
  * @param {{state():object|null, getModel():object, storage?:Storage, applyDraft(next:object, focusId?:string):boolean,
@@ -138,6 +154,7 @@ export function createPeopleBlock(deps) {
       // La saisie devient la référence de la ligne (seulement elle : les autres lignes ne sont pas recalculées)
       if (r.heures === null) s.chargeRefs.delete(teamId);
       else s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, days }));
+      s.chargesTyped.add(teamId);
       s.chargesKeptOver.delete(teamId);
       t.removeAttribute('aria-invalid');
     }
@@ -190,6 +207,7 @@ export function createPeopleBlock(deps) {
       s.chargeErrors.delete(teamId);
       s.chargeInputs.delete(teamId);
       s.chargeRefs.delete(teamId);
+      s.chargesTyped.add(teamId);
       s.chargesKeptOver.delete(teamId);
       render(el('assignees') ? id('assignees') : title);
       return true;
@@ -209,6 +227,7 @@ export function createPeopleBlock(deps) {
       const ref = chargeRefs(s.draft.charges, periodDays(s.draft.dateDebut, s.draft.dateEcheance)).get(teamId);
       if (ref) s.chargeRefs.set(teamId, ref);
       else s.chargeRefs.delete(teamId);
+      s.chargesTyped.add(teamId);
       render(id(`ch-${teamId}`));
       return true;
     }
@@ -226,18 +245,24 @@ export function createPeopleBlock(deps) {
   }
 
   /**
-   * Dates du brouillon changées (champ de date, case « Jalon ») : l'ETP de référence de chaque ligne est gardé et
-   * ses heures recalculées sur la nouvelle période (rescaleCharges) ; une ligne qui dépasserait la borne est laissée
-   * telle quelle et signalée (chargesKeptOver), comme une ligne non recalculée au-dessus de la borne. Retour aux dates d'origine : texte d'origine des entrées remis.
-   * Refus des droits : charges inchangées.
+   * Dates du brouillon changées (champ de date, case « Jalon ») : si la période diffère de celle du dernier recalcul
+   * (chargesDays ; une date de clôture n'y touche pas), l'ETP de référence de chaque ligne est gardé et ses heures
+   * recalculées (rescaleCharges). Une ligne qui dépasserait la borne est laissée telle quelle et signalée
+   * (chargesKeptOver), comme une ligne non recalculée au-dessus de la borne. Retour aux dates d'origine : texte
+   * d'origine des entrées remis. Refus des droits : charges inchangées.
    * @param {{render?:boolean}} [opts] render : faux si l'hôte redessine tout le formulaire ensuite
    */
   function onDatesChanged({ render: redraw = true } = {}) {
     const s = st();
     const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+    if (days === s.chargesDays) {
+      if (redraw) render();
+      return;
+    }
     const maxOf = (teamId) => maxHours(days, isEstimationPerson(model(), teamId));
     const r = rescaleCharges(s.draft.charges, s.chargeRefs, days, { baseRaw: s.base?.charges ?? null, maxOf });
     if (r.raw !== s.draft.charges && !deps.applyDraft({ ...s.draft, charges: r.raw })) return;
+    s.chargesDays = days;
     // Laissées telles quelles au-dessus de la borne : refusées par le recalcul (over), ou jamais recalculées (heures
     // saisies sans dates, doublons)
     const cell = readChargesCell(s.draft.charges);

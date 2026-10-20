@@ -27,6 +27,7 @@ import { openDialog } from './dialog.js';
 import { dialogFoot, moveBody, newChantierBody, newTaskBody, peopleHelp } from '../views/create-form.js';
 import { chargesFootHtml, fieldLabel, valueText } from '../views/task-form.js';
 import { createPeopleBlock, peopleState } from './people-block.js';
+import { periodDays } from '../core/charges-edit.js';
 
 const MORE_KEY = 'roadmap-isd.createMore';
 const TITLES = Object.freeze({
@@ -278,7 +279,10 @@ export function createCreateDialog(deps) {
       st.me = ctx.me ?? null;
       // Bloc « Personnes » : aucune ligne d'origine (ETP de référence posé par la saisie de chaque ligne)
       if (kind !== 'chantier')
-        Object.assign(st, peopleState(deps.storage), { base: { dateDebut: null, dateEcheance: null } });
+        Object.assign(st, peopleState(deps.storage), {
+          base: { dateDebut: null, dateEcheance: null },
+          chargesDays: periodDays(st.draft.dateDebut, st.draft.dateEcheance),
+        });
       st.initial = JSON.stringify(st.draft);
     }
     validate();

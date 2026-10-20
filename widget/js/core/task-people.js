@@ -78,7 +78,8 @@ export function removePersonLine(draft, teamId) {
 
 /**
  * Saisie de la charge d'une ligne (mêmes règles que la section des charges : 1 ETP au plus sauf pour la personne
- * estimation, ETP à une décimale, valeur affichée ressaisie sans effet, moins de 0,25 h refusé…).
+ * estimation, ETP à deux décimales sous 1 et une au-delà, valeur affichée ressaisie sans effet, moins de 0,25 h
+ * refusé…).
  * @param {object} draft brouillon (assignees, charges)
  * @param {number} teamId
  * @param {string} text valeur saisie

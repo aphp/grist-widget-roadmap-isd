@@ -632,6 +632,60 @@ test('fiche : dates remises à l’identique, charges non envoyées', { skip: SK
   assert.deepEqual(Object.keys(cells), ['titre']);
 });
 
+/**
+ * Fiche de openCharged14 ; ailleurs, la charge de la personne passe à 50 h, puis une sous-tâche créée depuis la
+ * fiche fait relire la ligne (refreshFromModel). Rend { id, person } ; une écriture (la sous-tâche) dans __writes.
+ */
+async function openRebased50() {
+  const { id, person } = await openCharged14();
+  const charges = JSON.stringify([{ teamId: person, heures: 50 }]);
+  await w(`await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { charges: ${JSON.stringify(charges)} }]]);
+    W.__writes.length = 0; return true;`);
+  // Modèle relu (0,7 ETP sur la carte) avant la sous-tâche
+  await until(`D.getElementById('kc-${id}')?.textContent.includes('0,7 ETP')`);
+  await clickOn('#btn-add-subtask');
+  await until(`D.querySelector('dialog.cdlg[open] #cf-titre')`);
+  await typeIn('#cf-titre', 'Sous-tâche de relecture');
+  await clickOn('#cf-create');
+  await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+  await until(`D.getElementById('tf-ch-${person}-eq')?.textContent.trim() === '= 50 h'`);
+  // Une relecture seule ne produit jamais d'écart « Dates modifiées »
+  assert.doesNotMatch(await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`), /Dates modifiées/);
+  return { id, person };
+}
+
+test(
+  'fiche : charges relues, puis date de clôture seule : aucun recalcul, charges non envoyées',
+  { skip: SKIP },
+  async () => {
+    const { id, person } = await openRebased50();
+    await setFormDate('dateCloture', '2026-11-20');
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 50 h');
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`W.__writes.length === 2`);
+    const [, , rowId, cells] = (await writes())[1][0];
+    assert.equal(rowId, id);
+    assert.deepEqual(Object.keys(cells), ['dateCloture']);
+  },
+);
+
+test(
+  'fiche : charges relues, puis dates allongées : recalcul depuis les nouvelles heures',
+  { skip: SKIP },
+  async () => {
+    const { id, person } = await openRebased50();
+    // 50 h sur 14 jours, échéance + 14 jours : 100 h (et non 140 h depuis les 70 h d'avant)
+    await setFormDate('dateEcheance', '2026-11-29');
+    await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 100 h'`);
+    assert.match(await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`), /50 h → 100 h/);
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`W.__writes.length === 2`);
+    const [, , rowId, cells] = (await writes())[1][0];
+    assert.equal(rowId, id);
+    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 100 }]));
+  },
+);
+
 test(
   'personnes : ajout en ETP, « Assigner » une charge non assignée, retrait ; un seul lot ; listes unifiées en lecture',
   { skip: SKIP },

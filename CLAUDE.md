@@ -34,9 +34,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   `?edition=1&doc=<id>` = envoi seulement si `doc` est le document ouvert) et `flags.json` (`{ "edition": true }`,
   adresse fixe, relu avant chaque envoi) peut tout couper. Délai maximal de 10 s sur chaque requête.
 - **Charges** : `Tasks.charges` = JSON `[{"teamId": n, "heures": h}]`, total d'heures sur la tâche. 1 ETP = 35 h par
-  semaine de la tâche (jours calendaires), au plus 1 ETP par personne, ETP saisi à deux décimales sous 1 (une au-delà), heures à 0,5 h près ;
-  l'ETP fait foi quand les dates changent (h = ETP × 35 × jours / 7) ;
-  entrées non touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : les personnes estimation
+  semaine de la tâche (jours calendaires), au plus 1 ETP par personne, ETP saisi à deux décimales sous 1 (une
+  au-delà), heures à 0,5 h près ; l'ETP fait foi quand la période change (h = ETP × 35 × jours / 7) ; entrées non
+  touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : les personnes estimation
   (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer », « Data Scientist »… une par profil pour
   estimer dans la roadmap), bornées à `ESTIMATION_MAX_ETP` = 50 ETP sur la période (2 000 h sans dates), dans la
   saisie et dans le writer ; badge « Estimation » à côté de chacune. TOUTE ligne ACTIVE qui porte cet APH est

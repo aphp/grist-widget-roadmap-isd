@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chargeRefs, refFromInput, rescaleCharges, rescaledHours } from '../widget/js/core/charges-rescale.js';
+import {
+  chargeRefs,
+  followBaseRefs,
+  refFromInput,
+  rescaleCharges,
+  rescaledHours,
+} from '../widget/js/core/charges-rescale.js';
 
 const base = '[{"teamId":40,"heures":70}, {"teamId":41,"heures":35,"note":"x"}]'; // 14 jours : 1 ETP et 0,5 ETP
 
@@ -73,4 +79,18 @@ test('base illisible ou autre valeur : encodage compact', () => {
   const refs = chargeRefs(base, 14);
   const r = rescaleCharges(base, refs, 28, { baseRaw: 'x' });
   assert.equal(r.raw, '[{"teamId":40,"heures":140},{"teamId":41,"heures":70,"note":"x"}]');
+});
+
+test('nouvelle base : les références non saisies suivent la base, les saisies sont gardées', () => {
+  const refs = chargeRefs(base, 14);
+  refs.set(41, refFromInput({ heures: 14, etp: 0.1, days: 14 })); // 41 saisie dans le formulaire
+  const fresh = '[{"teamId":40,"heures":50},{"teamId":41,"heures":35},{"teamId":42,"heures":7}]';
+  const next = followBaseRefs(refs, new Set([41]), fresh, 14);
+  assert.deepEqual(next.get(40), { etp: 50 / 70, heures: 50, days: 14 });
+  assert.deepEqual(next.get(41), { etp: 0.1, heures: 14, days: 14 });
+  assert.deepEqual(next.get(42), { etp: 0.1, heures: 7, days: 14 });
+  // Absente de la nouvelle base et non saisie : retirée
+  assert.equal(followBaseRefs(refs, new Set(), '[]', 14).size, 0);
+  // Dates allongées ensuite : la personne non saisie repart des NOUVELLES heures (50 h → 100 h)
+  assert.equal(rescaleCharges('[{"teamId":40,"heures":50}]', next, 28).raw, '[{"teamId":40,"heures":100}]');
 });
