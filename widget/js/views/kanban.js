@@ -1,7 +1,11 @@
 /**
- * Vue Kanban (lecture seule) : colonnes par statut (ordre du cycle de vie), priorité ou chantier ; une carte par
- * tâche. Focus itinérant : un seul arrêt de tabulation par colonne, flèches entre cartes et colonnes. La page
- * défile seule (pas d'ascenseur par colonne) ; les en-têtes de colonne restent visibles en haut de l'écran.
+ * Vue Kanban : colonnes par statut (ordre du cycle de vie), priorité ou chantier ; une carte par tâche. Focus
+ * itinérant : un seul arrêt de tabulation par colonne, flèches entre cartes et colonnes. La page défile seule (pas
+ * d'ascenseur par colonne) ; les en-têtes de colonne restent visibles en haut de l'écran.
+ * Statut depuis la carte (P-UX-6), seulement en édition et si la tâche est modifiable : bouton ⋯ en haut à droite
+ * de la carte (souris), hors du focus itinérant (tabindex -1) pour garder un seul arrêt par colonne ; au clavier,
+ * « S », Maj+F10 ou la touche Menu sur la carte focalisée ouvre le même menu. Après le changement, le focus reste
+ * sur la carte, y compris quand elle change de colonne (Kanban groupé par statut).
  */
 import { raw } from '../core/sanitize.js';
 import { formatDateFr } from '../core/dates.js';
@@ -24,9 +28,11 @@ import {
   toggleColumn,
 } from '../core/kanban-data.js';
 import { displayRole } from '../core/team-directory.js';
+import { isStatusShortcut, limitToReveal } from '../core/quick-status.js';
 import { h, icon, keepFocus, roleFullText, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
-import { etpLabel, label } from '../labels.js';
+import { statusContextMenu } from '../ui/status-popover.js';
+import { etpLabel, label, statusLabel } from '../labels.js';
 
 export const id = 'kanban';
 
@@ -38,6 +44,13 @@ const ITEMS = '.kcol__toggle, .kcard, .kcol__more';
 
 /** Écouteurs de fenêtre (défilement, redimensionnement) par conteneur, retirés au rendu suivant. */
 const listeners = new WeakMap();
+
+/**
+ * « Afficher plus » et carte d'entrée de chaque colonne, gardés d'un rendu à l'autre tant que la vue montre la même
+ * chose (filtres, projets masqués) : une relecture après une écriture ne replie pas les colonnes déjà dépliées.
+ */
+let kept = { key: '', limits: new Map(), active: new Map() };
+const keepKey = (ctx) => JSON.stringify([ctx.prefs?.filters ?? null, ctx.prefs?.hiddenProjects ?? null]);
 
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -113,9 +126,16 @@ function etpBreakdown(model, task) {
 /** Attributs du focus itinérant : seul l'élément d'entrée de la colonne est un arrêt de tabulation. */
 const roving = (entry) => raw(entry ? 'tabindex="0" aria-describedby="kanban-help"' : 'tabindex="-1"');
 
+/** Bouton ⋯ du statut (P-UX-6) : à côté de la carte (une carte est déjà un bouton), hors du focus itinérant. */
+function statusButton(task) {
+  const title = task.title || label('common.untitled');
+  return h`<button type="button" class="kcard__qs" data-qs-open="${task.id}" tabindex="-1" aria-haspopup="menu" aria-expanded="false" aria-label="${label('quickStatus.open', { titre: title, statut: statusLabel(task.status) })}" title="${label('quickStatus.menu.title')}"><span aria-hidden="true">⋯</span></button>`;
+}
+
 function cardHtml(ctx, taskId, paths, showStatus, entry) {
   const model = ctx.model;
   const task = model.tasks.get(taskId);
+  const qs = Boolean(ctx.quickStatus?.can(taskId));
   const path = (paths.get(taskId)?.path ?? []).join(SEP);
   const late = task.end !== null && task.end < ctx.today && !task.done;
   const etp = taskEtp(task) || null; // 0 (aucune charge) : rien à afficher
@@ -124,8 +144,8 @@ function cardHtml(ctx, taskId, paths, showStatus, entry) {
   const people = taskPeopleRows(model, task)
     .filter((r) => r.person)
     .map((r) => ({ ...r, role: displayRole(model, r.person) }));
-  return h`<li class="kcard-item">
-    <button type="button" class="kcard${late ? ' kcard--late' : ''}" id="kc-${taskId}" data-task="${taskId}" ${roving(entry)}>
+  return h`<li class="kcard-item${qs ? ' kcard-item--qs' : ''}">
+    <button type="button" class="kcard${late ? ' kcard--late' : ''}" id="kc-${taskId}" data-task="${taskId}" ${roving(entry)}${raw(qs ? ` data-qs-focus="${taskId}" aria-keyshortcuts="S Shift+F10"` : '')}>
       ${path ? h`<span class="kcard__path" title="${path}">${path}</span>` : ''}
       <span class="kcard__title">${task.title || label('common.untitled')}</span>
       <span class="kcard__badges">
@@ -151,6 +171,7 @@ function cardHtml(ctx, taskId, paths, showStatus, entry) {
           : ''
       }
     </button>
+    ${qs ? statusButton(task) : ''}
   </li>`;
 }
 
@@ -163,6 +184,9 @@ function columnHtml(ctx, col, st, paths) {
   // Élément d'entrée (seul arrêt de tabulation) : le dernier focalisé s'il est encore affiché, sinon la première
   // carte, sinon le bouton de repli
   const ids = [`kt-${ckey}`, ...visible.map((t) => `kc-${t}`), ...(!collapsed && rest > 0 ? [`km-${ckey}`] : [])];
+  // Tâche dont le statut vient de changer : elle devient l'entrée de sa colonne (nouvelle colonne comprise)
+  if (ctx.reveal !== null && ctx.reveal !== undefined && visible.includes(ctx.reveal))
+    st.active.set(ckey, `kc-${ctx.reveal}`);
   const entry = ids.includes(st.active.get(ckey)) ? st.active.get(ckey) : (ids[1] ?? ids[0]);
   const toggle = label(collapsed ? 'kanban.expand' : 'kanban.collapse', { colonne: col.label });
   // Colonnes par statut : couleur du statut sur la colonne, badge de statut inutile sur les cartes.
@@ -204,20 +228,23 @@ function selectHtml(idAttr, name, values, current, labelKey) {
  */
 export function render(el, ctx) {
   const saved = ctx.prefs ?? {};
+  if (kept.key !== keepKey(ctx)) kept = { key: keepKey(ctx), limits: new Map(), active: new Map() };
   const st = {
     group: GROUPS.includes(saved.kanbanGroup) ? saved.kanbanGroup : 'status',
     sort: SORTS.includes(saved.kanbanSort) ? saved.kanbanSort : 'due',
     collapsed: [...(saved.kanbanCollapsed ?? [])],
-    limits: new Map(),
+    limits: kept.limits,
     /** Carte d'entrée retenue par colonne (focus itinérant). */
-    active: new Map(),
+    active: kept.active,
   };
+  const qsOn = Boolean(ctx.quickStatus);
   const paths = taskPaths(ctx.view.tree);
 
   function paint() {
     const board = el.querySelector('.kanban__board');
     const left = board?.scrollLeft ?? 0;
     const cols = kanbanColumns(ctx.model, ctx.view.taskIds, st.group, st.sort);
+    reveal(cols);
     keepFocus(
       el,
       h`<div class="kanban">
@@ -229,7 +256,7 @@ export function render(el, ctx) {
           ${selectHtml('kanban-sort', 'kanban.sort', SORTS, st.sort, 'kanban.sort')}
         </div>`,
         )}
-        <p id="kanban-help" class="fr-sr-only">${label('kanban.help')}</p>
+        <p id="kanban-help" class="fr-sr-only">${label(qsOn ? 'kanban.help.edit' : 'kanban.help')}</p>
         <div class="kanban__peeks" hidden>
           ${['left', 'right'].map((side) => h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary kanban__peek kanban__peek--${side}" data-peek="${side}" aria-controls="kanban-board" hidden>${icon(`arrow-${side}-s-line`)}<span class="kanban__peek-text"></span><span class="fr-sr-only kanban__peek-sr"></span></button>`)}
         </div>
@@ -243,6 +270,20 @@ export function render(el, ctx) {
     const nb = el.querySelector('.kanban__board');
     if (nb) nb.scrollLeft = left;
     layout();
+  }
+
+  /**
+   * Tâche dont le statut vient de changer (ctx.reveal) : sa colonne est dépliée assez loin pour qu'elle reste
+   * affichée malgré « Afficher plus ». Une colonne repliée le reste (le focus va alors à une voisine).
+   */
+  function reveal(cols) {
+    if (ctx.reveal === null || ctx.reveal === undefined) return;
+    for (const col of cols) {
+      const i = col.tasks.indexOf(ctx.reveal);
+      if (i < 0) continue;
+      const k = `${st.group}:${col.key}`;
+      st.limits.set(k, limitToReveal(st.limits.get(k) ?? PAGE, i, PAGE));
+    }
   }
 
   /** Colonnes du plateau hors champ à gauche et à droite (1 px de tolérance). */
@@ -311,7 +352,7 @@ export function render(el, ctx) {
   }
 
   /** Donne le focus à un élément de colonne et en fait l'arrêt de tabulation de cette colonne. */
-  function focusItem(item) {
+  function focusItem(item, focus = true) {
     const col = item.closest('.kcol');
     for (const c of col.querySelectorAll(ITEMS)) {
       c.tabIndex = c === item ? 0 : -1;
@@ -319,7 +360,7 @@ export function render(el, ctx) {
       if (c !== item) c.removeAttribute('aria-describedby');
     }
     st.active.set(col.dataset.col, item.id);
-    item.focus();
+    if (focus) item.focus();
   }
 
   el.onchange = (e) => {
@@ -364,10 +405,24 @@ export function render(el, ctx) {
       board.scrollBy({ left: dx, behavior: smooth ? 'smooth' : 'auto' });
       return;
     }
+    const q = e.target.closest('[data-qs-open]');
+    if (q) {
+      const card = q.parentElement.querySelector('.kcard');
+      if (card) focusItem(card, false); // la carte devient l'entrée de sa colonne ; le focus y revient ensuite
+      ctx.quickStatus?.open(q, Number(q.dataset.qsOpen), card ?? q);
+      return;
+    }
     const c = e.target.closest('[data-task]');
     if (c) ctx.openDetail({ table: 'Tasks', id: Number(c.dataset.task) });
   };
   el.onkeydown = (e) => {
+    const card = e.target.closest?.('.kcard[data-qs-focus]');
+    if (card && el.contains(card) && isStatusShortcut(e)) {
+      e.preventDefault();
+      const q = card.parentElement.querySelector('[data-qs-open]');
+      if (q) ctx.quickStatus?.open(q, Number(card.dataset.qsFocus), card);
+      return;
+    }
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const item = e.target.closest?.(ITEMS);
     if (!item || !el.contains(item)) return;
@@ -399,5 +454,20 @@ export function render(el, ctx) {
     signal: off.signal,
   });
   el.addEventListener('focusin', (e) => e.target.classList?.remove('kcard--tipoff'), { signal: off.signal });
+  // Clic droit (ou Maj+F10 relâché) sur une carte modifiable ou son ⋯ : menu de statut, la carte en est le retour
+  el.addEventListener(
+    'contextmenu',
+    (e) =>
+      statusContextMenu(
+        e,
+        (t) => (ctx.quickStatus ? t.closest('.kcard-item')?.querySelector('[data-qs-open]') : null),
+        (q) => {
+          const card = q.parentElement.querySelector('.kcard');
+          if (card) focusItem(card, false);
+          ctx.quickStatus.open(q, Number(q.dataset.qsOpen), card ?? q);
+        },
+      ),
+    { signal: off.signal },
+  );
   paint();
 }

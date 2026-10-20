@@ -43,11 +43,12 @@ test('périmètre « Mes chantiers » : responsable ou contributeur, ou une tâc
   const alice = run({ scope: 'chantiers' }, { me: 1 });
   assert.deepEqual([...alice.taskIds].sort(), [1000, 1001, 1002, 2000]);
   assert.deepEqual(chantiers(alice), ['Produit de Données Patient', 'WP1 : Modèle LLM']);
-  // Eve (5) : assignée sur une tâche du chantier partagé (retenu sous chacun de ses projets) ; sa tâche sans
-  // chantier (2001, chargée) n'est pas retenue : elle est dans l'onglet « Mes tâches »
+  // Eve (5) : assignée sur une tâche du chantier partagé (retenu sous chacun de ses projets), et chargée sur une
+  // tâche sans chantier (2001), gardée sous « (sans chantier) » : passer à « Mes chantiers » ne masque aucune de
+  // ses tâches
   const eve = run({ scope: 'chantiers' }, { me: 5 });
-  assert.deepEqual([...eve.taskIds], [2010]);
-  assert.deepEqual(chantiers(eve), ['Chantier partagé', 'Chantier partagé']);
+  assert.deepEqual([...eve.taskIds].sort(), [2001, 2010]);
+  assert.deepEqual(chantiers(eve), ['Chantier partagé', 'Chantier partagé', '(sans chantier)']);
   // Contributeur seul : Fanny (6) ajoutée aux contributeurs du chantier partagé
   const model = buildModel(feuille());
   model.chantiers.get(201).contributeurs.push(6);
@@ -67,6 +68,60 @@ test('périmètre « Mes chantiers » : responsable ou contributeur, ou une tâc
     { field: 'scope', label: 'Mes chantiers' },
   ]);
   assert.deepEqual(activeFilterChips({ ...DEFAULT_FILTERS, scope: 'tasks' }, m), []);
+});
+
+test('Mes chantiers, « (sans chantier) » : seules mes tâches, ni celles des autres ni ce chantier sans tâche à moi', () => {
+  const raw = feuille();
+  const t = raw.tables.Tasks;
+  // Deux tâches sans chantier dans le projet de 2001 : une à Eve (sous-tâche d'une tâche de Bob), une à personne
+  const add = (row) => Object.keys(t).forEach((k) => t[k].push(k in row ? row[k] : null));
+  add({
+    id: 2002,
+    titre: 'Sans chantier, Bob',
+    Chantier: 0,
+    projet: 20,
+    parentTask: 0,
+    statut: 'todo',
+    assignees: ['L', 2],
+  });
+  add({
+    id: 2003,
+    titre: 'Sous-tâche d’Eve',
+    Chantier: 0,
+    projet: 20,
+    parentTask: 2002,
+    statut: 'todo',
+    assignees: ['L', 5],
+  });
+  add({ id: 2004, titre: 'Sans chantier, personne', Chantier: 0, projet: 20, parentTask: 0, statut: 'todo' });
+  const model = buildModel(raw);
+  const scoped = (me, f = {}) =>
+    applyFilters(model, { ...DEFAULT_FILTERS, scope: 'chantiers', ...f }, { ...DEFAULT_PREFS, me });
+  // Eve : 2001 et sa sous-tâche 2003 (la tâche de Bob 2002 reste affichée comme parent, sans être comptée)
+  const eve = scoped(5);
+  assert.deepEqual([...eve.taskIds].sort(), [2001, 2003, 2010]);
+  const loose = eve.tree.flatMap((c) => c.children.flatMap((p) => p.children)).find((c) => !c.ref);
+  const kids = Object.fromEntries(loose.children.map((n) => [n.taskId, n.children.map((x) => x.taskId)]));
+  assert.deepEqual(kids, { 2001: [], 2002: [2003] });
+  // Bob : sa tâche sans chantier, en plus de son chantier
+  assert.ok(scoped(2).taskIds.has(2002));
+  assert.ok(!scoped(2).taskIds.has(2004));
+  // Recherche dans « Mes chantiers » : la règle « seulement mes tâches » tient toujours
+  assert.deepEqual([...scoped(5, { search: 'sans chantier' }).taskIds].sort(), [2001, 2003]);
+  // Sans « Mes chantiers » : toutes les tâches sans chantier
+  assert.ok(applyFilters(model, DEFAULT_FILTERS, DEFAULT_PREFS).taskIds.has(2004));
+});
+
+test('Mes chantiers : une tâche terminée ne rend pas un chantier « mien » ; responsable ou contributeur, si', () => {
+  const raw = feuille();
+  const t = raw.tables.Tasks;
+  t.statut[t.id.indexOf(1002)] = 'done';
+  const model = buildModel(raw);
+  const scoped = (me) => applyFilters(model, { ...DEFAULT_FILTERS, scope: 'chantiers' }, { ...DEFAULT_PREFS, me });
+  // Alice (1) n'était dans le chantier 100 que par la tâche 1002, terminée : seul WP1 (dont elle est responsable)
+  assert.deepEqual([...scoped(1).taskIds], [2000]);
+  // Bob (2), responsable du chantier 100 : toujours retenu, tâches terminées comprises
+  assert.deepEqual([...scoped(2).taskIds].sort(), [1000, 1001, 1002]);
 });
 
 test('préférences : ancien périmètre « Mes tâches » et case « mine » → « Mes chantiers » ; inconnu → tout', () => {

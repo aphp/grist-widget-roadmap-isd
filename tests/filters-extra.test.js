@@ -131,8 +131,8 @@ test('« Je suis… » : première personne choisie → périmètre « Mes chant
   assert.equal(a.me, 5);
   assert.equal(a.mePrompted, true);
   assert.equal(a.filters.scope, 'chantiers');
-  // Eve (5) : le chantier partagé, où elle a une tâche (sa tâche sans chantier est dans l'onglet « Mes tâches »)
-  assert.deepEqual(ids(applyFilters(m, a.filters, a)), [2010]);
+  // Eve (5) : le chantier partagé, où elle a une tâche, et sa tâche sans chantier
+  assert.deepEqual(ids(applyFilters(m, a.filters, a)), [2001, 2010]);
   // L'utilisateur choisit « Tout », puis change de personne : le périmètre reste « Tout »
   const all = { ...a, filters: { ...a.filters, scope: 'all' } };
   assert.equal(choosePerson(all, 1, m.people.get(1)).filters.scope, 'all');

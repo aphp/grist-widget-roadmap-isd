@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
-
+## [Unreleased]
+- Status from the card and the row (editing on, task editable): "⋯" button on Kanban cards (keyboard: "S" or
+  Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
+  lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);
+  scroll and focus kept, the card follows its new column.
 - Team: optional `Team.aph` column (APH id) read and shown in the Team tab rows and the person card. It can be edited
   in the person form and on creation only once it is a data column in Grist; while it is the empty formula column of
   the Feuille, the field stays read-only with its reason. Strict check in the writer: 1 to 10 digits, or empty.

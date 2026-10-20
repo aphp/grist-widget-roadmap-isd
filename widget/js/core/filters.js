@@ -57,6 +57,8 @@ export const DEFAULT_PREFS = Object.freeze({
   /** Début des frises (AAAA-MM-JJ) ; null = premier jour du mois courant. */
   portfolioStart: null,
   portfolioMonths: 12,
+  /** Carte « Contrôle qualité des données » des Statistiques dépliée (repliée par défaut). */
+  statsQualityOpen: false,
   filters: DEFAULT_FILTERS,
 });
 
@@ -143,16 +145,29 @@ function chantierMatcher(model, key) {
   return (c) => c.ref?.table === sel.ref.table && c.ref.id === sel.ref.id;
 }
 
+/** Chantier virtuel « (sans chantier) » d'un projet (nœud chantier sans ligne Chantiers). */
+const isLooseChantier = (n) => n.kind === 'chantier' && !n.ref;
+
 /**
- * Prédicat « Mes chantiers » d'une personne : nœud d'un chantier (ligne Chantiers) dont elle est responsable ou
- * contributrice, ou qui porte au moins une tâche où elle est assignée, responsable ou chargée. Un chantier partagé
- * est retenu sous chacun de ses projets ; un chantier virtuel « (sans chantier) » ne l'est jamais.
+ * Prédicat « Mes chantiers » d'une personne :
+ * - nœud d'un chantier (ligne Chantiers) dont elle est responsable ou contributrice (quel que soit l'état de ses
+ *   tâches), ou qui porte au moins une tâche non terminée où elle est assignée, responsable ou chargée ; un
+ *   chantier partagé est retenu sous chacun de ses projets ;
+ * - chantier virtuel « (sans chantier) » d'un projet s'il porte une de ses tâches (seules ses tâches y sont
+ *   ensuite gardées, voir applyFilters) : passer à « Mes chantiers » ne masque jamais une de ses tâches.
  */
 function myChantierMatcher(model, me) {
   const viaTasks = new Set();
-  for (const t of model.tasks.values()) if (t.chantierId && involved(t).has(me)) viaTasks.add(t.chantierId);
+  for (const t of model.tasks.values()) if (t.chantierId && !t.done && involved(t).has(me)) viaTasks.add(t.chantierId);
+  const mine = (id) => {
+    const t = model.tasks.get(id);
+    return Boolean(t) && involved(t).has(me);
+  };
+  const hasMine = (n) => (n.taskId ? mine(n.taskId) : false) || n.children.some(hasMine);
   return (c) =>
-    c.ref?.table === 'Chantiers' && (viaTasks.has(c.ref.id) || onChantier(model.chantiers.get(c.ref.id), me));
+    isLooseChantier(c)
+      ? hasMine(c)
+      : c.ref?.table === 'Chantiers' && (viaTasks.has(c.ref.id) || onChantier(model.chantiers.get(c.ref.id), me));
 }
 
 /**
@@ -161,18 +176,21 @@ function myChantierMatcher(model, me) {
  */
 export function applyFilters(model, f, prefs) {
   const q = normalize(f.search);
-  // Mes chantiers : chantiers dont la personne est responsable ou contributrice, ou dont une tâche l'implique
-  // (assignée, responsable ou chargée), avec toutes leurs tâches
-  const chantierMine = f.scope === 'chantiers' && prefs.me ? myChantierMatcher(model, prefs.me) : null;
+  // Mes chantiers : chantiers dont la personne est responsable ou contributrice, ou dont une tâche en cours
+  // l'implique (assignée, responsable ou chargée), avec toutes leurs tâches ; sous « (sans chantier) », ses seules
+  // tâches
+  const me = f.scope === 'chantiers' && prefs.me ? prefs.me : null;
+  const chantierMine = me ? myChantierMatcher(model, me) : null;
   const hidden = new Set(prefs.hiddenProjects);
   const taskIds = new Set();
   const target = targetOf(f, prefs);
   const taskLevel = Boolean(f.person || f.profile || f.statuses.length || f.responsable);
   const chantierOk = f.chantier ? chantierMatcher(model, f.chantier) : null;
 
-  const taskOk = (task, respHit) => {
+  const taskOk = (task, respHit, onlyMine) => {
     if (f.responsable && !respHit) return false;
     const who = involved(task);
+    if (onlyMine && !who.has(me)) return false;
     if (f.person && !who.has(f.person)) return false;
     if (f.profile && ![...who].some((id) => model.people.get(id)?.isd && model.people.get(id).role === f.profile))
       return false;
@@ -187,16 +205,18 @@ export function applyFilters(model, f, prefs) {
     return n.ref?.table === 'Chantiers' && model.chantiers.get(n.ref.id)?.responsable === f.responsable;
   };
   // Recherche : le nœud ou un de ses ancêtres contient le texte
-  const prune = (n, ancestorHit, ancestorResp = false) => {
+  // Mes chantiers : sous « (sans chantier) », seules les tâches de la personne (onlyMine)
+  const prune = (n, ancestorHit, ancestorResp = false, ancestorMine = false) => {
     const hit = ancestorHit || (q !== '' && normalize(n.title).includes(q));
     const resp = ancestorResp || isResp(n);
-    const kids = n.children.map((c) => prune(c, hit, resp)).filter(Boolean);
+    const onlyMine = ancestorMine || Boolean(me && isLooseChantier(n));
+    const kids = n.children.map((c) => prune(c, hit, resp, onlyMine)).filter(Boolean);
     let keep = kids.length > 0;
     if (n.taskId) {
-      const ok = taskOk(model.tasks.get(n.taskId), resp) && (q === '' || hit);
+      const ok = taskOk(model.tasks.get(n.taskId), resp, onlyMine) && (q === '' || hit);
       if (ok) taskIds.add(n.taskId);
       keep = keep || ok;
-    } else if (!taskLevel && (q === '' || hit)) {
+    } else if (!taskLevel && !onlyMine && (q === '' || hit)) {
       keep = true;
     }
     return keep ? { ...n, children: kids } : null;
@@ -450,6 +470,7 @@ function sanitizePrefs(saved) {
     portfolioTab: PORTFOLIO_TABS.includes(tab) ? tab : DEFAULT_PREFS.portfolioTab,
     portfolioStart: isoDateOrNull(s.portfolioStart),
     portfolioMonths: PORTFOLIO_MONTHS.includes(s.portfolioMonths) ? s.portfolioMonths : DEFAULT_PREFS.portfolioMonths,
+    statsQualityOpen: s.statsQualityOpen === true,
     filters: {
       search: textOr(f.search, ''),
       categorie: textOr(f.categorie, legacy.categorie),

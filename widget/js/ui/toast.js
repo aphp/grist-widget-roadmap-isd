@@ -35,7 +35,8 @@ export function createToast() {
 
   // Focus dans le message (clavier) : il ne disparaît pas sous le curseur ; le délai repart à la sortie
   root.addEventListener('focusin', (e) => {
-    if (!root.contains(e.relatedTarget)) returnTo = e.relatedTarget instanceof HTMLElement ? e.relatedTarget : null;
+    // Sans élément d'origine (contenu remplacé sous le focus) : l'élément d'origine déjà noté est gardé
+    if (e.relatedTarget instanceof HTMLElement && !root.contains(e.relatedTarget)) returnTo = e.relatedTarget;
     clearTimeout(timer);
   });
   root.addEventListener('focusout', (e) => {
@@ -50,6 +51,12 @@ export function createToast() {
    */
   function show(message, opts = {}) {
     clearTimeout(timer);
+    // Un bouton du message a le focus : il le garde sur le nouveau message (même bouton, sinon « Fermer »)
+    const focused = root.contains(document.activeElement)
+      ? document.activeElement.hasAttribute('data-toast-action')
+        ? '[data-toast-action]'
+        : '[data-toast-close]'
+      : null;
     action = opts.onAction ?? null;
     root.innerHTML = h`<div class="toast ${opts.tone === 'error' ? 'toast--error' : ''}">
       <p class="toast__text">${message}</p>
@@ -57,6 +64,11 @@ export function createToast() {
       <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline fr-icon-close-line toast__close" data-toast-close title="${label('toast.close')}">${label('toast.close')}</button>
     </div>`.toString();
     duration = opts.duration ?? TOAST_MS;
+    if (focused) {
+      (root.querySelector(focused) ?? root.querySelector('[data-toast-close]'))?.focus();
+      // Focus gardé dans le message : le délai repartira à sa sortie (focusout)
+      return;
+    }
     timer = setTimeout(hide, duration);
   }
 

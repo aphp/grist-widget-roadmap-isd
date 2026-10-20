@@ -299,3 +299,9 @@ export function moveRows(links, taskId, changes) {
     before: { Chantier: byId.get(id).chantierId, projet: byId.get(id).projectId },
   }));
 }
+
+/** Le changement de chantier modifie-t-il aussi le projet (de la tâche ou d'une sous-tâche qui suit) ? */
+export function moveChangesProjet(plan) {
+  const to = plan.changes.projet;
+  return plan.before.projet !== to || plan.also.some((a) => a.before?.projet !== to);
+}
