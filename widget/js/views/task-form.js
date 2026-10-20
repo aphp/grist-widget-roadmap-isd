@@ -237,12 +237,12 @@ export function alertHtml(st, model) {
         : label(itemKey(st, `form.fail.${['acl', 'missing', 'reread'].includes(f.kind) ? f.kind : 'other'}`));
     return h`<div class="fr-alert ${raw(f.kind === 'reread' ? 'fr-alert--warning' : 'fr-alert--error')} fr-alert--sm tf-alert" role="alert" id="tf-alert" tabindex="-1">
       <p>${text}</p>
-      ${st.confirmNoCheck && 'tags' in st.draft && JSON.stringify(st.draft.tags) !== JSON.stringify(st.base.tags ?? []) ? h`<p class="tf-warn" id="tf-nocheck-tags">${label('form.tags.nocheckWarn')}</p>` : ''}
+      ${st.confirmNoCheck && st.noCheckTags ? h`<p class="tf-warn" id="tf-nocheck-tags">${label(st.noCheckRest ? 'form.tags.nocheckWarn' : 'form.tags.nocheckOnly')}</p>` : ''}
       ${
         st.confirmNoCheck
           ? h`<div class="tf-alert__actions">
         <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-form="save">${label('form.fail.retry')}</button>
-        <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-form="save-nocheck">${label('form.reread.force')}</button>
+        ${st.noCheckTags && !st.noCheckRest ? '' : h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-form="save-nocheck">${label(st.noCheckTags ? 'form.reread.forceNoTags' : 'form.reread.force')}</button>`}
         <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline" data-form="nocheck-cancel">${label('form.conflict.cancel')}</button>
       </div>`
           : ''

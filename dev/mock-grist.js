@@ -17,6 +17,7 @@
 //   statut-vide     : la tâche n° 1 n'a pas de statut (menu de statut sans entrée cochée) ;
 //   capacite-donnee : Team.capaciteHebdo devient une colonne de données (comme après sa conversion dans Grist par un
 //                     responsable) ; sans cette option, elle reste la colonne vide de la Feuille, non modifiable.
+// En cours de session, window.__lectureEchoue = true fait échouer toute lecture de table (relecture avant l'envoi).
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -197,6 +198,8 @@
     docApi: {
       fetchTable: async (t) => {
         window.__reads.push(t);
+        // Relecture en échec (tests de bout en bout) : window.__lectureEchoue = true en cours de session
+        if (window.__lectureEchoue) throw new Error('lecture impossible (simulée)');
         const d = await load();
         if (!d[t]) throw new Error(`KeyError: ${t}`);
         return structuredClone(d[t]);

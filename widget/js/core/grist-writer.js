@@ -919,7 +919,8 @@ export function createWriter({
    * @param {number} id
    * @param {object} changes valeurs du modèle des colonnes modifiées
    * @param {{before?:object, undoOf?:number, period?:{start:number|null, end:number|null},
-   *          also?:{table:string, id:number, changes:object, before?:object}[], replaceTags?:string}} [opts]
+   *          also?:{table:string, id:number, changes:object, before?:object}[], replaceTags?:string,
+   *          fresh?:object}} [opts] fresh : ligne relue par l'appelant juste avant cet envoi (decodeRow) ;
    *   valeurs d'avant (pour « Annuler » ; before.tagsUnreadable : contenu d'une cellule de tags illisible) ;
    *   period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées ; replaceTags :
    *   contenu illisible dont l'utilisateur a confirmé le remplacement
@@ -940,14 +941,24 @@ export function createWriter({
       'dateDebut' in ch ? ch.dateDebut : period.start,
       'dateEcheance' in ch ? ch.dateEcheance : period.end,
     );
-    // Tags : la ligne est lue par le writer lui-même (relue dans la Feuille en envoi réel, sinon les données
-    // chargées), pour ne jamais écraser une cellule illisible, quel que soit l'appelant (« Annuler » compris)
-    const current =
-      changes && 'tags' in changes
-        ? mode === 'on' && readTable
-          ? decodeRow(await readFresh(table), table, id)
-          : (lookup?.row(table, id) ?? null)
-        : null;
+    // Tags : le writer contrôle lui-même la ligne, pour ne jamais écraser une cellule illisible, quel que soit
+    // l'appelant (« Annuler » compris). Envoi réel : la ligne que l'appelant vient de relire pour ce même envoi
+    // (opts.fresh, relecture complète de decodeRow) évite une seconde lecture ; sinon la table est relue ici.
+    // Mode essai : les données chargées.
+    let current = null;
+    if (changes && 'tags' in changes) {
+      const reread = opts.fresh && 'tagsUnreadable' in opts.fresh && 'tags' in opts.fresh ? opts.fresh : null;
+      if (mode !== 'on' || !readTable) current = reread ?? lookup?.row(table, id) ?? null;
+      else if (reread) current = reread;
+      else {
+        try {
+          current = decodeRow(await readFresh(table), table, id);
+        } catch (err) {
+          if (err instanceof WriteRefused) throw new WriteRefused('tags-relecture', key(table, 'tags'));
+          throw err;
+        }
+      }
+    }
     const action = buildUpdate(table, id, changes, disabled, {
       current,
       before: opts.before,
@@ -1179,7 +1190,12 @@ export function createWriter({
       }
       let undoEntry = null;
       if (Object.keys(changes).length)
-        undoEntry = await update(entry.table, entry.id, changes, { before: entry.after, undoOf: entry.seq, also });
+        undoEntry = await update(entry.table, entry.id, changes, {
+          before: entry.after,
+          undoOf: entry.seq,
+          also,
+          ...(mode === 'on' && fresh ? { fresh } : {}),
+        });
       entry.undone = true;
       return { entry, skipped, undoEntry, busy: false };
     } finally {

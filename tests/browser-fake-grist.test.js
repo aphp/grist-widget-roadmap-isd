@@ -1705,25 +1705,32 @@ test(
     await until(`D.getElementById('tf-tags-replace-confirm')`);
     await clickOn('#tf-tags-replace-confirm');
     await until(`!D.getElementById('tf-tags').disabled`);
-    // Annonces : région persistante hors de la fiche redessinée, même nœud connecté d'un rendu à l'autre
-    await w(`D.getElementById('tf-tags').focus(); return true;`);
+    // Annonces : région persistante du panneau (#drawer-live), dans le dialogue mais hors du contenu redessiné ;
+    // le texte change sur le même nœud, resté connecté à chaque rendu
+    assert.equal(
+      await w(
+        `W.__live = D.getElementById('drawer-live'); return D.getElementById('app-detail').contains(W.__live) && !W.__live.closest('.drawer__content') && W.__live.getAttribute('aria-live');`,
+      ),
+      'polite',
+    );
+    await w(
+      `W.__connected = []; new W.MutationObserver(() => W.__connected.push(W.__live.isConnected)).observe(W.__live, { childList: true, characterData: true, subtree: true }); D.getElementById('tf-tags').focus(); return true;`,
+    );
     await typeIn('#tf-tags', 'remplacé');
     await until(`D.querySelector('.tf-tagopt--create')`);
     await tagKey('Enter');
     await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
-    await until(`/« remplacé » ajouté/.test(D.getElementById('tf-live')?.textContent ?? '')`);
-    assert.equal(
-      await w(`W.__live = D.getElementById('tf-live'); return !D.getElementById('app-detail').contains(W.__live);`),
-      true,
-    );
+    await until(`/« remplacé » ajouté/.test(W.__live.textContent)`);
     await clickOn('[data-remove-tag="0"]');
     await until(`/« remplacé » retiré/.test(W.__live.textContent)`);
-    assert.equal(await w(`return W.__live.isConnected && D.getElementById('tf-live') === W.__live;`), true);
     await typeIn('#tf-tags', 'remplacé');
     await until(`D.querySelector('.tf-tagopt')`);
     await tagKey('Enter');
     await until(`/« remplacé » ajouté/.test(W.__live.textContent)`);
-    assert.equal(await w(`return W.__live.isConnected && D.getElementById('tf-live') === W.__live;`), true);
+    assert.equal(await w(`return D.getElementById('drawer-live') === W.__live && W.__live.isConnected;`), true);
+    // Chaque changement de texte (vidé puis posé, trois messages) a eu lieu sur le nœud connecté
+    const seen = await w(`return W.__connected;`);
+    assert.ok(seen.length >= 3 && seen.every(Boolean), JSON.stringify(seen));
     assert.equal(await w(`return D.getElementById('tf-tags-label').getAttribute('tabindex');`), '-1');
     await clickOn('#btn-form-save');
     await until(`W.__writes.length === 2`);
@@ -2120,5 +2127,35 @@ test(
     // Toujours là après la relecture qui suit l'annulation
     await sleep(500);
     assert.equal(await w(`return D.activeElement?.id;`), `kc-${id}`);
+  },
+);
+
+test(
+  'tags (2e) : relecture impossible, « Enregistrer sans vérifier » n’envoie jamais les tags et le dit',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    const id = await openForm();
+    await w(`D.getElementById('tf-tags').focus(); return true;`);
+    await typeIn('#tf-tags', 'sans relecture');
+    await until(`D.querySelector('.tf-tagopt--create')`);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    // Tags seuls : pas de bouton « sans vérifier », message clair
+    await w(`W.__lectureEchoue = true; return true;`);
+    await clickOn('#btn-form-save');
+    await until(`D.getElementById('tf-nocheck-tags')`);
+    assert.match(await w(`return D.getElementById('tf-nocheck-tags').textContent;`), /jamais sans vérification/);
+    assert.equal(await w(`return Boolean(D.querySelector('[data-form="save-nocheck"]'));`), false);
+    // Avec un autre champ : le bouton n'enregistre que ce champ
+    await clickOn('[data-form="nocheck-cancel"]');
+    await typeIn('#tf-titre', 'Titre sans relecture');
+    await clickOn('#btn-form-save');
+    await until(`D.querySelector('[data-form="save-nocheck"]')`);
+    assert.match(await w(`return D.querySelector('[data-form="save-nocheck"]').textContent;`), /sans les tags/);
+    assert.match(await w(`return D.getElementById('tf-nocheck-tags').textContent;`), /ne seront pas enregistrés/);
+    await clickOn('[data-form="save-nocheck"]');
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { titre: 'Titre sans relecture' }]]);
   },
 );

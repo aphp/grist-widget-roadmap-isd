@@ -497,6 +497,9 @@ export function createTaskEditor(deps) {
     }
     if (result.kind === 'reread-failed') {
       cur.confirmNoCheck = true;
+      // Tags : jamais enregistrés sans vérification (« Enregistrer sans vérifier » n'envoie que le reste)
+      cur.noCheckTags = 'tags' in ch;
+      cur.noCheckRest = Object.keys(ch).filter((c) => c !== 'tags').length;
       cur.fail = failFrom(result, ch);
       return render('tf-alert');
     }
@@ -631,20 +634,13 @@ export function createTaskEditor(deps) {
   }
 
   /**
-   * Annonce aux lecteurs d'écran (tag ajouté, retiré) dans une région persistante hors de la fiche : la fiche est
-   * entièrement redessinée à chaque rendu, une région créée avec son texte n'y serait pas lue. Le texte est vidé
-   * puis posé au tour suivant, pour qu'un même message répété soit relu.
+   * Annonce aux lecteurs d'écran (tag ajouté, retiré) dans la région persistante du panneau (#drawer-live, créée
+   * par ui/drawer.js et jamais remplacée par un rendu de la fiche). Le texte est vidé puis posé au tour suivant,
+   * pour qu'un même message répété soit relu.
    */
   function speakTags(text) {
-    let el = document.getElementById('tf-live');
-    if (!el) {
-      el = document.createElement('p');
-      el.id = 'tf-live';
-      el.className = 'fr-sr-only';
-      el.setAttribute('role', 'status');
-      el.setAttribute('aria-live', 'polite');
-      document.body.append(el);
-    }
+    const el = document.getElementById('drawer-live');
+    if (!el) return;
     el.textContent = '';
     setTimeout(() => {
       el.textContent = text;
@@ -953,8 +949,20 @@ export function createTaskEditor(deps) {
     } else {
       const action = t.dataset.form;
       if (action === 'save' || action === 'leave-save') save();
-      else if (action === 'save-nocheck') save({ skipCheck: true });
-      else if (action === 'cancel') close();
+      else if (action === 'save-nocheck') {
+        const ch = changes();
+        if (!('tags' in ch)) save({ skipCheck: true });
+        else {
+          // Sans vérification, les tags ne partent pas : seulement les autres champs (annoncé dans le message)
+          const rest = Object.fromEntries(Object.entries(ch).filter(([c]) => c !== 'tags'));
+          if (Object.keys(rest).length)
+            save({
+              skipCheck: true,
+              changes: rest,
+              before: Object.fromEntries(Object.keys(rest).map((c) => [c, st.base[c]])),
+            });
+        }
+      } else if (action === 'cancel') close();
       else if (action === 'clear-closure') {
         if (!applyDraft({ ...st.draft, dateCloture: null })) return;
         st.badDates.delete('dateCloture');

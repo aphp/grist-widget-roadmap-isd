@@ -643,9 +643,14 @@ const FR = Object.freeze({
     'Les tags choisis remplaceront ce contenu dans la Feuille, et « Annuler » ne pourra pas le rendre. Copiez-le avant si besoin. Confirmer ?',
   'form.tags.replaceConfirm': 'Oui, remplacer',
   'form.tags.nocheckWarn':
-    'Sans vérification, vos tags remplacent toute la liste : un tag ajouté ou retiré ailleurs entre-temps serait écrasé.',
+    'Les tags ne s’enregistrent jamais sans vérification : « Enregistrer sans vérifier » n’enregistre que les autres champs, vos tags ne seront pas enregistrés.',
+  'form.tags.nocheckOnly':
+    'Les tags ne s’enregistrent jamais sans vérification (ceux ajoutés ou retirés ailleurs seraient écrasés) : réessayez quand la Feuille répond.',
+  'form.reread.forceNoTags': 'Enregistrer sans vérifier, sans les tags',
   'detail.tags.unreadable': 'Contenu illisible : {texte}',
   'form.refused.tags-trop': 'trop de tags sur la ligne (30 au plus), en comptant ceux ajoutés ailleurs entre-temps',
+  'form.refused.tags-relecture':
+    'impossible de relire la Feuille pour vérifier la cellule des tags avant de l’écrire ; rien n’a été envoyé, réessayez',
   'form.refused.tags-illisible':
     'la cellule des tags n’est pas une liste lisible dans la Feuille ; elle n’est remplacée qu’après confirmation',
   'form.error.tags': 'Corrigez les tags : {raison}.',

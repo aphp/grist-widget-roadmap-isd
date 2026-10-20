@@ -501,3 +501,49 @@ test('relecture : tagsUnreadable toujours présent (null si lisible), aucun anci
   assert.equal(merged.tagsUnreadable, null);
   assert.deepEqual(merged.tags, ['ok']);
 });
+
+test('writer : une seule lecture par envoi de tags (ligne relue par l’appelant), refus propre si la relecture échoue', async () => {
+  const tables = tagged().tables;
+  for (const c of WRITABLE.Tasks.update) tables.Tasks[c] ??= tables.Tasks.id.map(() => null);
+  const g = createFakeGrist(tables);
+  const gw = createGateway(g);
+  let reads = 0;
+  let failRead = false;
+  const readTable = async (t) => {
+    reads++;
+    if (failRead) throw new Error('réseau');
+    return g.docApi.fetchTable(t);
+  };
+  const writer = createWriter({ docApi: g.docApi, mode: 'on', columns: META, lookup: lookupOf(g), readTable });
+  const fetchRow = (id) => gw.fetchRow('Tasks', id);
+  // runSave relit la ligne et la passe au writer : aucune lecture de table en plus
+  const base = await fetchRow(1001);
+  const r = await runSave({ taskId: 1001, base, draft: { ...draftFrom(base), tags: ['qualité'] }, writer, fetchRow });
+  assert.equal(r.kind, 'saved');
+  assert.equal(reads, 0);
+  // Le writer contrôle quand même la ligne fournie : cellule illisible relue = refus
+  g.otherUserSets('Tasks', 1000, { tags: 'importé' });
+  const b2 = await fetchRow(1000);
+  await assert.rejects(
+    writer.update('Tasks', 1000, { tags: ['x'] }, { before: { tags: [] }, fresh: b2 }),
+    (e) => e.reason === 'tags-illisible',
+  );
+  assert.equal(reads, 0);
+  // Sans ligne fournie (ou ligne incomplète) : le writer relit la table lui-même
+  await writer.update('Tasks', 1001, { tags: [] }, { before: { tags: ['qualité'] }, fresh: { tags: [] } });
+  assert.equal(reads, 1);
+  // Relecture en échec : refus propre aux tags, rien n'est envoyé
+  failRead = true;
+  const sent = g.batches.length;
+  await assert.rejects(
+    writer.update('Tasks', 1001, { tags: ['y'] }, { before: { tags: [] } }),
+    (e) => e instanceof WriteRefused && e.reason === 'tags-relecture',
+  );
+  assert.equal(g.batches.length, sent);
+  // « Annuler » : la ligne relue pour l'annulation sert au contrôle (pas de seconde lecture de table)
+  failRead = false;
+  reads = 0;
+  const u = await writer.undoLast((t, id) => fetchRow(id));
+  assert.ok(u.undoEntry);
+  assert.equal(reads, 0);
+});

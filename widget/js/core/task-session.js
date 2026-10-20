@@ -157,7 +157,14 @@ export async function runSave(snap) {
     }
     return {
       kind: 'saved',
-      entry: await writer.update(table, taskId, changes, { before, period, also, replaceTags: snap.tagsReplace }),
+      entry: await writer.update(table, taskId, changes, {
+        before,
+        period,
+        also,
+        replaceTags: snap.tagsReplace,
+        // Ligne relue pour cet envoi : le writer y contrôle la cellule de tags sans relire la table
+        ...(source !== base ? { fresh: source } : {}),
+      }),
     };
   } catch (error) {
     if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
