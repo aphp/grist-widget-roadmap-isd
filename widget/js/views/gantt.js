@@ -1,6 +1,8 @@
 /**
  * Vue Gantt (lecture seule) : arbre catégorie → projet → chantier → tâche → sous-tâche, une ligne par élément,
  * barres positionnées en % de la fenêtre (un seul passage innerHTML, écouteurs délégués), export PDF.
+ * Mode « Chantier » : teintes calculées une fois par rendu (chantierSlots) ; chaque ligne d'un chantier porte
+ * seulement la classe de sa teinte (gch-1 à gch-7), le CSS fait le reste (pastille, trait, bande, barres).
  */
 import { raw } from '../core/sanitize.js';
 import { formatDateFr } from '../core/dates.js';
@@ -13,11 +15,14 @@ import {
   STATUS_COLORS,
   LABEL_WIDTH,
   barGeometry,
+  chantierSlots,
+  chantierTone,
   chronoItems,
   clampLabelWidth,
   colorKey,
   defaultLabelWidth,
   expandableKeys,
+  fadedOnWhite,
   ganttRows,
   levelExpanded,
   isEmptyContainer,
@@ -64,6 +69,12 @@ function colorName(key, colorBy) {
 
 /** Classe de couleur : un statut hors des quatre connus est dessiné creux (distinct de « À faire »). */
 const fillOf = (ck, colorBy) => (colorBy === 'status' && ck === 'other' ? 'hollow' : ck);
+/** Opacité d'une barre terminée en mode « chantier » (identique au CSS, sert à la légende du PDF). */
+const DONE_OPACITY = 0.45;
+/** Classe de la teinte d'un chantier (variables --ch, --ch-deep, --ch-band du CSS). */
+const toneClass = (tone) => `gch-${tone.slot + 1}`;
+/** Pastille d'un chantier (décorative : son nom est écrit à côté). */
+const chipHtml = (tone) => h`<span class="grow__chip ${toneClass(tone)}" aria-hidden="true"></span>`;
 
 function datesText(bar) {
   if (!bar) return label('gantt.noDates');
@@ -74,39 +85,61 @@ function datesText(bar) {
   return bar.deduced ? `${label('gantt.deduced')} : ${d.charAt(0).toLowerCase()}${d.slice(1)}` : d;
 }
 
-/** Description complète d'une ligne (infobulle et nom accessible des barres). */
-function describe(ctx, r, colorBy) {
+/**
+ * Description complète d'une ligne (infobulle et nom accessible des barres). En mode « chantier », l'étape
+ * reste dite et le chantier d'une tâche est nommé (la couleur n'est jamais seule).
+ */
+function describe(ctx, r, colorBy, tone = null) {
   const n = r.node;
   const bar = nodeBar(n);
   const parts = [`${label(`gantt.kind.${n.kind}`)} : ${n.title || label('common.untitled')}`, datesText(bar)];
   if (n.status) parts.push(label('gantt.status', { statut: statusLabel(n.status) }));
-  if (LEAF_KINDS.has(n.kind) && colorBy === 'phase')
+  if (LEAF_KINDS.has(n.kind) && colorBy !== 'status')
     parts.push(label('gantt.phase', { etape: colorName(phaseOf(n.title) ?? 'other', 'phase') }));
+  if (tone && n.kind !== 'chantier') parts.push(label('gantt.chantier', { titre: tone.title }));
   if (isEmptyContainer(n)) parts.push(label('gantt.noTasks'));
   if (isMilestone(ctx.model, n)) parts.push(label('gantt.milestone'));
   if (isLate(ctx.model, n, ctx.today)) parts.push(label('gantt.late'));
   return parts.join('. ');
 }
 
-function tipHtml(ctx, r, colorBy) {
+/** Lignes « Étape » et « Chantier » de l'infobulle en mode « chantier » (pastille du chantier). */
+function chantierTipHtml(n, tone) {
+  return h`${LEAF_KINDS.has(n.kind) ? h`<span class="gtip__line">${label('gantt.phase', { etape: colorName(phaseOf(n.title) ?? 'other', 'phase') })}</span>` : ''}
+    ${tone && n.kind !== 'chantier' ? h`<span class="gtip__line">${chipHtml(tone)}${label('gantt.chantier', { titre: tone.title })}</span>` : ''}`;
+}
+
+function tipHtml(ctx, r, colorBy, slots) {
   const n = r.node;
   const bar = nodeBar(n);
   const late = isLate(ctx.model, n, ctx.today);
   const ms = isMilestone(ctx.model, n);
   const ck = colorKey(n, colorBy);
-  const showColor = LEAF_KINDS.has(n.kind);
+  const byChantier = colorBy === 'chantier';
+  const showColor = LEAF_KINDS.has(n.kind) && !byChantier;
   return h`<span class="gtip__kind">${label(`gantt.kind.${n.kind}`)}</span>
     <strong class="gtip__title">${n.title || label('common.untitled')}</strong>
     <span class="gtip__line">${datesText(bar)}</span>
     ${n.status || late || ms ? h`<span class="gtip__badges">${n.status ? statusBadge(n.status) : ''}${ms ? h`<span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--purple-glycine">${label('gantt.milestone')}</span>` : ''}${late ? h`<span class="fr-badge fr-badge--sm fr-badge--error">${label('gantt.late')}</span>` : ''}</span>` : ''}
-    ${showColor ? h`<span class="gtip__line"><span class="gswatch gswatch--${fillOf(ck, colorBy)}" aria-hidden="true"></span>${colorBy === 'phase' ? label('gantt.phase', { etape: colorName(ck, colorBy) }) : label('gantt.status', { statut: colorName(ck, colorBy) })}</span>` : ''}`;
+    ${showColor ? h`<span class="gtip__line"><span class="gswatch gswatch--${fillOf(ck, colorBy)}" aria-hidden="true"></span>${colorBy === 'phase' ? label('gantt.phase', { etape: colorName(ck, colorBy) }) : label('gantt.status', { statut: colorName(ck, colorBy) })}</span>` : ''}
+    ${byChantier ? chantierTipHtml(n, chantierTone(ctx.model, n, slots)) : ''}`;
 }
 
-function trackHtml(ctx, r, i, scale, colorBy) {
+/**
+ * Classe de couleur d'une barre : en mode « chantier », le chantier a une barre de synthèse (teinte foncée de
+ * sa teinte), ses tâches la teinte du chantier (gbar--ch) ; hors chantier, couleur neutre.
+ */
+function barKind(n, colorBy, tone) {
+  if (colorBy === 'chantier')
+    return n.kind === 'tache' || n.kind === 'sous-tache' ? (tone ? 'ch' : 'other') : 'summary';
+  return LEAF_KINDS.has(n.kind) ? fillOf(colorKey(n, colorBy), colorBy) : 'summary';
+}
+
+function trackHtml(ctx, r, i, scale, colorBy, tone) {
   const n = r.node;
   const bar = nodeBar(n);
   if (!bar) return h`<span class="grow__nodates">${label('gantt.noDates')}</span>`;
-  const desc = describe(ctx, r, colorBy);
+  const desc = describe(ctx, r, colorBy, tone);
   const ms = isMilestone(ctx.model, n);
   const g = ms ? barGeometry(scale, bar.end, bar.end) : barGeometry(scale, bar.start, bar.end);
   if (g.outside) {
@@ -115,15 +148,18 @@ function trackHtml(ctx, r, i, scale, colorBy) {
     return h`<button type="button" class="gout gout--${g.outside}" data-i="${i}" tabindex="-1" aria-label="${desc}. ${text}">${icon(g.outside === 'before' ? 'arrow-left-s-line' : 'arrow-right-s-line')}<span class="gout__text">${date}</span></button>`;
   }
   const late = isLate(ctx.model, n, ctx.today);
-  const ck = LEAF_KINDS.has(n.kind) ? fillOf(colorKey(n, colorBy), colorBy) : 'summary';
+  const ck = barKind(n, colorBy, tone);
+  // Tâche terminée : barre délavée en mode « chantier » (le statut n'y a pas de couleur)
+  const done = colorBy === 'chantier' && n.status === 'done' ? ' is-done' : '';
   if (ms)
-    return h`<button type="button" class="gms gms--${ck}${late ? ' is-late' : ''}" style="left:${pct(g.left + g.width / 2)}" data-i="${i}" tabindex="-1" aria-label="${desc}"></button>`;
+    return h`<button type="button" class="gms gms--${ck}${late ? ' is-late' : ''}${done}" style="left:${pct(g.left + g.width / 2)}" data-i="${i}" tabindex="-1" aria-label="${desc}"></button>`;
   const cls = [
     'gbar',
     `gbar--${ck}`,
-    LEAF_KINDS.has(n.kind) ? '' : 'gbar--summary',
+    ck === 'summary' ? 'gbar--summary' : '',
     bar.deduced ? 'gbar--deduced' : '',
     late ? 'is-late' : '',
+    done.trim(),
     g.clipStart ? 'gbar--clip-start' : '',
     g.clipEnd ? 'gbar--clip-end' : '',
   ]
@@ -133,8 +169,12 @@ function trackHtml(ctx, r, i, scale, colorBy) {
   return h`<button type="button" class="${cls}" style="left:${pct(g.left)};width:${pct(g.width)}" data-i="${i}" tabindex="-1" aria-label="${desc}">${text ? h`<span class="gbar__text" aria-hidden="true">${text}</span>` : ''}</button>`;
 }
 
-/** Nom écrit dans la barre (masqué par le CSS si la barre est trop étroite) : étape connue, ou statut. */
+/**
+ * Nom écrit dans la barre (masqué par le CSS si la barre est trop étroite) : étape connue, ou statut ; rien en
+ * mode « chantier » (l'étape reste dans l'infobulle et le nom accessible).
+ */
 function barText(n, colorBy) {
+  if (colorBy === 'chantier') return '';
   if (colorBy === 'status') return n.status ? statusLabel(n.status) : '';
   const phase = phaseOf(n.title);
   return phase ? colorName(phase, 'phase') : '';
@@ -145,8 +185,9 @@ function barText(n, colorBy) {
  * pour tout l'arbre, focus itinérant), son niveau, sa position dans la fratrie et son état déplié.
  * Flèche et titre restent cliquables à la souris ; au clavier : ←/→, ↑/↓, Début/Fin, Entrée.
  */
-function rowHtml(ctx, r, i, scale, colorBy, focusIndex) {
+function rowHtml(ctx, r, i, scale, colorBy, focusIndex, slots) {
   const n = r.node;
+  const tone = slots ? chantierTone(ctx.model, n, slots) : null;
   const title = n.title || label('common.untitled');
   const toggle = r.hasChildren
     ? h`<span class="grow__toggle fr-icon-arrow-${r.expanded ? 'down' : 'right'}-s-line" data-toggle="${i}" data-expanded="${r.expanded}" title="${label(r.expanded ? 'gantt.collapse' : 'gantt.expand', { titre: title })}" aria-hidden="true"></span>`
@@ -155,43 +196,65 @@ function rowHtml(ctx, r, i, scale, colorBy, focusIndex) {
     ? h`<span class="grow__title" data-open="${i}" data-i="${i}" title="${title}">${title}</span>`
     : h`<span class="grow__title grow__title--static" data-i="${i}" title="${title}">${title}</span>`;
   const empty = isEmptyContainer(n) ? h`<span class="grow__empty">${label('gantt.noTasks')}</span>` : '';
-  return h`<div class="grow grow--${n.kind}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}" aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy)}">
-    <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${name}${empty}</div>
-    <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy)}</div>
+  const chip = tone && n.kind === 'chantier' ? chipHtml(tone) : '';
+  const cls = tone ? ` grow--ch ${toneClass(tone)}` : '';
+  return h`<div class="grow grow--${n.kind}${cls}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}" aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy, tone)}">
+    <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${chip}${name}${empty}</div>
+    <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy, tone)}</div>
   </div>`;
 }
 
-/** Liste chronologique (petits écrans) : titre, chemin, dates, étape ou statut, barre mini dans la fenêtre. */
-function listHtml(ctx, items, colorBy) {
+/**
+ * Liste chronologique (petits écrans) : titre, chemin, dates, étape ou statut, barre mini dans la fenêtre ;
+ * en mode « chantier », pastille du chantier devant le chemin et barre de sa teinte.
+ */
+function listHtml(ctx, items, colorBy, slots) {
   if (!items.length) return h`<p class="glist__empty">${label('gantt.list.none')}</p>`;
   return h`<ol class="list glist" aria-label="${label('gantt.list.label')}">
     ${items.slice(0, LIST_MAX).map((it) => {
       const n = it.node;
       const title = n.title || label('common.untitled');
-      const ck = fillOf(colorKey(n, colorBy), colorBy);
+      const tone = slots ? chantierTone(ctx.model, n, slots) : null;
+      const ck = barKind(n, colorBy, tone);
       const late = isLate(ctx.model, n, ctx.today);
       const ms = isMilestone(ctx.model, n);
       const g = it.geometry;
-      const tone = barText(n, colorBy);
-      return h`<li class="glist__item${late ? ' glist__item--late' : ''}">
+      const step = barText(n, colorBy);
+      return h`<li class="glist__item${late ? ' glist__item--late' : ''}${tone ? ` ${toneClass(tone)}` : ''}">
         ${n.ref ? h`<button type="button" class="glist__title" data-open-key="${it.key}">${title}</button>` : h`<span class="glist__title">${title}</span>`}
-        ${it.path.length ? h`<span class="glist__path">${it.path.join(' › ')}</span>` : ''}
-        <span class="glist__meta"><span>${datesText(it.bar)}</span>${tone ? h`<span>${tone}</span>` : ''}${ms ? h`<span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--purple-glycine">${label('gantt.milestone')}</span>` : ''}${late ? h`<span class="fr-badge fr-badge--sm fr-badge--error">${label('gantt.late')}</span>` : ''}</span>
-        <span class="glist__track" aria-hidden="true"><span class="glist__bar gbar--${ck}${it.bar.deduced ? ' glist__bar--deduced' : ''}" style="left:${pct(g.left)};width:${pct(g.width)}"></span></span>
+        ${it.path.length ? h`<span class="glist__path">${tone ? chipHtml(tone) : ''}${it.path.join(' › ')}</span>` : ''}
+        <span class="glist__meta"><span>${datesText(it.bar)}</span>${step ? h`<span>${step}</span>` : ''}${ms ? h`<span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--purple-glycine">${label('gantt.milestone')}</span>` : ''}${late ? h`<span class="fr-badge fr-badge--sm fr-badge--error">${label('gantt.late')}</span>` : ''}</span>
+        <span class="glist__track" aria-hidden="true"><span class="glist__bar gbar--${ck}${it.bar.deduced ? ' glist__bar--deduced' : ''}${colorBy === 'chantier' && n.status === 'done' ? ' is-done' : ''}" style="left:${pct(g.left)};width:${pct(g.width)}"></span></span>
       </li>`;
     })}
   </ol>
   ${items.length > LIST_MAX ? h`<p class="glist__more">${label('gantt.list.more', { n: (items.length - LIST_MAX).toLocaleString('fr-FR') })}</p>` : ''}`;
 }
 
+/** Légende du mode « chantier » : pastilles, barre du chantier, terminé, puis les marques communes. */
+function chantierLegendHtml() {
+  return h`<ul class="list gantt__legend" aria-label="${label('gantt.legend')}">
+    <li><span class="gswatch gswatch--chips" aria-hidden="true">${[0, 1, 2].map((slot) => chipHtml({ slot }))}</span>${label('gantt.legend.chantier')}</li>
+    <li><span class="gswatch gswatch--chbar gch-1" aria-hidden="true"></span>${label('gantt.legend.chantierBar')}</li>
+    <li><span class="gswatch gswatch--chdone gch-1" aria-hidden="true"></span>${label('gantt.legend.done')}</li>
+    ${commonLegendHtml()}
+  </ul>`;
+}
+
+/** Marques communes à toutes les légendes : déduite, jalon, retard, aujourd'hui. */
+function commonLegendHtml() {
+  return h`<li title="${label('gantt.deduced.help')}"><span class="gswatch gswatch--deduced" aria-hidden="true"></span>${label('gantt.deduced')}</li>
+    <li><span class="gswatch gswatch--milestone" aria-hidden="true"></span>${label('gantt.milestone')}</li>
+    <li><span class="gswatch gswatch--late" aria-hidden="true"></span>${label('gantt.late')}</li>
+    <li><span class="gswatch gswatch--today" aria-hidden="true"></span>${label('gantt.todayLine')}</li>`;
+}
+
 function legendHtml(colorBy) {
+  if (colorBy === 'chantier') return chantierLegendHtml();
   const keys = colorBy === 'phase' ? [...PHASES, 'other'] : [...STATUS_COLORS, 'other'];
   return h`<ul class="list gantt__legend" aria-label="${label('gantt.legend')}">
     ${keys.map((k) => h`<li><span class="gswatch gswatch--${fillOf(k, colorBy)}" aria-hidden="true"></span>${colorName(k, colorBy)}</li>`)}
-    <li title="${label('gantt.deduced.help')}"><span class="gswatch gswatch--deduced" aria-hidden="true"></span>${label('gantt.deduced')}</li>
-    <li><span class="gswatch gswatch--milestone" aria-hidden="true"></span>${label('gantt.milestone')}</li>
-    <li><span class="gswatch gswatch--late" aria-hidden="true"></span>${label('gantt.late')}</li>
-    <li><span class="gswatch gswatch--today" aria-hidden="true"></span>${label('gantt.todayLine')}</li>
+    ${commonLegendHtml()}
   </ul>`;
 }
 
@@ -209,12 +272,21 @@ const PRINT_OF = Object.freeze({
 
 function pdfLegend(colorBy) {
   const keys = colorBy === 'phase' ? [...PHASES, 'other'] : [...STATUS_COLORS, 'other'];
+  const [fill] = VIZ_PRINT.chantier;
+  const colors =
+    colorBy === 'chantier'
+      ? [
+          { label: label('gantt.legend.chantier'), color: fill, mark: 'box' },
+          { label: label('gantt.legend.chantierBar'), color: VIZ_PRINT.chantierDeep[0], mark: 'box' },
+          { label: label('gantt.legend.done'), color: fill, mark: 'light', light: fadedOnWhite(fill, DONE_OPACITY) },
+        ]
+      : keys.map((k) => ({
+          label: colorName(k, colorBy),
+          color: PRINT_OF[k],
+          mark: fillOf(k, colorBy) === 'hollow' ? 'outline' : 'box',
+        }));
   return [
-    ...keys.map((k) => ({
-      label: colorName(k, colorBy),
-      color: PRINT_OF[k],
-      mark: fillOf(k, colorBy) === 'hollow' ? 'outline' : 'box',
-    })),
+    ...colors,
     { label: label('gantt.deduced'), color: VIZ_PRINT.summary, mark: 'light' },
     { label: label('gantt.milestone'), color: VIZ_PRINT.summary, mark: 'diamond' },
     { label: label('gantt.late'), color: VIZ_PRINT.late, mark: 'outline' },
@@ -265,7 +337,7 @@ export function render(el, ctx) {
   const narrow = typeof window !== 'undefined' ? window.matchMedia?.(NARROW) : null;
   const st = {
     scale: scaleMode,
-    colorBy: COLOR_BY.includes(saved.ganttColorBy) ? saved.ganttColorBy : 'phase',
+    colorBy: COLOR_BY.includes(saved.ganttColorBy) ? saved.ganttColorBy : 'chantier',
     // La période choisie survit aux rechargements des données (nouveau rendu de la vue)
     anchor: memory.scale === scaleMode && memory.anchor !== null ? memory.anchor : todayAnchor(scaleMode, ctx.today),
     // Niveau choisi (Projets… Sous-tâches) ou dépliage ligne par ligne mémorisé (« custom »)
@@ -291,6 +363,8 @@ export function render(el, ctx) {
   let rows = [];
   let items = [];
   let scale = null;
+  /** Teintes des chantiers (mode « chantier »), recalculées à chaque rendu, jamais par ligne. */
+  let slots = null;
 
   const persistExpanded = () => {
     if (searching) return;
@@ -337,6 +411,7 @@ export function render(el, ctx) {
     scale = timeScale(st.scale, st.anchor);
     rows = isList ? [] : ganttRows(tree, st.expanded);
     items = isList ? chronoItems(tree, scale) : [];
+    slots = st.colorBy === 'chantier' ? chantierSlots(ctx.model) : null;
     memory.anchor = st.anchor;
     memory.scale = st.scale;
     let focusIndex = rows.findIndex((r) => r.key === st.focusKey);
@@ -412,7 +487,7 @@ export function render(el, ctx) {
           isList
             ? h`<div class="gantt__list">${
                 tree.length
-                  ? listHtml(ctx, items, st.colorBy)
+                  ? listHtml(ctx, items, st.colorBy, slots)
                   : h`<div class="gantt__empty">
                     <p class="gantt__empty-title">${label('gantt.empty')}</p>
                     <p>${label('gantt.empty.hint')}</p>
@@ -420,13 +495,13 @@ export function render(el, ctx) {
                   </div>`
               }</div>`
             : h`<div class="gantt__scroll" tabindex="-1" data-scroll-key="gantt">
-          <div class="gantt__grid" role="treegrid" aria-label="${label('gantt.label')}" aria-describedby="gantt-help" style="--timeline-min:${TIMELINE_MIN[st.scale]}px">
+          <div class="gantt__grid${st.colorBy === 'chantier' ? ' gantt__grid--chantier' : ''}" role="treegrid" aria-label="${label('gantt.label')}" aria-describedby="gantt-help" style="--timeline-min:${TIMELINE_MIN[st.scale]}px">
             ${headHtml(scale, ctx.today, width)}
             <div class="gantt__body" role="rowgroup">
               ${linesHtml(scale, ctx.today)}
               ${
                 rows.length
-                  ? raw(rows.map((r, i) => rowHtml(ctx, r, i, scale, st.colorBy, focusIndex)).join(''))
+                  ? raw(rows.map((r, i) => rowHtml(ctx, r, i, scale, st.colorBy, focusIndex, slots)).join(''))
                   : h`<div class="gantt__empty" role="row"><div role="gridcell">
                     <p class="gantt__empty-title">${label('gantt.empty')}</p>
                     <p>${label('gantt.empty.hint')}</p>
@@ -459,7 +534,7 @@ export function render(el, ctx) {
     const tip = el.querySelector('#gantt-tip');
     if (!r || !tip) return;
     tipFor = target;
-    tip.innerHTML = tipHtml(ctx, r, st.colorBy).toString();
+    tip.innerHTML = tipHtml(ctx, r, st.colorBy, slots).toString();
     tip.hidden = false;
     // Ancrage : la barre de la ligne si elle est visible, sinon l'élément lui-même
     const rowEl = target.closest('.grow');

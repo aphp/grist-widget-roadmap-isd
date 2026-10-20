@@ -2489,6 +2489,43 @@ test(
   },
 );
 
+test(
+  '« ISD seulement » : une carte sans personne ISD disparaît du Kanban, le compteur baisse, la pastille apparaît',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    // Recherche sur la tâche inventée sans personne ISD (colonnes paginées : elle ne serait pas toujours visible)
+    await w(
+      `const s = D.getElementById('f-search'); s.value = 'externe sans ISD'; s.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`,
+    );
+    const cards = `D.querySelectorAll('#view-panel[data-view="kanban"] .kcard').length`;
+    const count = `D.querySelector('.task-count').textContent.trim()`;
+    await until(`${cards} === 1`);
+    assert.equal(await w(`return ${count};`), '1 tâche');
+    assert.equal(await w(`return D.getElementById('chip-isdOnly') === null;`), true);
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.getElementById('chip-isdOnly') && ${cards} === 0`);
+    assert.match(await w(`return D.getElementById('chip-isdOnly').textContent;`), /ISD seulement/);
+    assert.equal(await w(`return ${count};`), 'Aucune tâche');
+    // Décochée : la carte revient
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
+    assert.equal(await w(`return ${count};`), '1 tâche');
+    // Retrait de la seule pastille : la case se décoche et la carte revient
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.querySelector('[data-remove="isdOnly"]') && ${cards} === 0`);
+    await w(`D.querySelector('[data-remove="isdOnly"]').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
+    assert.equal(await w(`return D.getElementById('f-isd-only').checked;`), false);
+    // « Tout effacer » remet la case à faux
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.getElementById('btn-clear') && ${cards} === 0`);
+    await w(`D.getElementById('btn-clear').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && D.getElementById('f-isd-only').checked === false`);
+    assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
+  },
+);
+
 test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio', { skip: SKIP }, async () => {
   await open('');
   await w(
@@ -3277,3 +3314,60 @@ for (const query of ['', '?edition=1&doc=doc-dev-local&ecritures=lecteur']) {
     },
   );
 }
+
+// ---------- Gantt : couleur par chantier (mode par défaut) ----------
+test(
+  'Gantt : couleur par chantier par défaut (pastille, tâches de la teinte du chantier), bascule sur « Étape » mémorisée',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.querySelector('.grow--chantier .grow__chip')`);
+    assert.equal(await w(`return D.getElementById('gantt-color-chantier').checked;`), true);
+    // Deux chantiers voisins d'un même projet : teintes différentes, pastille devant le nom
+    const pair =
+      await w(`const rows = [...D.querySelectorAll('.grow--chantier')].filter((r) => r.querySelector('.grow__chip'));
+      for (let i = 0; i + 1 < rows.length; i++) {
+        const a = rows[i], b = rows[i + 1];
+        if (a.nextElementSibling === b) {
+          const c = (r) => getComputedStyle(r.querySelector('.grow__chip')).backgroundColor;
+          return { a: c(a), b: c(b), chipFirst: a.querySelector('.grow__label').firstElementChild.nextElementSibling.classList.contains('grow__chip') };
+        }
+      }
+      return null;`);
+    assert.ok(pair, 'deux chantiers voisins attendus au niveau « Chantiers »');
+    assert.notEqual(pair.a, pair.b);
+    assert.equal(pair.chipFirst, true);
+    // Une tâche a la couleur de son chantier (barre, trait), une ligne de projet n'a pas de bande
+    await w(`D.getElementById('gantt-level-tache').click(); return true;`);
+    await until(`D.querySelector('.grow--tache .gbar')`);
+    const same =
+      await w(`const t = [...D.querySelectorAll('.grow--tache.grow--ch')].find((r) => r.querySelector('.gbar:not(.gbar--deduced)'));
+      let c = t.previousElementSibling; while (!c.classList.contains('grow--chantier')) c = c.previousElementSibling;
+      const bar = getComputedStyle(t.querySelector('.gbar')).backgroundColor;
+      const chip = getComputedStyle(c.querySelector('.grow__chip')).backgroundColor;
+      const trait = getComputedStyle(t.querySelector('.grow__title')).borderLeftColor;
+      const proj = getComputedStyle(D.querySelector('.grow--projet > .grow__track')).backgroundImage;
+      const band = getComputedStyle(t.querySelector('.grow__track')).backgroundImage;
+      return { bar, chip, trait, proj, band, text: !!D.querySelector('.gbar__text'),
+        label: t.querySelector('.gbar').getAttribute('aria-label'), chantier: c.querySelector('.grow__title').textContent };`);
+    assert.equal(same.bar, same.chip);
+    assert.equal(same.trait, same.chip);
+    assert.equal(same.proj, 'none');
+    assert.notEqual(same.band, 'none');
+    assert.equal(same.text, false, 'pas de texte d’étape dans les barres en mode chantier');
+    assert.ok(same.label.includes(`Chantier : ${same.chantier}`), same.label);
+    // Bascule sur « Étape » : texte d'étape dans les barres, plus de pastille ; choix gardé au rechargement
+    // (étapes : titres des sous-tâches du jeu synthétique)
+    await w(`D.getElementById('gantt-level-sous-tache').click(); return true;`);
+    assert.equal(await w(`return D.querySelectorAll('.gbar__text').length;`), 0);
+    await w(`D.getElementById('gantt-color-phase').click(); return true;`);
+    await until(`D.querySelector('.gbar__text') && !D.querySelector('.grow__chip')`);
+    assert.equal(await w(`return JSON.parse(W.localStorage.getItem('roadmap-isd:prefs')).ganttColorBy;`), 'phase');
+    await send('Page.reload');
+    await until(`D.querySelector('.view [data-task]')`);
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.getElementById('gantt-color-phase')?.checked`);
+    assert.equal(await w(`return !!D.querySelector('.grow__chip');`), false);
+  },
+);

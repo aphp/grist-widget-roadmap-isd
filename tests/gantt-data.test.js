@@ -4,6 +4,11 @@ import { buildModel } from '../widget/js/core/model.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS, loadPrefs } from '../widget/js/core/filters.js';
 import { dayOfIso, isoOfDay } from '../widget/js/core/dates.js';
 import {
+  CHANTIER_SLOTS,
+  COLOR_BY,
+  chantierSlots,
+  chantierTone,
+  fadedOnWhite,
   MAX_EXPANDED,
   SCALES,
   prunedExpanded,
@@ -294,7 +299,7 @@ test('nom du fichier PDF', () => {
 test('préférences du Gantt assainies', () => {
   const load = (json) => loadPrefs({ getItem: () => json, setItem: () => {} });
   assert.equal(DEFAULT_PREFS.ganttScale, 'month');
-  assert.equal(DEFAULT_PREFS.ganttColorBy, 'phase');
+  assert.equal(DEFAULT_PREFS.ganttColorBy, 'chantier');
   assert.equal(DEFAULT_PREFS.ganttExpanded, null);
   const ok = load('{"ganttScale":"week","ganttColorBy":"status","ganttExpanded":["C:Projet"]}');
   assert.deepEqual([ok.ganttScale, ok.ganttColorBy, ok.ganttExpanded], ['week', 'status', ['C:Projet']]);
@@ -303,7 +308,17 @@ test('préférences du Gantt assainies', () => {
   assert.deepEqual(load('{"ganttExpanded":["F:Projet","C:Projet"]}').ganttExpanded, ['C:Projet']);
   assert.deepEqual(load('{"ganttExpanded":[]}').ganttExpanded, []);
   const bad = load('{"ganttScale":"siècle","ganttColorBy":3,"ganttExpanded":[1,2]}');
-  assert.deepEqual([bad.ganttScale, bad.ganttColorBy, bad.ganttExpanded], ['month', 'phase', null]);
+  assert.deepEqual([bad.ganttScale, bad.ganttColorBy, bad.ganttExpanded], ['month', 'chantier', null]);
+  assert.equal(load('{"ganttColorBy":"arc-en-ciel","ganttColorByV":2}').ganttColorBy, 'chantier');
+  // Couleur : « chantier » par défaut ; un choix fait depuis l'ajout du mode (version 2) est respecté
+  assert.deepEqual(COLOR_BY, ['phase', 'status', 'chantier']);
+  assert.equal(load('{}').ganttColorBy, 'chantier');
+  assert.equal(load('{"ganttColorBy":"chantier","ganttColorByV":2}').ganttColorBy, 'chantier');
+  assert.equal(load('{"ganttColorBy":"phase","ganttColorByV":2}').ganttColorBy, 'phase');
+  assert.equal(load('{"ganttColorBy":"status"}').ganttColorBy, 'status');
+  // Avant la version 2, « phase » était la valeur par défaut enregistrée avec toutes les préférences : pas un choix
+  assert.equal(load('{"ganttColorBy":"phase"}').ganttColorBy, 'chantier');
+  assert.equal(load('{}').ganttColorByV, 2);
   assert.equal(load('{"ganttExpanded":"x"}').ganttExpanded, null);
   // Niveau : « chantier » par défaut (anciennes préférences sans niveau comprises), « custom » accepté
   assert.equal(DEFAULT_PREFS.ganttLevel, 'chantier');
@@ -321,4 +336,95 @@ test('dépliage enregistré : clés connues seulement, longueur bornée', () => 
   assert.equal(MAX_EXPANDED, 2000);
   const load = (json) => loadPrefs({ getItem: () => json, setItem: () => {} });
   assert.equal(load(JSON.stringify({ ganttExpanded: [...many] })).ganttExpanded.length, MAX_EXPANDED);
+});
+
+// ---------- Couleur par chantier ----------
+/** Modèle minimal : projets et chantiers (titre, projets). */
+const chModel = (chantiers) => ({
+  projects: new Map([1, 2].map((id) => [id, { id, title: `P${id}` }])),
+  chantiers: new Map(chantiers.map(([id, title, projectIds]) => [id, { id, title, projectIds }])),
+});
+
+test('chantierSlots : chantiers de chaque projet triés par titre (fr, numérique), teintes recyclées après 7', () => {
+  assert.equal(CHANTIER_SLOTS, 7);
+  const titles = ['Lot 10', 'lot 2', 'Évaluation', 'alpha', 'Beta', 'Zeta', 'Delta', 'Gamma', 'Lot 1'];
+  const model = chModel(titles.map((t, i) => [i + 1, t, [1]]));
+  const slots = chantierSlots(model).get(1);
+  // Ordre : alpha, Beta, Delta, Évaluation, Gamma, Lot 1, lot 2, Lot 10, Zeta ; le 8e reprend la 1re teinte
+  assert.deepEqual(
+    ['alpha', 'Beta', 'Delta', 'Évaluation', 'Gamma', 'Lot 1', 'lot 2', 'Lot 10', 'Zeta'].map((t) =>
+      slots.get(titles.indexOf(t) + 1),
+    ),
+    [0, 1, 2, 3, 4, 5, 6, 0, 1],
+  );
+  // Égalité de titre (casse et accents ignorés) : ordre des ids
+  const tie = chantierSlots(
+    chModel([
+      [5, 'Lot', [1]],
+      [3, 'lot', [1]],
+    ]),
+  ).get(1);
+  assert.deepEqual([tie.get(3), tie.get(5)], [0, 1]);
+  // Projet sans chantier : absent ; titre manquant : traité comme vide
+  const loose = chantierSlots(
+    chModel([
+      [1, null, [1]],
+      [2, 'A', [1]],
+    ]),
+  );
+  assert.equal(loose.has(2), false);
+  assert.deepEqual([loose.get(1).get(1), loose.get(1).get(2)], [0, 1]);
+});
+
+test('chantierSlots : un chantier de deux projets a une teinte par projet, calculée sur tous ses chantiers', () => {
+  const model = chModel([
+    [1, 'Bêta', [1, 2]],
+    [2, 'Alpha', [2]],
+  ]);
+  const slots = chantierSlots(model);
+  assert.equal(slots.get(1).get(1), 0);
+  assert.equal(slots.get(2).get(2), 0);
+  assert.equal(slots.get(2).get(1), 1);
+});
+
+test('chantierSlots : un filtre ne change pas la couleur d’un chantier (modèle entier, pas l’arbre filtré)', () => {
+  const all = chantierSlots(m);
+  const filtered = applyFilters(m, { ...DEFAULT_FILTERS, search: 'Reporting' }, DEFAULT_PREFS);
+  assert.ok(filtered.tree.length > 0);
+  // Le chantier 201 (« Chantier partagé ») est retiré par la recherche, « Reporting » garde sa teinte
+  assert.deepEqual([all.get(30).get(201), all.get(30).get(300)], [0, 1]);
+  const shown = [];
+  const walk = (n) => (n.kind === 'chantier' && shown.push(n), n.children.forEach(walk));
+  filtered.tree.forEach(walk);
+  const rep = shown.find((n) => n.ref?.id === 300);
+  assert.ok(rep && !shown.some((n) => n.ref?.id === 201));
+  assert.deepEqual(chantierTone(m, rep, all), { slot: 1, title: 'Reporting' });
+});
+
+test('chantierTone : chantier, tâche et sous-tâche ont la teinte du chantier affiché ; le reste est neutre', () => {
+  const slots = chantierSlots(m);
+  const byKey = (k) => m.nodes.get(k);
+  const byTask = (id) => m.nodes.get([...m.nodes.keys()].find((k) => m.nodes.get(k).taskId === id));
+  // Projet 10 : un seul chantier (100) → teinte 0, héritée par la tâche 1000 et ses sous-tâches
+  assert.deepEqual(chantierTone(m, byKey('P10/C100'), slots), { slot: 0, title: 'Produit de Données Patient' });
+  assert.deepEqual(chantierTone(m, byTask(1000), slots), { slot: 0, title: 'Produit de Données Patient' });
+  assert.equal(byTask(1002).kind, 'sous-tache');
+  assert.deepEqual(chantierTone(m, byTask(1002), slots), { slot: 0, title: 'Produit de Données Patient' });
+  // Projet 20 : « Chantier partagé » (0) puis « WP1 : Modèle LLM » (1)
+  assert.equal(chantierTone(m, byTask(2000), slots).slot, 1);
+  assert.equal(chantierTone(m, byTask(2010), slots).slot, 0);
+  // « (sans chantier) » et ses tâches, projet, catégorie : neutres
+  assert.equal(chantierTone(m, byKey('P20/C0'), slots), null);
+  assert.equal(chantierTone(m, byTask(2001), slots), null);
+  assert.equal(chantierTone(m, byKey('P20'), slots), null);
+  assert.equal(chantierTone(m, byKey('C:Produit'), slots), null);
+  // Nœud détaché ou chantier inconnu des teintes : neutre
+  assert.equal(chantierTone(m, { kind: 'tache', parentKey: 'absent' }, slots), null);
+  assert.equal(chantierTone(m, byKey('P10/C100'), new Map()), null);
+});
+
+test('fadedOnWhite : couleur posée sur blanc à l’opacité donnée (PDF)', () => {
+  assert.equal(fadedOnWhite('#000000', 0.5), '#808080');
+  assert.equal(fadedOnWhite('#2a78d6', 1), '#2a78d6');
+  assert.equal(fadedOnWhite('#2a78d6', 0), '#ffffff');
 });

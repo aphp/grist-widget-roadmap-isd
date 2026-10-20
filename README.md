@@ -51,6 +51,14 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   reste visible quand la personne ciblée y est impliquée : « Je suis… » avec « Mes chantiers » (voir ci-dessous),
   ou le filtre Personne ; ce dernier est un filtre de tâche, il ne garde donc que les projets où cette personne a
   une tâche retenue (pas ceux dont elle n'est que sponsor ou responsable sans tâche).
+- **« ISD seulement »** : à l'intérieur des projets affichés, masque les chantiers et les tâches où personne de
+  l'équipe ISD (Management ISD compris, personnes actives) n'intervient. Une tâche reste si un assigné, son
+  responsable ou une personne chargée en fait partie, ou si une de ses sous-tâches (à toute profondeur) en est ; le
+  parent reste alors pour garder l'arbre, sans les sous-tâches sans ISD. Un chantier reste s'il garde une tâche ou si
+  son responsable ou un contributeur est de l'équipe ISD (il apparaît vide dans le Gantt et le Portfolio). Un projet
+  sans rien de gardé disparaît des vues centrées tâches et ne reste dans le Gantt et le Portfolio que s'il est porté
+  par l'ISD (responsable, sponsor ou contributeur clé). Se combine avec les autres filtres, « Mes chantiers » et
+  « Hors périmètre ISD aussi » ; sans effet sur « Mes tâches » et « Équipe » (vues non filtrées).
 - **Périmètre « Tout / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint rien ;
   « Mes chantiers » garde les chantiers dont je suis responsable ou contributeur, ou qui portent une tâche non
   terminée où je suis assigné, responsable ou chargé, et tous les chantiers des projets dont je suis responsable,
@@ -69,6 +77,14 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), et dans le Portfolio (onglets Projets
   et Chantiers), avec « Tout » ou « Mes chantiers » et sans filtre de tâche. Kanban, Tableau, Statistiques (dont le
   plan de charge), Synthèse et l'onglet Mes tâches ne montrent que des tâches. L'onglet Équipe n'est pas filtré.
+- **Couleur du Gantt** (« Couleur par » : Étape, Statut ou **Chantier**, par défaut ; un choix enregistré est
+  gardé) : en mode Chantier, chaque chantier prend une des 7 teintes `--viz-ch-1` à `--viz-ch-7`, attribuées par
+  projet sur tous ses chantiers triés par titre (au-delà de 7, les teintes se recyclent ; un filtre ne change jamais
+  une couleur ; un chantier de deux projets peut avoir une teinte par projet). Pastille devant le nom du chantier,
+  trait de sa teinte devant le nom de ses tâches et sous-tâches, bande très légère sur ses lignes, barres de sa
+  teinte (liseré foncé), barre du chantier en teinte foncée, tâche terminée délavée ; projet, catégorie et
+  « (sans chantier) » restent neutres. Pas de texte d'étape dans les barres : l'infobulle et le nom accessible
+  donnent l'étape et « Chantier : … ». Le retard garde son contour rouge (absent de la palette des chantiers).
 - **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
   le total portent sur les profils DE, DA, DS et PO seulement.
 

@@ -1,6 +1,6 @@
 /*
  * Vue Gantt : colonne des éléments figée à gauche, frise en % de la fenêtre, en-tête figé en haut.
- * Couleurs d'étape et de statut : variables partagées --viz-* (css/tokens.css), toujours
+ * Couleurs d'étape, de statut et de chantier : variables partagées --viz-* (css/tokens.css), toujours
  * accompagnées d'une légende et du libellé dans l'infobulle.
  */
 .gantt {
@@ -127,6 +127,29 @@
 }
 .gtip .gswatch {
   margin-right: var(--space-2);
+}
+/* Mode « chantier » : trois pastilles, barre du chantier (teinte foncée), barre terminée (délavée) */
+.gswatch--chips {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  gap: 2px;
+  background: none;
+}
+.gswatch--chips .grow__chip {
+  margin: 0;
+}
+.gtip .grow__chip {
+  margin: 0 var(--space-2) 0 0;
+}
+.gswatch--chbar {
+  height: 4px;
+  background: var(--ch-deep);
+}
+.gswatch--chdone {
+  background: var(--ch);
+  box-shadow: inset 0 0 0 1px var(--ch-deep);
+  opacity: 0.45;
 }
 
 /* ---- Grille ---- */
@@ -426,6 +449,71 @@
   color: var(--color-text-muted);
 }
 
+/* ---- Couleur par chantier ----
+   Chaque ligne d'un chantier (le chantier et ses descendants) porte la classe de sa teinte : gch-1 à gch-7
+   (core/gantt-data.js, chantierSlots). Projet, catégorie et « (sans chantier) » restent neutres. */
+.gch-1 {
+  --ch: var(--viz-ch-1);
+  --ch-deep: var(--viz-ch-1-deep);
+  --ch-band: var(--viz-ch-1-band);
+}
+.gch-2 {
+  --ch: var(--viz-ch-2);
+  --ch-deep: var(--viz-ch-2-deep);
+  --ch-band: var(--viz-ch-2-band);
+}
+.gch-3 {
+  --ch: var(--viz-ch-3);
+  --ch-deep: var(--viz-ch-3-deep);
+  --ch-band: var(--viz-ch-3-band);
+}
+.gch-4 {
+  --ch: var(--viz-ch-4);
+  --ch-deep: var(--viz-ch-4-deep);
+  --ch-band: var(--viz-ch-4-band);
+}
+.gch-5 {
+  --ch: var(--viz-ch-5);
+  --ch-deep: var(--viz-ch-5-deep);
+  --ch-band: var(--viz-ch-5-band);
+}
+.gch-6 {
+  --ch: var(--viz-ch-6);
+  --ch-deep: var(--viz-ch-6-deep);
+  --ch-band: var(--viz-ch-6-band);
+}
+.gch-7 {
+  --ch: var(--viz-ch-7);
+  --ch-deep: var(--viz-ch-7-deep);
+  --ch-band: var(--viz-ch-7-band);
+}
+/* Pastille ronde devant le nom du chantier : liseré foncé (une teinte claire reste visible sur blanc) */
+.grow__chip {
+  flex: none;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  margin: 0 2px 0 var(--space-1);
+  border: 1px solid var(--ch-deep);
+  border-radius: 50%;
+  background: var(--ch);
+  vertical-align: middle;
+}
+/* Bande très légère sur toute la largeur (nom et frise) ; en image de fond, le survol garde sa couleur */
+.gantt .grow--ch > .grow__label,
+.gantt .grow--ch > .grow__track {
+  background-image: linear-gradient(var(--ch-band), var(--ch-band));
+}
+/* Trait de la teinte à gauche du nom des tâches et sous-tâches (transparent hors chantier : même alignement) */
+.gantt__grid--chantier .grow--tache .grow__title,
+.gantt__grid--chantier .grow--sous-tache .grow__title {
+  border-left: 3px solid transparent;
+}
+.gantt__grid--chantier .grow--ch .grow__title {
+  border-left-color: var(--ch);
+}
+
 /* ---- Barres ---- */
 .gbar,
 .gms,
@@ -513,6 +601,29 @@
   top: 12px;
   height: 8px;
   border-radius: 2px;
+}
+/* Mode « chantier » : barres des tâches de la teinte, liseré foncé de 1 px ; barre du chantier en teinte foncée */
+.gbar--ch,
+.gms--ch {
+  --g-fill: var(--ch);
+}
+.grow--ch .gbar--summary {
+  --g-fill: var(--ch-deep);
+}
+.gantt .gbar--ch:not(.gbar--deduced),
+.gantt .gms--ch {
+  box-shadow: inset 0 0 0 1px var(--ch-deep);
+}
+.gantt .gbar--ch.is-late:not(.gbar--deduced),
+.gantt .gms--ch.is-late {
+  box-shadow:
+    inset 0 0 0 1px var(--ch-deep),
+    0 0 0 1px var(--color-surface),
+    0 0 0 3px var(--viz-late);
+}
+/* Tâche terminée : barre délavée (le retard ne concerne jamais une tâche terminée) */
+.gantt .is-done {
+  opacity: 0.45;
 }
 .gantt .gbar--deduced,
 .gantt .gbar--deduced:not(:disabled):hover {
@@ -651,6 +762,19 @@
   box-shadow: none;
   outline: 1px solid var(--g-fill);
 }
+/* Liseré des barres de chantier : html2canvas rend mal l'ombre intérieure, bordure à la place */
+.gantt--print .gbar--ch:not(.gbar--deduced),
+.gantt--print .gms--ch {
+  box-sizing: border-box;
+  box-shadow: none;
+  border: 1px solid var(--ch-deep);
+}
+.gantt--print .gbar--ch.is-late:not(.gbar--deduced),
+.gantt--print .gms--ch.is-late {
+  box-shadow:
+    0 0 0 1px var(--color-surface),
+    0 0 0 3px var(--viz-late);
+}
 
 @media (max-width: 1279px) {
   .gantt {
@@ -748,6 +872,15 @@ button.glist__title:focus-visible {
   background: transparent;
   border: 1px dashed var(--viz-neutral);
 }
+.glist__bar.gbar--ch {
+  box-shadow: inset 0 0 0 1px var(--ch-deep);
+}
+.glist__bar.is-done {
+  opacity: 0.45;
+}
+.glist__path .grow__chip {
+  margin: 0 var(--space-1) 0 0;
+}
 .glist__bar--deduced {
   background: repeating-linear-gradient(135deg, var(--g-fill, var(--viz-neutral)) 0 2px, transparent 2px 5px);
   box-shadow: inset 0 0 0 1px var(--g-fill, var(--viz-neutral));
@@ -758,6 +891,21 @@ button.glist__title:focus-visible {
   padding: var(--space-3);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+}
+
+/* Contraste renforcé : pastille et trait cernés de la couleur du texte ; couleurs forcées : bordures système */
+@media (prefers-contrast: more) {
+  .grow__chip {
+    border-color: var(--color-text);
+  }
+}
+@media (forced-colors: active) {
+  .grow__chip {
+    border-color: CanvasText;
+  }
+  .gantt__grid--chantier .grow--ch .grow__title {
+    border-left-color: CanvasText;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

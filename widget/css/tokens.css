@@ -81,6 +81,36 @@
   --viz-mgmt: #5b21b6;
 
   /*
+   * Gantt coloré par chantier : 7 teintes recyclées par projet (core/gantt-data.js, chantierSlots), validées au
+   * calcul (daltonisme et vision normale, clair et sombre). En clair, l'aqua, le jaune et le rose sont sous 3:1
+   * sur blanc : chaque barre porte un liseré de la teinte foncée (-deep, ≥ 3:1) et le nom du chantier est
+   * toujours écrit à côté de sa pastille. En sombre, « foncé » = plus clair que le remplissage (visible sur le
+   * fond sombre). Bande de fond (-band) : la teinte à 7 %, en rgba explicite (html2canvas, export PDF, ne lit
+   * pas color-mix). Copie claire : VIZ_PRINT.chantier / chantierDeep (widget/js/ui/viz-palette.js).
+   */
+  --viz-ch-1: #2a78d6; /* bleu */
+  --viz-ch-1-deep: #1c5cab;
+  --viz-ch-1-band: rgba(42, 120, 214, 0.07);
+  --viz-ch-2: #eb6834; /* orange */
+  --viz-ch-2-deep: #b84a1d;
+  --viz-ch-2-band: rgba(235, 104, 52, 0.07);
+  --viz-ch-3: #1baf7a; /* aqua */
+  --viz-ch-3-deep: #127a55;
+  --viz-ch-3-band: rgba(27, 175, 122, 0.07);
+  --viz-ch-4: #eda100; /* jaune */
+  --viz-ch-4-deep: #9a6800;
+  --viz-ch-4-band: rgba(237, 161, 0, 0.07);
+  --viz-ch-5: #e87ba4; /* rose */
+  --viz-ch-5-deep: #b8476f;
+  --viz-ch-5-band: rgba(232, 123, 164, 0.07);
+  --viz-ch-6: #008300; /* vert */
+  --viz-ch-6-deep: #005c00;
+  --viz-ch-6-band: rgba(0, 131, 0, 0.07);
+  --viz-ch-7: #6250d6; /* violet */
+  --viz-ch-7-deep: #4535a8;
+  --viz-ch-7-band: rgba(98, 80, 214, 0.07);
+
+  /*
    * Statistiques : une couleur par statut (familles des badges : ardoise foncée à faire, bleu en cours, ambre
    * en revue — hachuré, pour le distinguer de « terminé » en vision des couleurs altérée —, vert terminé,
    * ardoise moyenne pour les autres statuts) et une rampe violette par priorité (badge de priorité), la plus
@@ -242,6 +272,27 @@
   --viz-late: #f87171;
   --viz-today: #fb7185;
   --viz-mgmt: #a46cf5;
+  --viz-ch-1: #3987e5; /* bleu */
+  --viz-ch-1-deep: #86b6ef;
+  --viz-ch-1-band: rgba(57, 135, 229, 0.07);
+  --viz-ch-2: #d95926; /* orange */
+  --viz-ch-2-deep: #f09a75;
+  --viz-ch-2-band: rgba(217, 89, 38, 0.07);
+  --viz-ch-3: #199e70; /* aqua */
+  --viz-ch-3-deep: #6fd0ab;
+  --viz-ch-3-band: rgba(25, 158, 112, 0.07);
+  --viz-ch-4: #c98500; /* jaune */
+  --viz-ch-4-deep: #f2c85c;
+  --viz-ch-4-band: rgba(201, 133, 0, 0.07);
+  --viz-ch-5: #d55181; /* rose */
+  --viz-ch-5-deep: #f0a3c0;
+  --viz-ch-5-band: rgba(213, 81, 129, 0.07);
+  --viz-ch-6: #008300; /* vert */
+  --viz-ch-6-deep: #63c463;
+  --viz-ch-6-band: rgba(0, 131, 0, 0.07);
+  --viz-ch-7: #9085e9; /* violet */
+  --viz-ch-7-deep: #c0b8f5;
+  --viz-ch-7-band: rgba(144, 133, 233, 0.07);
   --status-todo-mark: #cbd5e1;
   --status-inprogress-mark: #3b82f6;
   --status-review-mark: #c98a08;
