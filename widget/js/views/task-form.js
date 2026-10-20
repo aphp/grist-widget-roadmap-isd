@@ -32,12 +32,15 @@ import { addSubtaskButton, refList, roleBadge, section, statusMenu } from './det
 import { estimationBadge } from './team.js';
 import { tagsFieldHtml } from './tags-field.js';
 
+// Écarts d'ETP et totaux : une décimale (les cases de saisie et leur équivalent utilisent etpText)
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-// ETP d'une case de saisie ou de son équivalent : 2 décimales sous 1, une au-delà (etpDecimals)
-const etpText = (v, useGrouping = true) => {
-  const d = etpDecimals(v);
-  return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping }).format(v);
-};
+// ETP d'une case de saisie ou de son équivalent « = x ETP » : une décimale au moins, deux sous 1 si besoin (0,5 ; 0,25)
+const etpText = (v, useGrouping = true) =>
+  new Intl.NumberFormat('fr-FR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: etpDecimals(v),
+    useGrouping,
+  }).format(v);
 const hoursFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1, useGrouping: false });
 const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const TRASH = raw(

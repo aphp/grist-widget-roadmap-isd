@@ -2545,7 +2545,7 @@ test(
     await change('#cf-dateEcheance', '2026-11-08');
     await until(`D.getElementById('cf-ch-5-eq').textContent === '= 1,0 ETP'`);
     await change('#cf-dateEcheance', '2026-11-15');
-    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 0,50 ETP'`);
+    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 0,5 ETP'`);
     assert.equal(await w(`return W.__writes.length;`), 0);
     await clickOn('#cf-create');
     await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);

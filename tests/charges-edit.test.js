@@ -439,3 +439,13 @@ test('ETP : 2 décimales sous 1, une décimale à partir de 1', () => {
   assert.equal(inputValue(13, 'etp', 28), 0.09);
   assert.deepEqual(hoursFromInput('0,09', 'etp', 28, 13), { heures: 13 });
 });
+
+test('ETP : bornes de 0,99 à 1, zéro, ressaisie de 0,5', () => {
+  assert.deepEqual(hoursFromInput('0,999', 'etp', 28), { error: 'decimale' });
+  assert.deepEqual(hoursFromInput('0,99', 'etp', 28), { heures: 138.5 });
+  assert.deepEqual(hoursFromInput('1', 'etp', 28), { heures: 140 });
+  assert.equal(etpDecimals(0), 1);
+  // 0,5 ETP sur 14 jours = 35 h : la valeur affichée ressaisie garde les heures
+  assert.equal(inputValue(35, 'etp', 14), 0.5);
+  assert.deepEqual(hoursFromInput('0,5', 'etp', 14, 35), { heures: 35 });
+});
