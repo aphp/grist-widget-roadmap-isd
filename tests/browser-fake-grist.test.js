@@ -1459,10 +1459,14 @@ for (const query of [
         await sleep(200);
         assert.equal(await w(`return D.querySelectorAll('[data-qs-open], [data-qs-focus]').length;`), 0, view);
       }
-      // « s » sur une carte n'ouvre rien
+      // « s » et le clic droit sur une carte n'ouvrent rien ; le menu du navigateur reste intact
       await openView(query, 'kanban');
       await w(`D.querySelector('.kcard').focus(); return true;`);
       await key('s');
+      const prevented =
+        await w(`const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+        D.querySelector('.kcard').dispatchEvent(e); return e.defaultPrevented;`);
+      assert.equal(prevented, false);
       await sleep(200);
       assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), false);
       assert.doesNotMatch(await w(`return D.getElementById('kanban-help').textContent;`), /Maj\+F10/);
@@ -1564,16 +1568,30 @@ test(
 );
 
 test(
-  'statut depuis la carte (P-UX-6) : menu contextuel du navigateur bloqué ; choix pendant un envoi signalé',
+  'statut depuis la carte (P-UX-6) : le clic droit ouvre le menu de statut ; choix pendant un envoi signalé',
   { skip: SKIP },
   async () => {
     await open(`${EDIT},lent`);
-    const blocked = await w(`const c = D.querySelector('.kcard[data-qs-focus]');
-    const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true }); c.dispatchEvent(e);
-    const q = D.querySelector('[data-qs-open]');
-    const e2 = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true }); q.dispatchEvent(e2);
-    return [e.defaultPrevented, e2.defaultPrevented];`);
-    assert.deepEqual(blocked, [true, true]);
+    const ctxMenu = (sel) =>
+      w(`const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+      D.querySelector(${JSON.stringify(sel)}).dispatchEvent(e); return e.defaultPrevented;`);
+    const id = await w(`return Number(D.querySelector('.kcard[data-qs-focus]').dataset.task);`);
+    // Clic droit sur la carte : menu de statut (pas celui du navigateur), ancré sur son ⋯
+    assert.equal(await ctxMenu(`#kc-${id}`), true);
+    await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+    assert.equal(await w(`return D.querySelector('[data-qs-open="${id}"]').getAttribute('aria-expanded');`), 'true');
+    // Deuxième « contextmenu » (Maj+F10 relâché sous Windows) : le menu reste ouvert ; dans le menu : bloqué
+    assert.equal(await ctxMenu(`#kc-${id}`), true);
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    assert.equal(await ctxMenu('#qs-menu'), true);
+    await key('Escape');
+    await until(`!D.getElementById('qs-menu') && D.activeElement?.id === 'kc-${id}'`);
+    // Clic droit sur le ⋯ : même menu
+    assert.equal(await ctxMenu(`[data-qs-open="${id}"]`), true);
+    await until(`D.getElementById('qs-menu')`);
+    await key('Escape');
+    await until(`!D.getElementById('qs-menu')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
     const [a, b] = await w(
       `const c = [...D.querySelectorAll('.kcol[data-col="status:todo"] .kcard[data-qs-focus]')]; return [Number(c[0].dataset.task), Number(c[1].dataset.task)];`,
     );
@@ -1588,5 +1606,31 @@ test(
     await until(`/en cours d’envoi/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
     await sleep(2000);
     assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);
+
+test(
+  '« Annuler » au clavier (P-UX-6) : la carte revient dans sa colonne et reprend le focus',
+  { skip: SKIP },
+  async () => {
+    await open(EDIT);
+    const id = await w(
+      `const c = D.querySelector('.kcol[data-col="status:todo"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+    );
+    await key('s');
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('review');
+    await until(`W.__writes.length === 1 && D.querySelector('.kcol[data-col="status:review"] #kc-${id}')`);
+    // Le message « Annuler » reçoit le focus (comme par Tab), puis Entrée ; le message disparaît avec son bouton
+    await until(`D.querySelector('.toast [data-toast-action]')`);
+    await w(`D.querySelector('.toast [data-toast-action]').focus(); return true;`);
+    assert.equal(await w(`return D.activeElement.dataset.toastAction !== undefined;`), true);
+    await press('Enter');
+    await until(`W.__writes.length === 2 && D.querySelector('.kcol[data-col="status:todo"] #kc-${id}')`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { statut: 'todo' }]]);
+    await until(`D.activeElement?.id === 'kc-${id}'`);
+    // Toujours là après la relecture qui suit l'annulation
+    await sleep(500);
+    assert.equal(await w(`return D.activeElement?.id;`), `kc-${id}`);
   },
 );
