@@ -33,6 +33,7 @@ import {
 import { h, icon, roleFullText } from '../ui/kit.js';
 import { limitToReveal } from '../core/quick-status.js';
 import { viewHeading } from '../ui/heading.js';
+import { blockContextMenu } from '../ui/status-popover.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 
 export const id = 'table';
@@ -128,7 +129,7 @@ function titleCell(r) {
 
 /** Cellule Statut en édition : bouton-menu (pastille et ▾), nom accessible qui commence par le texte visible. */
 const statusButton = (r) =>
-  h`<td class="tbl__td tbl__td--qs"><button type="button" class="tbl-qs" data-qs-open="${r.taskId}" data-qs-focus="${r.taskId}" aria-haspopup="menu" aria-expanded="false" aria-label="${label('quickStatus.button', { statut: statusLabel(r.status), titre: r.own })}">${statusPill(r.status)}<span class="tbl-qs__caret" aria-hidden="true">▾</span></button></td>`;
+  h`<td class="tbl__td tbl__td--qs"><button type="button" class="tbl-qs" data-qs-open="${r.taskId}" data-qs-focus="${r.taskId}" aria-haspopup="menu" aria-expanded="false" aria-label="${label('quickStatus.button', { statut: statusLabel(r.status), titre: r.own || label('common.untitled') })}">${statusPill(r.status)}<span class="tbl-qs__caret" aria-hidden="true">▾</span></button></td>`;
 
 function cell(r, key, today, qs) {
   switch (key) {
@@ -348,6 +349,7 @@ export function render(el, ctx) {
     const r = t.closest('tr[data-task]');
     if (r) ctx.openDetail({ table: 'Tasks', id: Number(r.dataset.task) });
   };
+  el.oncontextmenu = blockContextMenu;
   el.onchange = (e) => {
     const c = e.target.closest('input[data-col]')?.dataset.col;
     if (!c) return;

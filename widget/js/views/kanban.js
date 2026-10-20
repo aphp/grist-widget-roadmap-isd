@@ -31,6 +31,7 @@ import { displayRole } from '../core/team-directory.js';
 import { isStatusShortcut, limitToReveal } from '../core/quick-status.js';
 import { h, icon, keepFocus, roleFullText, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
+import { blockContextMenu } from '../ui/status-popover.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 
 export const id = 'kanban';
@@ -453,5 +454,6 @@ export function render(el, ctx) {
     signal: off.signal,
   });
   el.addEventListener('focusin', (e) => e.target.classList?.remove('kcard--tipoff'), { signal: off.signal });
+  el.addEventListener('contextmenu', blockContextMenu, { signal: off.signal });
   paint();
 }

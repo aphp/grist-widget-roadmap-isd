@@ -823,6 +823,10 @@
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-3);
 }
+.qs-menu:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
 .qs-menu__title {
   margin: 0;
   padding: var(--space-1) var(--space-2);
