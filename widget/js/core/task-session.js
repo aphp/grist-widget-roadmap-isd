@@ -1,0 +1,291 @@
+/**
+ * Enregistrements des fiches tâche et chantier, des créations et des changements de chantier, sans DOM :
+ * relecture et contrôle de fraîcheur, envoi par le writer, statut rapide calculé sur la ligne relue. Chaque appel reçoit un instantané (identifiant, base, brouillon) : il
+ * n'écrit jamais dans une autre ligne que celle de l'instantané, même si le formulaire a changé entre-temps.
+ */
+import { mergeCharges, sameCharges } from './charges-edit.js';
+import { detectConflicts, mergeChargesChange } from './conflicts.js';
+import { DEFAULT_TIMEOUT_MS, WriteFailed, WriteRefused, withTimeout } from './grist-writer.js';
+import { chantierStatusChanges, reattachRows, taskLinksFromTable } from './chantier-form.js';
+import { moveRows } from './create-form.js';
+import { diffDraft, statusChanges } from './task-form.js';
+
+const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
+
+/** Relecture d'une ligne limitée dans le temps (une requête bloquée ne fige jamais la fiche). */
+function readRow(fetchRow, id, ms) {
+  return withTimeout(fetchRow(id), ms, () => new Error(`délai de ${ms / 1000} s dépassé`));
+}
+
+/**
+ * Écriture sans réponse dans le délai : elle a pu avoir lieu. La ligne est relue (sans relance de l'écriture) pour
+ * dire à l'utilisateur ce que contient maintenant la Feuille. stored : valeurs relues, null (ligne disparue) ou
+ * undefined (relecture impossible).
+ */
+async function unknownOutcome(fetchRow, id, ms, changes) {
+  let stored;
+  try {
+    stored = await readRow(fetchRow, id, ms);
+  } catch {
+    stored = undefined;
+  }
+  return { kind: 'unknown', stored, changes };
+}
+
+/**
+ * Enregistre un brouillon.
+ * @param {{taskId:number, base:object, draft:object, writer:object, fetchRow:(id:number)=>Promise<object|null>,
+ *          skipCheck?:boolean, changes?:object, before?:object}} snap
+ *   skipCheck : enregistrer sans relecture (seulement après l'accord explicite de l'utilisateur) ;
+ *   changes/before : lot déjà arbitré (après une fenêtre de conflit, voir conflictBatch) ;
+ *   chargesBase : avec un lot arbitré qui contient les charges, cellule de l'ouverture du formulaire : la ligne est
+ *   relue et la saisie refusionnée personne par personne juste avant l'envoi (la saisie l'emporte sur une même
+ *   personne, choix déjà fait ; les autres modifications faites entre-temps survivent).
+ *   timeoutMs : délai maximal de la relecture (l'envoi a le sien, dans le writer).
+ *   table : 'Tasks' (défaut) ou 'Chantiers' ; diff : différences du brouillon (diffDraft par défaut) ; also : lignes
+ *   dérivées envoyées dans le même lot (tâches rattachées à un autre projet du chantier) ; readTable et reattachTo :
+ *   en envoi réel, ces lignes sont recalculées sur la table Tasks relue (projet d'arrivée reattachTo).
+ *   Charges modifiées aussi dans la Feuille : fusion personne par personne ; conflit seulement sur une même
+ *   personne (mine.charges = cellule fusionnée où la saisie l'emporte).
+ * @returns {Promise<{kind:'nothing'}|{kind:'conflict', cols:string[], fresh:object, mine:object}
+ *   |{kind:'reread-failed', error:string}
+ *   |{kind:'missing'}|{kind:'saved', entry:object}|{kind:'failed', error:Error}
+ *   |{kind:'unknown', stored:object|null|undefined, changes:object}>}
+ */
+export async function runSave(snap) {
+  const { taskId, base, writer } = snap;
+  const table = snap.table ?? 'Tasks';
+  const ms = snap.timeoutMs || DEFAULT_TIMEOUT_MS;
+  let changes = snap.changes ?? (snap.diff ?? diffDraft)(base, snap.draft);
+  let keys = Object.keys(changes);
+  if (!keys.length) return { kind: 'nothing' };
+  let before = snap.before ?? pick(base, keys);
+  let period; // dates de la ligne relue : borne de 1 ETP par personne (R4)
+  if (writer.mode === 'on' && snap.changes && snap.chargesBase !== undefined && 'charges' in changes) {
+    let fresh;
+    try {
+      fresh = await readRow(snap.fetchRow, taskId, ms);
+    } catch (err) {
+      return { kind: 'reread-failed', error: String(err?.message ?? err) };
+    }
+    if (fresh === null) return { kind: 'missing' };
+    // Cellule que l'utilisateur a vue dans la fenêtre de conflit (ou à l'ouverture) et ce qu'il a choisi d'écrire
+    // par rapport à elle (sa saisie l'emporte sur une même personne : choix déjà fait)
+    const seen = snap.chargesSeen !== undefined ? snap.chargesSeen : snap.chargesBase;
+    const decided = mergeCharges(snap.chargesBase, changes.charges, seen);
+    let target;
+    if (!decided.ok) {
+      // Cellule illisible à l'ouverture ou dans la fenêtre (remplacement confirmé) : seulement si elle n'a pas
+      // changé depuis ; sinon nouvelle fenêtre, rien n'est envoyé
+      if (!sameCharges(seen, fresh.charges))
+        return { kind: 'conflict', cols: ['charges'], fresh, mine: { charges: changes.charges } };
+      target = changes.charges;
+    } else {
+      // Modifications faites depuis la fenêtre : refusionnées ; cellule devenue illisible (R1) ou même personne
+      // modifiée entre-temps (R2) : nouvelle fenêtre de conflit pour les charges, rien n'est envoyé
+      const m = mergeCharges(seen, decided.raw, fresh.charges);
+      if (!m.ok || m.conflicts.length)
+        return { kind: 'conflict', cols: ['charges'], fresh, mine: { charges: m.ok ? m.raw : decided.raw } };
+      target = m.raw;
+    }
+    changes = { ...changes, charges: target };
+    if (sameCharges(changes.charges, fresh.charges)) delete changes.charges;
+    else before = { ...before, charges: fresh.charges };
+    period = { start: fresh.dateDebut, end: fresh.dateEcheance };
+    keys = Object.keys(changes);
+    if (!keys.length) return { kind: 'nothing' };
+    before = pick(before, keys);
+  }
+  if (writer.mode === 'on' && !snap.skipCheck && !snap.changes) {
+    let fresh;
+    try {
+      fresh = await readRow(snap.fetchRow, taskId, ms);
+    } catch (err) {
+      return { kind: 'reread-failed', error: String(err?.message ?? err) };
+    }
+    if (fresh === null) return { kind: 'missing' };
+    const merged = mergeChargesChange(base, fresh, changes);
+    const others = { ...changes };
+    delete others.charges;
+    const cols = detectConflicts(base, fresh, others);
+    if (merged.conflict) cols.push('charges');
+    if (cols.length)
+      return { kind: 'conflict', cols, fresh, mine: merged.mine === null ? {} : { charges: merged.mine } };
+    changes = merged.changes;
+    keys = Object.keys(changes);
+    if (!keys.length) return { kind: 'nothing' };
+    before = pick(fresh, keys);
+    period = { start: fresh.dateDebut, end: fresh.dateEcheance };
+  }
+  try {
+    let also = snap.also?.length ? snap.also : undefined;
+    // Projets d'un chantier modifiés : ses tâches (et leurs sous-tâches) à rattacher sont recalculées sur la table
+    // Tasks relue juste avant l'envoi, pour qu'une tâche ajoutée entre-temps ne soit pas oubliée
+    if (writer.mode === 'on' && table === 'Chantiers' && 'Projets' in changes && snap.readTable) {
+      let raw;
+      try {
+        raw = await withTimeout(snap.readTable('Tasks'), ms, () => new Error(`délai de ${ms / 1000} s dépassé`));
+      } catch (err) {
+        return { kind: 'reread-failed', error: String(err?.message ?? err) };
+      }
+      const plan = reattachRows(taskLinksFromTable(raw), taskId, changes.Projets, snap.reattachTo ?? null);
+      also = plan.also.length ? plan.also : undefined;
+    }
+    return { kind: 'saved', entry: await writer.update(table, taskId, changes, { before, period, also }) };
+  } catch (error) {
+    if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
+    if (error instanceof WriteFailed && error.kind === 'timeout')
+      return unknownOutcome(snap.fetchRow, taskId, ms, changes);
+    return { kind: 'failed', error };
+  }
+}
+
+/**
+ * Lot à envoyer après la fenêtre de conflit, recalculé depuis le brouillon et la base de l'ouverture (jamais
+ * depuis un lot calculé avant la fusion des charges) : « theirs » retire la colonne, « mine » la garde. Les
+ * charges partent avec chargesBase, pour être refusionnées sur la ligne relue au moment de l'envoi.
+ * chargesSeen : cellule montrée dans la fenêtre ; une modification de la même personne faite après elle rouvre la
+ * fenêtre au lieu d'être écrasée en silence.
+ * @returns {{changes:object, before:object, chargesBase:string|null|undefined, chargesSeen:string|null|undefined}}
+ */
+export function conflictBatch(oldBase, draft, fresh, choices, diff = diffDraft) {
+  const changes = {};
+  for (const [c, v] of Object.entries(diff(oldBase, draft))) if (choices[c] !== 'theirs') changes[c] = v;
+  return {
+    changes,
+    before: pick(fresh, Object.keys(changes)),
+    chargesBase: oldBase.charges,
+    chargesSeen: fresh.charges,
+  };
+}
+
+/**
+ * Statut rapide : la ligne est relue (envoi réel) pour décider de la date de clôture sur des valeurs à jour,
+ * puis statut (et clôture éventuelle) partent dans un seul lot.
+ * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object}|{kind:'missing'}|{kind:'reread-failed', error:string}
+ *   |{kind:'failed', error:Error}>}
+ */
+export async function runQuickStatus({
+  taskId,
+  status,
+  localBase,
+  writer,
+  fetchRow,
+  today,
+  timeoutMs,
+  table = 'Tasks',
+}) {
+  timeoutMs ||= DEFAULT_TIMEOUT_MS;
+  let base = localBase;
+  if (writer.mode === 'on') {
+    try {
+      base = await readRow(fetchRow, taskId, timeoutMs);
+    } catch (err) {
+      return { kind: 'reread-failed', error: String(err?.message ?? err) };
+    }
+    if (base === null) return { kind: 'missing' };
+  }
+  if (!base) return { kind: 'missing' };
+  const changes = table === 'Chantiers' ? chantierStatusChanges(base, status) : statusChanges(base, status, today);
+  if (!Object.keys(changes).length) return { kind: 'nothing' };
+  try {
+    return {
+      kind: 'saved',
+      entry: await writer.update(table, taskId, changes, { before: pick(base, Object.keys(changes)) }),
+    };
+  } catch (error) {
+    if (error instanceof WriteFailed && error.kind === 'timeout')
+      return unknownOutcome(fetchRow, taskId, timeoutMs, changes);
+    return { kind: 'failed', error };
+  }
+}
+
+/**
+ * Création d'une ligne (tâche, sous-tâche, chantier) : une seule création par le writer. Sans réponse dans le délai,
+ * le résultat est inconnu : la ligne a pu être créée, il ne faut pas la recréer à l'aveugle.
+ * @returns {Promise<{kind:'saved', entry:object}|{kind:'unknown'}|{kind:'failed', error:Error}>}
+ */
+export async function runCreate({ writer, table, fields }) {
+  try {
+    return { kind: 'saved', entry: await writer.add(table, fields) };
+  } catch (error) {
+    if (error instanceof WriteFailed && error.kind === 'timeout') return { kind: 'unknown' };
+    return { kind: 'failed', error };
+  }
+}
+
+/**
+ * Changement de chantier d'une tâche (plan de create-form.js:movePlan) : la tâche est relue ; si son rattachement a
+ * changé ailleurs depuis l'ouverture, rien n'est envoyé. Sinon, la tâche et ses sous-tâches partent dans un lot.
+ * @returns {Promise<{kind:'saved', entry:object}|{kind:'changed', fresh:object}|{kind:'missing'}
+ *   |{kind:'reread-failed', error:string}|{kind:'unknown', stored:object|null|undefined, changes:object}
+ *   |{kind:'failed', error:Error}>}
+ */
+export async function runMove({ writer, taskId, plan, fetchRow, readTable, timeoutMs }) {
+  const ms = timeoutMs || DEFAULT_TIMEOUT_MS;
+  let also = plan.also;
+  if (writer.mode === 'on') {
+    let fresh;
+    try {
+      fresh = await readRow(fetchRow, taskId, ms);
+      // Sous-tâches relues dans la Feuille : celles ajoutées entre-temps par d'autres suivent aussi
+      if (fresh && readTable) {
+        const raw = await withTimeout(readTable('Tasks'), ms, () => new Error(`délai de ${ms / 1000} s dépassé`));
+        also = moveRows(taskLinksFromTable(raw), taskId, plan.changes);
+      }
+    } catch (err) {
+      return { kind: 'reread-failed', error: String(err?.message ?? err) };
+    }
+    if (fresh === null) return { kind: 'missing' };
+    if (fresh.Chantier !== plan.before.Chantier || fresh.projet !== plan.before.projet)
+      return { kind: 'changed', fresh };
+  }
+  try {
+    return {
+      kind: 'saved',
+      count: also.length,
+      entry: await writer.update('Tasks', taskId, plan.changes, { before: plan.before, also }),
+    };
+  } catch (error) {
+    if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
+    if (error instanceof WriteFailed && error.kind === 'timeout')
+      return unknownOutcome(fetchRow, taskId, ms, plan.changes);
+    return { kind: 'failed', error };
+  }
+}
+
+/**
+ * « Désactiver » ou « Réactiver » une personne (lot 2d, jamais de suppression) : la ligne est relue (envoi réel) ;
+ * si elle est déjà dans l'état demandé, rien n'est envoyé. Sinon la seule colonne actif part dans un lot.
+ * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object}|{kind:'missing'}|{kind:'reread-failed', error:string}
+ *   |{kind:'failed', error:Error}|{kind:'unknown', stored:object|null|undefined, changes:object}>}
+ */
+export async function runSetActive({ writer, personId, actif, localBase, fetchRow, timeoutMs }) {
+  const ms = timeoutMs || DEFAULT_TIMEOUT_MS;
+  let base = localBase;
+  if (writer.mode === 'on') {
+    try {
+      base = await readRow(fetchRow, personId, ms);
+    } catch (err) {
+      return { kind: 'reread-failed', error: String(err?.message ?? err) };
+    }
+  }
+  if (!base) return { kind: 'missing' };
+  if (base.actif === actif) return { kind: 'nothing' };
+  const changes = { actif };
+  try {
+    return { kind: 'saved', entry: await writer.update('Team', personId, changes, { before: { actif: base.actif } }) };
+  } catch (error) {
+    if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
+    if (error instanceof WriteFailed && error.kind === 'timeout')
+      return unknownOutcome(fetchRow, personId, ms, changes);
+    return { kind: 'failed', error };
+  }
+}
+
+/** Raison lisible d'un échec : 'refused:<raison>', 'acl', 'document', 'missing' ou 'other'. */
+export function failureKind(error) {
+  if (error instanceof WriteRefused) return `refused:${error.reason}`;
+  if (error instanceof WriteFailed) return error.document ? 'document' : error.kind;
+  return 'other';
+}

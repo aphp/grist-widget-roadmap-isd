@@ -1,0 +1,431 @@
+/**
+ * Contrôleur des fenêtres de création (« Nouvelle tâche », « Sous-tâche », « Nouveau chantier ») et du
+ * changement de chantier d'une tâche (lot 2c). Les valeurs viennent de core/create-form.js, les envois de
+ * core/task-session.js (runCreate, runMove) et donc du writer : aucune action Grist n'est construite ici.
+ * La saisie est conservée en cas de refus ; Échap demande confirmation s'il reste une saisie.
+ */
+import {
+  creePar,
+  movePlan,
+  newChantierDraft,
+  newChantierFields,
+  newTaskDraft,
+  newTaskFields,
+  parseTarget,
+  setNewMilestone,
+  validateNewChantier,
+  validateNewTask,
+} from '../core/create-form.js';
+import { failureKind, runCreate, runMove } from '../core/task-session.js';
+import { EncodeError, dayFromInput } from '../core/write-encode.js';
+import { label } from '../labels.js';
+import { openDialog } from './dialog.js';
+import { dialogFoot, moveBody, newChantierBody, newTaskBody } from '../views/create-form.js';
+import { fieldLabel, valueText } from '../views/task-form.js';
+
+const MORE_KEY = 'roadmap-isd.createMore';
+const TITLES = Object.freeze({
+  task: 'create.task.title',
+  subtask: 'create.subtask.title',
+  chantier: 'create.chantier.title',
+  move: 'move.title',
+});
+const FIRST = Object.freeze({
+  task: 'cf-titre',
+  subtask: 'cf-titre',
+  chantier: 'cf-Nom_du_chantier',
+  move: 'cf-cible',
+});
+const ORDER = Object.freeze([
+  'titre',
+  'Nom_du_chantier',
+  'cible',
+  'Projets',
+  'parentTask',
+  'statut',
+  'Statut',
+  'dateDebut',
+  'dateEcheance',
+  'Debut',
+  'Fin',
+  'assignees',
+  'Responsable',
+  'Contributeurs',
+]);
+
+/**
+ * @param {{getModel():object, getWriter():object|null, getPrefs():object, storage:Storage, toast:{show:Function},
+ *   onWritten(entry:object):void, onUndo():void, openForm(ref:object):void, onSessionReadOnly(reason:string):void,
+ *   afterMove(ref:object):void, afterCreate(entry:object):void, fetchRow(table:string, id:number):Promise<object|null>,
+ *   onUnknown():void, timeoutMs():number, onAddRefused?():void, readTable?(table:string):Promise<object>}} deps
+ */
+export function createCreateDialog(deps) {
+  let st = null;
+  let dlg = null;
+
+  const model = () => deps.getModel();
+  const writer = () => deps.getWriter();
+
+  function moreOpen() {
+    try {
+      return deps.storage.getItem(MORE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function validate() {
+    const m = model();
+    if (st.kind === 'move') {
+      const { chantierId, projectId } = parseTarget(st.target);
+      const plan = chantierId ? movePlan(m, st.taskId, chantierId, projectId) : { error: 'none' };
+      st.plan = plan.error ? null : plan;
+      st.count = plan.error ? countSubtasks() : plan.count;
+      const key =
+        { none: 'form.error.chantierRequired', same: 'move.error.same' }[plan.error] ?? `move.error.${plan.error}`;
+      st.validation = { errors: plan.error ? { cible: { key } } : {}, warnings: [] };
+    } else if (st.kind === 'chantier')
+      st.validation = validateNewChantier(st.draft, { model: m, statuses: m.statuses.chantiers });
+    else st.validation = validateNewTask(st.draft, { model: m, statuses: m.statuses.tasks });
+    for (const f of st.badDates) st.validation.errors[f] = { key: 'form.error.date' };
+    // Erreurs montrées : champs déjà touchés, ou toutes après une tentative d'envoi (pas d'erreur à l'ouverture)
+    st.allErrors = st.validation.errors;
+    st.validation.errors = Object.fromEntries(
+      Object.entries(st.allErrors).filter(([f]) => st.tried || st.touched.has(f)),
+    );
+  }
+
+  /** Sous-tâches qui suivront (affiché tant qu'aucun chantier d'arrivée n'est choisi). */
+  function countSubtasks() {
+    const seen = new Set();
+    const stack = [...(model().tasks.get(st.taskId)?.childIds ?? [])];
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(model().tasks.get(id)?.childIds ?? []));
+    }
+    return seen.size;
+  }
+
+  const errorCount = () => Object.keys(st.validation.errors).length;
+  const body = () =>
+    st.kind === 'move'
+      ? moveBody(st, model())
+      : st.kind === 'chantier'
+        ? newChantierBody(st, model())
+        : newTaskBody(st, model());
+
+  function render(focusId) {
+    validate();
+    dlg.update(body(), dialogFoot(st, errorCount()), focusId);
+  }
+
+  /** Mise à jour légère pendant la frappe : messages et pied, sans toucher aux champs. */
+  function refresh() {
+    validate();
+    const rendered = document.createElement('div');
+    rendered.innerHTML = body().toString();
+    for (const box of rendered.querySelectorAll('.tf-msgs[id]')) {
+      const live = document.getElementById(box.id);
+      if (live) live.innerHTML = box.innerHTML;
+    }
+    for (const f of ORDER) {
+      const ctl = document.getElementById(`cf-${f}`);
+      if (!ctl) continue;
+      if (st.validation.errors[f]) ctl.setAttribute('aria-invalid', 'true');
+      else ctl.removeAttribute('aria-invalid');
+      ctl.closest('.tf-field')?.classList.toggle('fr-input-group--error', Boolean(st.validation.errors[f]));
+    }
+    const foot = dlg.root.querySelector('.cdlg__foot');
+    if (foot) foot.innerHTML = dialogFoot(st, errorCount()).toString();
+  }
+
+  /** Une saisie a-t-elle été faite depuis l'ouverture ? */
+  const dirty = () => JSON.stringify(st.draft ?? st.target) !== st.initial;
+
+  function close() {
+    st = null;
+    dlg?.close();
+    dlg = null;
+  }
+
+  function requestClose() {
+    if (!st || st.busy) return;
+    if (!dirty() || st.locked) return close();
+    st.leave = true;
+    render('cf-leave-continue');
+  }
+
+  /**
+   * Ouvre une fenêtre.
+   * @param {'task'|'subtask'|'chantier'|'move'} kind
+   * @param {{chantierId?:number|null, projectId?:number|null, parentId?:number|null, status?:string|null,
+   *          me?:number|null, taskId?:number}} ctx
+   */
+  function open(kind, ctx = {}) {
+    const w = writer();
+    if (!w || dlg) return false;
+    const table = kind === 'chantier' ? 'Chantiers' : 'Tasks';
+    if (kind === 'move' ? !w.can('Tasks', 'Chantier').ok : !w.canAdd(table).ok) return false;
+    const m = model();
+    st = {
+      kind,
+      table,
+      prefix: 'cf',
+      mode: w.mode,
+      busy: false,
+      fail: null,
+      leave: false,
+      locked: false,
+      badDates: new Set(),
+      touched: new Set(),
+      tried: false,
+      moreOpen: moreOpen(),
+      can: () => ({ ok: true, reason: 'ok' }),
+      optional: (col) => w.canAddField(table, col),
+      validation: { errors: {}, warnings: [] },
+    };
+    if (kind === 'move') {
+      if (!m.tasks.has(ctx.taskId)) {
+        st = null;
+        return false;
+      }
+      st.taskId = ctx.taskId;
+      st.target = '';
+      st.initial = JSON.stringify('');
+      st.count = 0;
+    } else {
+      st.draft =
+        kind === 'chantier'
+          ? newChantierDraft(m, { projectId: ctx.projectId, me: ctx.me })
+          : newTaskDraft(m, { ...ctx, parentId: kind === 'subtask' ? ctx.parentId : null });
+      st.me = ctx.me ?? null;
+      st.initial = JSON.stringify(st.draft);
+    }
+    validate();
+    dlg = openDialog({
+      title: label(TITLES[kind]),
+      body: body(),
+      foot: dialogFoot(st, errorCount()),
+      focus: FIRST[kind],
+      onRequestClose: requestClose,
+    });
+    bind(dlg.root);
+    return true;
+  }
+
+  /** Texte de la saisie, à copier quand elle ne peut pas être enregistrée. */
+  function copyText(fields) {
+    return Object.entries(fields)
+      .filter(([c]) => c !== 'Cree_par')
+      .map(([c, v]) => `${fieldLabel(c)} : ${valueText(model(), c, v)}`)
+      .join('\n');
+  }
+
+  /** Échec à afficher dans la fenêtre ; un refus valant pour toute la session met la page en lecture. */
+  function failOf(result, fields) {
+    const copy = copyText(fields);
+    if (result.kind === 'unknown') {
+      deps.onUnknown?.();
+      return { kind: 'unknown', copy };
+    }
+    if (['changed', 'missing', 'reread-failed'].includes(result.kind)) {
+      deps.onUnknown?.();
+      return { kind: result.kind === 'reread-failed' ? 'reread' : result.kind, copy };
+    }
+    const k = failureKind(result.error);
+    const session = k === 'document' ? 'viewer' : k === 'refused:coupe' || k === 'refused:flags' ? 'flags' : null;
+    if (session) {
+      st.locked = true;
+      deps.onSessionReadOnly(session);
+      return { kind: 'session', message: session, copy };
+    }
+    if (k.startsWith('refused:')) return { kind: 'refused', message: k.slice(8), copy };
+    // Ajout refusé par une règle d'accès : les boutons de création disparaissent pour la session
+    if (k === 'acl') deps.onAddRefused?.();
+    return { kind: k === 'acl' ? 'acl' : 'other', message: String(result.error?.message ?? ''), copy };
+  }
+
+  async function submit(andOpen) {
+    if (!st || st.busy || st.locked) return;
+    st.tried = true;
+    validate();
+    if (errorCount()) {
+      const first = ORDER.find((f) => st.validation.errors[f]);
+      return render(first ? `cf-${first}` : undefined);
+    }
+    const cur = st;
+    const w = writer();
+    cur.busy = true;
+    cur.fail = null;
+    render(st.kind === 'move' ? 'cf-submit' : andOpen ? 'cf-create-open' : 'cf-create');
+    let result;
+    let fields;
+    if (cur.kind === 'move') {
+      fields = cur.plan.changes;
+      result = await runMove({
+        writer: w,
+        taskId: cur.taskId,
+        plan: cur.plan,
+        fetchRow: (id) => deps.fetchRow('Tasks', id),
+        readTable: deps.readTable,
+        timeoutMs: deps.timeoutMs?.(),
+      });
+    } else {
+      const opt = (c) => w.canAddField(cur.table, c);
+      fields =
+        cur.kind === 'chantier'
+          ? newChantierFields(cur.draft, { canAddField: opt })
+          : newTaskFields(cur.draft, { creePar: creePar(model(), cur.me), canAddField: opt });
+      result = await runCreate({ writer: w, table: cur.table, fields });
+    }
+    cur.busy = false;
+    if (st !== cur) return;
+    if (result.kind === 'saved') {
+      const entry = result.entry;
+      close();
+      deps.onWritten(entry);
+      if (cur.kind === 'move') {
+        const n = result.count ?? cur.plan.count;
+        deps.toast.show(
+          label(entry.sent ? 'move.toast' : 'move.toastDry', {
+            suite: n ? label(n === 1 ? 'move.toast.one' : 'move.toast.many', { n }) : '',
+          }),
+          { onAction: deps.onUndo },
+        );
+        deps.afterMove?.({ table: 'Tasks', id: cur.taskId });
+        return;
+      }
+      const key = cur.kind === 'chantier' ? 'create.toast.chantier' : 'create.toast.task';
+      // Création sans réponse dans le délai mais retrouvée sans ambiguïté dans la Feuille : annulable
+      const text = entry.recovered
+        ? label('create.toast.recovered', { id: entry.id })
+        : label(entry.sent ? key : `${key}Dry`);
+      deps.toast.show(text, { onAction: deps.onUndo });
+      if (andOpen) deps.openForm({ table: cur.table, id: entry.id });
+      else deps.afterCreate?.(entry);
+      return;
+    }
+    cur.fail = failOf(result, fields);
+    render('cf-alert');
+  }
+
+  function setDate(f, value) {
+    try {
+      st.draft[f] = dayFromInput(value);
+      st.badDates.delete(f);
+      if (st.draft.type === 'jalon' && f === 'dateEcheance') st.draft.dateDebut = st.draft.dateEcheance;
+    } catch (err) {
+      if (!(err instanceof EncodeError)) throw err;
+      st.badDates.add(f);
+    }
+  }
+
+  function bind(root) {
+    root.addEventListener('input', (e) => {
+      if (!st || st.busy) return;
+      const f = e.target.dataset.cf;
+      if (f) st.touched.add(f);
+      if (['titre', 'Nom_du_chantier', 'description', 'Description'].includes(f)) {
+        st.draft[f] = e.target.value;
+        refresh();
+      }
+    });
+    root.addEventListener('change', (e) => {
+      if (!st || st.busy) return;
+      const t = e.target;
+      const f = t.dataset.cf ?? t.dataset.input;
+      if (f) st.touched.add(f);
+      if (f === 'dateDebut') st.touched.add('dateEcheance');
+      if (f === 'Debut') st.touched.add('Fin');
+      if (t.dataset.cfAddAssignee !== undefined) st.touched.add('assignees');
+      if (t.dataset.addProjet !== undefined) st.touched.add('Projets');
+      if (t.dataset.addContrib !== undefined) st.touched.add('Contributeurs');
+      if (f === 'cible') {
+        if (st.kind === 'move') st.target = t.value;
+        else {
+          const { chantierId, projectId } = parseTarget(t.value);
+          st.draft.Chantier = chantierId;
+          st.draft.projet = projectId;
+        }
+        render('cf-cible');
+      } else if (['dateDebut', 'dateEcheance', 'Debut', 'Fin'].includes(f)) {
+        setDate(f, t.value);
+        refresh();
+      } else if (f === 'type') {
+        st.draft = setNewMilestone(st.draft, t.checked);
+        render('cf-type');
+      } else if (f === 'statut' || f === 'Statut' || f === 'priorite') {
+        st.draft[f] = t.value;
+        if (f === 'priorite') render(t.id);
+        else refresh();
+      } else if (f === 'Responsable') {
+        st.draft.Responsable = t.value ? Number(t.value) : null;
+        refresh();
+      } else if (t.dataset.cfAddAssignee !== undefined && t.value) {
+        const id = Number(t.value);
+        if (!st.draft.assignees.includes(id)) st.draft.assignees = [...st.draft.assignees, id];
+        render('cf-assignees');
+      } else if (t.dataset.addProjet !== undefined && t.value) {
+        const id = Number(t.value);
+        if (!st.draft.Projets.includes(id)) st.draft.Projets = [...st.draft.Projets, id];
+        render('cf-Projets');
+      } else if (t.dataset.addContrib !== undefined && t.value) {
+        const id = Number(t.value);
+        if (!st.draft.Contributeurs.includes(id)) st.draft.Contributeurs = [...st.draft.Contributeurs, id];
+        render('cf-Contributeurs');
+      }
+    });
+    root.addEventListener(
+      'toggle',
+      (e) => {
+        if (!st || e.target.id !== 'cf-more') return;
+        st.moreOpen = e.target.open;
+        try {
+          deps.storage.setItem(MORE_KEY, st.moreOpen ? '1' : '0');
+        } catch {
+          // stockage indisponible : le choix vaut pour la session
+        }
+      },
+      true,
+    );
+    root.addEventListener('click', (e) => {
+      const t = e.target.closest('button');
+      if (!t || !st) return;
+      const a = t.dataset.cfAction;
+      if (a === 'leave-continue') {
+        st.leave = false;
+        return render(FIRST[st.kind]);
+      }
+      if (a === 'leave-discard') return close();
+      if (st.busy) return;
+      if (a === 'cancel') return requestClose();
+      if (a === 'create' || a === 'submit') return void submit(false);
+      if (a === 'create-open') return void submit(true);
+      if (t.dataset.removeProjet) st.touched.add('Projets');
+      if (t.dataset.cfRemoveAssignee) {
+        const id = Number(t.dataset.cfRemoveAssignee);
+        st.draft.assignees = st.draft.assignees.filter((x) => x !== id);
+        render('cf-assignees');
+      } else if (t.dataset.removeProjet) {
+        const id = Number(t.dataset.removeProjet);
+        st.draft.Projets = st.draft.Projets.filter((x) => x !== id);
+        render('cf-Projets');
+      } else if (t.dataset.removeContrib) {
+        const id = Number(t.dataset.removeContrib);
+        st.draft.Contributeurs = st.draft.Contributeurs.filter((x) => x !== id);
+        render('cf-Contributeurs');
+      }
+    });
+    root.addEventListener('keydown', (e) => {
+      if (!st || e.key !== 'Enter') return;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        submit(st.kind !== 'move');
+      } else if (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') e.preventDefault();
+    });
+  }
+
+  return { open, isOpen: () => dlg !== null };
+}

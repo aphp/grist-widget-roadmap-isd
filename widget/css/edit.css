@@ -1,0 +1,810 @@
+/* Édition (lot 2a) : bandeau d'édition de la fiche, formulaire tâche, pied fixe, message « Annuler », pastille. */
+
+/* ---- Fiche en lecture : statut rapide et « Modifier » ---- */
+.dt-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+.dt-edit__status {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 12rem;
+}
+.dt-edit__label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.dt-edit__help {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- Panneau en édition : plus large, pied fixe ---- */
+.drawer[data-mode='edit'] {
+  width: min(520px, 100vw);
+}
+.drawer__foot {
+  flex: none;
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  box-shadow: 0 -2px 6px rgb(0 0 0 / 6%);
+}
+.tf-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+.tf-foot__text {
+  display: grid;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+.tf-foot__count {
+  font-weight: var(--font-weight-bold);
+}
+.tf-foot__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tf-foot__error {
+  font-size: var(--font-size-xs);
+  color: var(--badge-error-text);
+  font-weight: var(--font-weight-bold);
+}
+.tf-foot__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.tf-foot--leave .tf-foot__text {
+  font-weight: var(--font-weight-bold);
+}
+
+/* ---- Formulaire ---- */
+.tf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--color-text);
+}
+.tf-legend {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tf-field {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+}
+.tf .fr-input-group {
+  margin-bottom: 0;
+}
+.tf-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.tf-field > p.tf-label {
+  margin: 0;
+}
+.tf-hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
+.tf-label .fr-hint-text {
+  font-weight: var(--font-weight-regular);
+}
+.tf-sublabel {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.tf-req {
+  color: var(--badge-error-text);
+}
+.tf-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+.tf-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  align-items: start;
+  gap: var(--space-3);
+}
+.tf-field--check {
+  align-self: center;
+  padding-top: var(--space-5);
+}
+.tf-field--check .tf-msgs {
+  grid-column: 1 / -1;
+}
+.tf-msgs:empty {
+  display: none;
+}
+.tf-msgs > p {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
+.tf-error {
+  margin: 0;
+}
+.tf-warn {
+  color: var(--load-text-tension);
+}
+.tf-warn::before {
+  content: '⚠ ';
+}
+.tf-locked,
+.tf-note,
+.tf-empty,
+.tf-inherited {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tf-num {
+  max-width: 8rem;
+}
+.tf-area {
+  min-height: 4.5rem;
+  resize: vertical;
+  field-sizing: content;
+}
+.tf-readonly {
+  margin: 0;
+}
+.tf-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Pastilles (assignés, dépendances) */
+.tf-chips {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 2px 2px var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+}
+.tf-chip__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tf-chip__remove {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.tf-chip__remove:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+.tf-chip__remove:focus-visible,
+.tf-result:focus-visible,
+.tf-more__summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.tf-add {
+  max-width: 20rem;
+}
+
+/* Résultats de recherche de tâches */
+.tf-results {
+  display: grid;
+  gap: 2px;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.tf-result {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.tf-result:hover {
+  background: var(--color-surface-hover);
+}
+.tf-result__meta {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* « Plus de champs » */
+.tf-more {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+.tf-more__summary {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-accent-text);
+  cursor: pointer;
+}
+.tf-more__hint {
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tf-more__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+.tf-clear {
+  align-self: end;
+}
+
+/* Bandeaux du formulaire (erreur Grist, conflit, modification ailleurs) */
+.tf-alert:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.tf-alert p {
+  margin: 0 0 var(--space-2);
+}
+.tf-alert__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.tf-conflict {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.tf-conflict legend {
+  font-weight: var(--font-weight-bold);
+}
+.tf-copy {
+  width: 100%;
+  margin-top: var(--space-1);
+}
+.tf-tech pre {
+  overflow: auto;
+  max-height: 8rem;
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+}
+
+/* ---- Message « … Annuler » ---- */
+.toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  z-index: 60;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-4));
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-title);
+  color: var(--color-bg);
+  box-shadow: var(--shadow-3);
+}
+.toast--error {
+  background: var(--badge-error-text);
+}
+.toast__text {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.toast .toast__action {
+  background: var(--color-bg);
+  color: var(--color-title);
+}
+.toast .toast__close {
+  color: inherit;
+  flex: none;
+}
+.toast .toast__close:hover {
+  background: rgb(255 255 255 / 15%);
+}
+
+/* ---- Pastille d'édition et panneau de l'en-tête ---- */
+.edit-anchor {
+  display: inline-flex;
+}
+.edit-pill {
+  border: 0;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+.edit-pill--on {
+  background: var(--badge-success-bg);
+  color: var(--badge-success-text);
+}
+.edit-pill--dry {
+  background: var(--badge-new-bg);
+  color: var(--badge-new-text);
+}
+.edit-pill:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.edit-panel {
+  left: 0;
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: var(--space-4);
+}
+.edit-panel__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+  font-size: var(--font-size-sm);
+}
+.edit-panel__line {
+  display: block;
+}
+.edit-panel__list .is-undone {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+.edit-panel__undone {
+  text-decoration: none;
+  font-size: var(--font-size-xs);
+}
+.edit-panel__json pre {
+  overflow: auto;
+  max-height: 12rem;
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .drawer__foot {
+    padding: var(--space-3) var(--space-4);
+  }
+  .tf-foot__actions {
+    width: 100%;
+  }
+  .tf-foot__actions .fr-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .tf-field--check {
+    padding-top: 0;
+  }
+}
+
+/* ---- Boutons d'édition : accent indigo (le rouge reste réservé à la création) ---- */
+:root {
+  --edit-primary-bg: #4f46e5;
+  --edit-primary-hover: #4338ca;
+  --edit-primary-text: #fff;
+}
+:root[data-fr-theme='dark'] {
+  --edit-primary-bg: #a5b4fc;
+  --edit-primary-hover: #c7d2fe;
+  --edit-primary-text: #1e1b4b;
+}
+.fr-btn.edit-primary {
+  background-color: var(--edit-primary-bg);
+  color: var(--edit-primary-text);
+  --hover: var(--edit-primary-hover);
+  --active: var(--edit-primary-hover);
+}
+.fr-btn.edit-primary:hover:not(:disabled) {
+  background-color: var(--edit-primary-hover);
+}
+.fr-btn.edit-primary:disabled {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-disabled);
+}
+
+/* ---- Statut rapide : bouton-menu ---- */
+.status-menu {
+  position: relative;
+  display: inline-block;
+}
+.status-menu__list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 12rem;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-3);
+}
+.status-menu__list[hidden] {
+  display: none;
+}
+.status-menu__item {
+  display: block;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.status-menu__item:hover {
+  background: var(--color-surface-hover);
+}
+.status-menu__item[aria-current='true'] {
+  font-weight: var(--font-weight-bold);
+}
+.status-menu__item[aria-current='true']::before {
+  content: '✓ ';
+}
+.status-menu__item:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.tf-revert {
+  justify-self: start;
+  margin-top: var(--space-1);
+}
+.status-menu__toggle > [aria-hidden='true'] {
+  margin-left: 0.25em;
+}
+
+/* Charges par personne (lot 2b) */
+.tf-charges {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+.tf-charges__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.tf-charges__title {
+  border-bottom: 0;
+}
+.tf-charges__unit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+}
+.tf-charges__unit .fr-segmented__legend {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.tf-charges__rows {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tf-charge {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.tf-charge__who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-sm);
+}
+.tf-charge__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+.tf-charge__input {
+  width: 4.5rem;
+  margin: 0;
+  text-align: right;
+}
+.tf-charge__unit {
+  font-size: var(--font-size-sm);
+}
+.tf-charge__eq {
+  min-width: 5.5rem;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tf-charge__remove {
+  min-height: 2rem;
+  padding: 0 var(--space-1);
+  color: var(--color-text-muted);
+}
+.tf-charge__remove:hover {
+  color: var(--color-text);
+}
+.tf-charge__msgs {
+  grid-column: 1 / -1;
+}
+.tf-charge__msgs:empty {
+  display: none;
+}
+.tf-charge__msgs > p {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
+.tf-charge__delta {
+  color: var(--color-text-muted);
+}
+.tf-charges__nodates,
+.tf-charges__invalid {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--load-text-tension);
+}
+.tf-charges__add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.tf-charges__add .tf-add {
+  margin: 0;
+}
+/* Bloc « Personnes » : charge sans assignation signalée discrètement, « Assigner » à côté */
+.tf-person__flag {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border: 1px dashed var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+.tf-person__assign {
+  min-height: 1.75rem;
+  margin: 0 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+}
+.tf-charge__input::placeholder {
+  color: var(--color-text-muted);
+}
+.tf-charges__foot {
+  margin: 0;
+  padding-top: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.tf-charges__foot:empty {
+  display: none;
+}
+.tf-charges__raw {
+  max-height: 8rem;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tf-charges__unreadable > p {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-sm);
+}
+@media (max-width: 30rem) {
+  .tf-charge {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .tf-charge__value {
+    grid-column: 1 / 2;
+  }
+}
+
+/* ---- Lot 2c : créations (boutons d'en-tête, fenêtres), fiche chantier, rattachement ---- */
+.create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.create-actions .fr-btn {
+  margin: 0;
+}
+.tf-add-sub {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+}
+.tf-attach dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tf-attach__change {
+  margin: 0;
+}
+.tf-attach__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tf-reattach {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--border-plain-warning);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-md);
+}
+
+/* Fenêtre modale centrée (<dialog> ouvert par showModal) */
+.cdlg {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: 0 20px 48px rgb(0 0 0 / 24%);
+}
+.cdlg::backdrop {
+  background: rgb(15 23 42 / 45%);
+}
+.cdlg__panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2rem);
+}
+.cdlg__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.cdlg__title {
+  margin: 0;
+  font-size: var(--font-size-lg, 1.125rem);
+  color: var(--color-title);
+}
+.cdlg__title:focus {
+  outline: none;
+}
+.cdlg__close {
+  margin: 0;
+}
+.cdlg__body {
+  overflow: auto;
+  padding: var(--space-4) var(--space-6);
+}
+.cdlg__foot {
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.cf .tf-field {
+  min-width: 0;
+}
+.cf .fr-select,
+.cf .fr-input,
+.cf .tf-area {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .cdlg {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 100dvh;
+    margin: auto 0 0;
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+  }
+  .cdlg__head,
+  .cdlg__body,
+  .cdlg__foot {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+  .create-actions .fr-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* ---- Lot 2d : fiche personne (Modifier, Désactiver / Réactiver, indisponibilités) ---- */
+.dt-edit--person {
+  align-items: center;
+  justify-content: flex-start;
+}
+.dt-edit--person #btn-person-active {
+  margin-left: auto;
+}
+.dt-inactive-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.dt-unav li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.dt-unav__edit {
+  min-height: 0;
+  padding: 0 var(--space-1);
+}
