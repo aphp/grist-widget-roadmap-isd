@@ -28,7 +28,8 @@ import {
   validatePerson,
 } from '../core/person-form.js';
 import { personFormBody } from '../views/person-form.js';
-import { EncodeError, changedFields, dayFromInput, parseNumberFr } from '../core/write-encode.js';
+import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
+import { draftChangeRight, quickStatusRight } from '../core/write-rights.js';
 import { label, statusLabel } from '../labels.js';
 import {
   chargeEqText,
@@ -232,9 +233,7 @@ export function createTaskEditor(deps) {
    * @returns {boolean} vrai si le brouillon a été remplacé
    */
   function applyDraft(next, focusId) {
-    const w = writer();
-    const cols = changedFields(st.draft, next);
-    if (!w || w.mode === 'off' || st.locked || !cols.every((c) => st.can(c).ok)) {
+    if (!draftChangeRight(writer(), st, st.draft, next).ok) {
       render(focusId);
       return false;
     }
@@ -518,7 +517,7 @@ export function createTaskEditor(deps) {
     const w = writer();
     if (!w || quickBusy || st?.busy) return;
     // Droit relu au moment d'agir : le menu a pu être affiché avant un passage en lecture
-    if (st?.locked || !w.can(ref.table, ref.table === 'Chantiers' ? 'Statut' : 'statut').ok) return;
+    if (st?.locked || !quickStatusRight(w, ref.table).ok) return;
     quickBusy = true;
     const cur = st;
     const result = await runQuickStatus({

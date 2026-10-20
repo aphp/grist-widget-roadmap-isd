@@ -16,6 +16,7 @@ import {
   validateUnav,
 } from '../core/person-form.js';
 import { conflictBatch, failureKind, runCreate, runSave, runSetActive } from '../core/task-session.js';
+import { personDialogRight, rightFailure } from '../core/write-rights.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { label } from '../labels.js';
 import { openDialog } from './dialog.js';
@@ -112,14 +113,6 @@ export function createPersonDialog(deps) {
     render('pf-leave-continue');
   }
 
-  /** Droit d'agir pour une fenêtre (relu à l'ouverture et juste avant l'envoi) : { ok, reason }. */
-  function rights(w, kind) {
-    if (!w || w.mode === 'off') return { ok: false, reason: 'off' };
-    const t = table(kind);
-    if (kind === 'add' || kind === 'unav-add') return w.canAdd(t);
-    return kind === 'off' ? w.can('Team', 'actif') : w.can('Disponibilites', 'dateDebut');
-  }
-
   /**
    * Ouvre une fenêtre.
    * @param {'add'|'unav-add'|'unav-edit'|'off'} kind
@@ -129,7 +122,7 @@ export function createPersonDialog(deps) {
     const w = writer();
     if (!w || dlg || !TITLES[kind]) return false;
     const t = table(kind);
-    if (!rights(w, kind).ok) return false;
+    if (!personDialogRight(w, kind).ok) return false;
     const m = model();
     st = {
       kind,
@@ -256,10 +249,11 @@ export function createPersonDialog(deps) {
       return render(first ? `pf-${first}` : undefined);
     }
     // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
-    const allowed = rights(writer(), st.kind);
+    const allowed = personDialogRight(writer(), st.kind);
     if (!allowed.ok) {
       st.locked = true;
-      st.fail = { kind: 'session', message: allowed.reason === 'viewer' ? 'viewer' : 'flags', copy: '' };
+      // Saisie toujours copiable si un échec précédent l'avait proposée
+      st.fail = { ...rightFailure(allowed.reason), copy: st.fail?.copy ?? '' };
       return render('tf-alert');
     }
     const cur = st;

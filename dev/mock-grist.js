@@ -1,7 +1,8 @@
 // FAUX GRIST, développement uniquement (jamais servi en production) : lit dev/data/snapshot.json (non versionné),
 // ou le jeu synthétique de dev/synthetic-snapshot.js s'il est absent ou si ?donnees=synthetiques (tests de bout en
 // bout : toujours les mêmes données inventées). Ne contacte jamais un vrai Grist. Un échec de lecture des données
-// est noté dans window.__mockError. Toute écriture est journalisée dans window.__writes, puis traitée selon ?ecritures= :
+// est noté dans window.__mockError. Les lectures (tables, flags.json) sont notées dans window.__reads. Toute écriture
+// est journalisée dans window.__writes, puis traitée selon ?ecritures= :
 //   refus (défaut)  : refusée ;
 //   memoire         : appliquée à la copie en mémoire du snapshot (l'interface se met à jour), onRecords simulé ;
 //   acl:<Table>     : refus de type règle d'accès sur cette table (« Blocked by table update access rules ») ;
@@ -59,8 +60,11 @@
 
   // Réponse de GET {baseUrl} (niveau d'accès), sans réseau
   const realFetch = window.fetch.bind(window);
+  // Lectures faites par le widget (tables lues, flags.json) : un test vérifie qu'une action refusée ne lit rien
+  window.__reads = [];
   window.fetch = async (input, init) => {
     const url = String(typeof input === 'string' ? input : input.url);
+    if (/\/flags\.json$/.test(new URL(url, window.location.href).pathname)) window.__reads.push('flags.json');
     // flags.json sans réponse : ?ecritures=…,flags-bloque (ou window.__flagsBloque = true en cours de session)
     if (
       (has('flags-bloque') || window.__flagsBloque) &&
@@ -187,6 +191,7 @@
     setOptions: refuse('setOptions'),
     docApi: {
       fetchTable: async (t) => {
+        window.__reads.push(t);
         const d = await load();
         if (!d[t]) throw new Error(`KeyError: ${t}`);
         return structuredClone(d[t]);

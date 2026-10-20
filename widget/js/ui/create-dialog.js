@@ -17,6 +17,7 @@ import {
   validateNewTask,
 } from '../core/create-form.js';
 import { failureKind, runCreate, runMove } from '../core/task-session.js';
+import { createDialogRight, rightFailure } from '../core/write-rights.js';
 import { EncodeError, dayFromInput } from '../core/write-encode.js';
 import { label } from '../labels.js';
 import { openDialog } from './dialog.js';
@@ -157,14 +158,6 @@ export function createCreateDialog(deps) {
     render('cf-leave-continue');
   }
 
-  /** Droit d'agir (relu à l'ouverture et juste avant l'envoi) : { ok, reason }. */
-  function rights(w, kind, table) {
-    if (!w || w.mode === 'off') return { ok: false, reason: 'off' };
-    if (kind !== 'move') return w.canAdd(table);
-    const c = w.can('Tasks', 'Chantier');
-    return c.ok ? w.can('Tasks', 'projet') : c;
-  }
-
   /**
    * Ouvre une fenêtre.
    * @param {'task'|'subtask'|'chantier'|'move'} kind
@@ -175,7 +168,7 @@ export function createCreateDialog(deps) {
     const w = writer();
     if (!w || dlg) return false;
     const table = kind === 'chantier' ? 'Chantiers' : 'Tasks';
-    if (!rights(w, kind, table).ok) return false;
+    if (!createDialogRight(w, kind, table).ok) return false;
     const m = model();
     st = {
       kind,
@@ -265,10 +258,11 @@ export function createCreateDialog(deps) {
     }
     const w = writer();
     // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
-    const allowed = rights(w, st.kind, st.table);
+    const allowed = createDialogRight(w, st.kind, st.table, st.plan);
     if (!allowed.ok) {
       st.locked = true;
-      st.fail = { kind: 'session', message: allowed.reason === 'viewer' ? 'viewer' : 'flags', copy: '' };
+      // Saisie toujours copiable si un échec précédent l'avait proposée
+      st.fail = { ...rightFailure(allowed.reason), copy: st.fail?.copy ?? '' };
       return render('cf-alert');
     }
     const cur = st;

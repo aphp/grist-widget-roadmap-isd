@@ -1051,6 +1051,12 @@ test(
     assert.match(await w(`return D.getElementById('cf-alert').textContent;`), /n’autorise pas votre compte à créer/);
     assert.match(await w(`return D.getElementById('cf-copy').value;`), /Refusée/);
     assert.equal(await w(`return D.getElementById('cf-titre').value;`), 'Refusée');
+    // Nouvel essai : le droit d'ajout est relu avant l'envoi (refus de la règle d'accès gardé), rien n'est envoyé
+    await clickOn('#cf-create');
+    await sleep(400);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+    assert.match(await w(`return D.getElementById('cf-alert').textContent;`), /n’autorise pas votre compte à créer/);
+    assert.match(await w(`return D.getElementById('cf-copy').value;`), /Refusée/);
     await w(`D.getElementById('cf-cancel')?.click(); return true;`);
     await w(`D.getElementById('cf-leave-discard')?.click(); return true;`);
     await until(`!D.querySelector('dialog.cdlg')`);
@@ -1407,6 +1413,76 @@ test(
     await until(`W.__writes.length === 2`);
     assert.deepEqual((await writes())[1], [['UpdateRecord', 'Team', 2, { actif: true }]]);
     await until(`D.activeElement.closest('#app-detail')`);
+  },
+);
+
+/** Arrêt d'urgence relu à une relecture : la session passe en lecture sans redessiner les fenêtres ouvertes. */
+async function cutEditing() {
+  await w(`W.__coupe = true; W.grist.__simulateChange(); return true;`);
+  await until(`/lecture seule pour cette session/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+}
+/** L'action refusée au moment d'agir ne lit rien (ni ligne relue, ni flags.json) et n'écrit rien. */
+async function refusedWithoutReading(act) {
+  await sleep(400);
+  const before = await w(`return W.__reads.length;`);
+  await act();
+  await sleep(500);
+  assert.deepEqual(await w(`return W.__reads.slice(${before});`), []);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+}
+
+test(
+  'droits relus à l’envoi (2d) : « Désactiver » ouvert avant la coupure, puis « Réactiver » et statut périmés',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await clickOn('[data-person="2"]');
+    await until(`D.querySelector('#btn-person-active[data-person-active="0"]')`);
+    await clickOn('#btn-person-active');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-submit')`);
+    await cutEditing();
+    // La fenêtre est restée ouverte : l'envoi relit le droit, rien n'est écrit, message de la coupure
+    assert.ok(await w(`return Boolean(D.querySelector('dialog.cdlg[open] #pf-submit:not([disabled])'));`));
+    await refusedWithoutReading(() => clickOn('#pf-submit'));
+    await until(`D.querySelector('dialog.cdlg[open] #tf-alert')`);
+    assert.match(
+      await w(`return D.querySelector('dialog.cdlg #tf-alert').textContent;`),
+      /coupée pour toutes les pages/,
+    );
+    assert.equal(await w(`return D.getElementById('pf-submit').disabled;`), true);
+    await clickOn('#pf-cancel');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    // Boutons périmés (rendus avant la coupure) : « Réactiver » dans la liste, statut rapide dans la fiche
+    await w(
+      `const b = D.createElement('button'); b.type = 'button'; b.id = 'stale-re'; b.dataset.personReactivate = '2'; D.querySelector('#view-panel[data-view="team"] [data-person]').closest('li, tr, div').append(b); return true;`,
+    );
+    await refusedWithoutReading(() => clickOn('#stale-re'));
+    await w(`D.getElementById('tab-kanban').click(); return true;`);
+    await until(`D.querySelector('.view [data-task]')`);
+    await w(`D.querySelector('.view [data-task]').click(); return true;`);
+    await until(
+      `D.getElementById('app-detail').dataset.open === 'true' && D.querySelector('#app-detail .drawer__body')`,
+    );
+    await w(
+      `const b = D.createElement('button'); b.type = 'button'; b.id = 'stale-status'; b.dataset.setStatus = 'done'; D.querySelector('#app-detail .drawer__body').append(b); return true;`,
+    );
+    await refusedWithoutReading(() => clickOn('#stale-status'));
+  },
+);
+
+test(
+  'droits relus à l’envoi (2c) : « Nouvelle tâche » ouverte avant la coupure, rien n’est créé',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await clickOn('#btn-new-task');
+    await until(`D.querySelector('dialog.cdlg[open] #cf-titre')`);
+    await typeIn('#cf-titre', 'Après coupure');
+    await change('#cf-cible', await firstOption('#cf-cible'));
+    await cutEditing();
+    await refusedWithoutReading(() => clickOn('#cf-create'));
+    await until(`D.querySelector('dialog.cdlg[open] #cf-alert')`);
+    assert.match(await w(`return D.getElementById('cf-alert').textContent;`), /coupée pour toutes les pages/);
   },
 );
 
