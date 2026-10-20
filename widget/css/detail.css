@@ -1,0 +1,282 @@
+/* Fiche détail (panneau latéral modal, lecture seule) : voile, en-tête, fil d'Ariane, champs, charges, listes. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: var(--color-backdrop);
+  cursor: pointer;
+}
+.drawer-backdrop[hidden] {
+  display: none;
+}
+.drawer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.drawer__back {
+  margin-right: auto;
+}
+.drawer__title:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.dt-source {
+  margin-left: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.drawer__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--color-text);
+}
+
+/* ---- Fil d'Ariane : un niveau par ligne, le niveau nommé avant le titre ---- */
+.dt-crumbs ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  list-style: none;
+  border-left: 2px solid var(--color-border-strong);
+}
+.dt-crumbs li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+.dt-crumbs__kind {
+  flex: none;
+  min-width: 4.5em;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.dt-crumbs__link,
+.dt-crumbs__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dt-crumbs__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dt-crumbs__link:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.dt-readonly {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.dt-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.dt-badges:empty {
+  display: none;
+}
+
+/* ---- Sections ---- */
+.dt-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.dt-section__title {
+  margin: 0;
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+/* Catégorie : étiquette (« Projet » est un nom de catégorie, pas un niveau) */
+.dt-crumbs__cat {
+  margin-bottom: var(--space-1);
+}
+.dt-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Champs vides regroupés sur une seule ligne, sous les champs renseignés */
+.dt-unset {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.dt-count {
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+.dt-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-sm);
+}
+.dt-field {
+  display: contents;
+}
+.dt-field dt {
+  color: var(--color-text-muted);
+}
+.dt-field dt,
+.dt-field dd {
+  margin: 0;
+  padding: 0;
+}
+.dt-field dd {
+  overflow-wrap: anywhere;
+}
+.dt-muted,
+.dt-empty,
+.dt-note {
+  color: var(--color-text-muted);
+}
+.dt-empty,
+.dt-note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.dt-prose {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dt-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.dt-person {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.dt-person__role {
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+.dt-url {
+  overflow-wrap: anywhere;
+}
+
+/* ---- Charges ---- */
+.dt-charges {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.dt-charges th,
+.dt-charges td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: right;
+}
+.dt-charges td {
+  white-space: nowrap;
+}
+.dt-charges th:first-child {
+  text-align: left;
+  font-weight: var(--font-weight-regular);
+}
+.dt-charges thead th {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+}
+.dt-charges tfoot th,
+.dt-charges tfoot td {
+  font-weight: var(--font-weight-bold);
+  border-bottom: 0;
+}
+/* Liste unique des personnes : charge sans assignation signalée discrètement */
+.dt-unassigned {
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+/* ---- Listes d'éléments ---- */
+.dt-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dt-list > li {
+  border-bottom: 1px solid var(--color-border);
+}
+.dt-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.dt-link:hover {
+  background: var(--color-surface-hover);
+}
+.dt-link:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.dt-link__title {
+  flex: 1 1 60%;
+  min-width: 0;
+  color: var(--color-accent-text);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+.dt-link__kind {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+/* Fiche personne : rôle, période, heures et ETP sous le titre */
+.dt-link__meta {
+  flex: 1 1 100%;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}

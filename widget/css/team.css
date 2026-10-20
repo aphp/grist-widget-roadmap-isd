@@ -1,0 +1,479 @@
+/*
+ * Vue Équipe : cartes « Rôles » et « Équipe ISD » côte à côte (empilées sous 1 024 px), lignes cliquables
+ * (aria-pressed), puis « Utilisateurs » groupés par rôle : une section repliable par rôle (pastille colorée,
+ * effectif, capacité), puis ses personnes. Teintes des rôles : profils comme le Portfolio (--viz-1 à --viz-4),
+ * Management en violet, autres rôles et « Sans rôle » en neutre ; le libellé est toujours écrit.
+ */
+.team {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.team__summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+@media (min-width: 1024px) {
+  .team__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.team__note {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- Cartes de synthèse ---- */
+.tsum {
+  min-width: 0;
+  padding: var(--space-5);
+}
+.tsum__title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.tsum__sub {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tsum__list {
+  display: flex;
+  flex-direction: column;
+}
+.tsum__list li + li {
+  border-top: 1px solid var(--color-border);
+}
+.tsum__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.tsum__row:hover {
+  background: var(--color-surface-hover);
+}
+.tsum__row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.tsum__row[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  box-shadow: inset 3px 0 0 var(--color-indicator);
+}
+.tsum__name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-title);
+  overflow-wrap: anywhere;
+}
+.tsum__val {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tsum__val--muted {
+  color: var(--color-text-muted);
+}
+.tsum__roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.tsum__roles:empty {
+  display: none;
+}
+
+/* ---- Utilisateurs ---- */
+.tusers {
+  min-width: 0;
+  padding: var(--space-5);
+}
+.tusers__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+.tusers__count {
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+.tusers__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
+.tusers__tools .fr-checkbox-group {
+  margin: 0;
+}
+.tusers__search {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 360px;
+}
+.tusers__search .fr-input {
+  margin-top: 0;
+}
+.tusers__scope {
+  margin: var(--space-2) 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tdir__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.tdir__empty {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-muted);
+}
+
+/* ---- Teintes des rôles : point + pastille ---- */
+.tpill--po,
+.tdot--po {
+  --role-tone: var(--viz-1);
+}
+.tpill--da,
+.tdot--da {
+  --role-tone: var(--viz-2);
+}
+.tpill--ds,
+.tdot--ds {
+  --role-tone: var(--viz-3);
+}
+.tpill--de,
+.tdot--de {
+  --role-tone: var(--viz-4);
+}
+.tpill--mgmt,
+.tdot--mgmt {
+  --role-tone: var(--badge-purple-text);
+}
+.tpill--other,
+.tdot--other {
+  --role-tone: var(--viz-neutral);
+}
+.tpill--none,
+.tdot--none {
+  --role-tone: var(--viz-summary);
+}
+.tdot,
+.tpill__dot {
+  flex: none;
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--role-tone, var(--viz-neutral));
+  /* contour pour détacher les teintes claires (ambre DE) du fond */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-text) 25%, transparent);
+}
+.tdot {
+  margin-right: var(--space-2);
+  vertical-align: 1px;
+}
+.tpill--none .tpill__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--role-tone);
+}
+.tpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--space-2) 2px 7px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--role-tone) 45%, transparent);
+  background: color-mix(in srgb, var(--role-tone) 14%, var(--color-surface));
+  color: var(--color-title);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.tpill__n {
+  font-weight: var(--font-weight-regular);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+/* ---- Sections par rôle ---- */
+.tusers__sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.trole {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--role-tone);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  scroll-margin-top: var(--space-4);
+}
+.trole--po {
+  --role-tone: var(--viz-1);
+}
+.trole--da {
+  --role-tone: var(--viz-2);
+}
+.trole--ds {
+  --role-tone: var(--viz-3);
+}
+.trole--de {
+  --role-tone: var(--viz-4);
+}
+.trole--mgmt {
+  --role-tone: var(--badge-purple-text);
+}
+.trole--other {
+  --role-tone: var(--viz-neutral);
+}
+.trole--none {
+  --role-tone: var(--color-border-strong);
+}
+.trole__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.trole__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: inherit;
+}
+.trole__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: inherit;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.trole__toggle:hover {
+  background: var(--color-surface-hover);
+}
+.trole__toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.trole__chev {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 var(--space-1);
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s ease;
+}
+.trole__toggle[aria-expanded='false'] .trole__chev {
+  transform: rotate(-45deg);
+}
+.trole__toggle[aria-expanded='false'] {
+  border-radius: var(--radius-lg);
+}
+.trole__count {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--badge-grey-bg);
+  color: var(--badge-grey-text);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.trole__meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.trole__hours {
+  margin-left: auto;
+}
+.trole__list {
+  display: flex;
+  flex-direction: column;
+}
+.trole__list[hidden] {
+  display: none;
+}
+.tperson {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto 9rem;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.tperson:hover {
+  background: var(--color-surface-hover);
+}
+.tperson:last-child {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.tperson.is-inactive {
+  color: var(--color-text-muted);
+}
+.tperson__name {
+  justify-self: start;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.tperson.is-inactive .tperson__name {
+  color: var(--color-text-muted);
+}
+.tperson__name:hover {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+}
+.tperson__name:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.tperson__team {
+  min-width: 0;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.tperson__none {
+  font-style: italic;
+}
+.tperson__cap {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .tperson {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-left: var(--space-3);
+  }
+  .tperson__team {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .tperson__status {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .tperson__cap {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    text-align: left;
+    color: var(--color-text-muted);
+  }
+  .trole__hours {
+    margin-left: 0;
+  }
+}
+
+/* ---- Synthèse « Équipe ISD » ---- */
+.tisd__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+.tisd__stat {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+.tisd__stat dt {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.tisd__stat dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-title);
+}
+.tisd__label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+}
+.tsum__roles {
+  gap: var(--space-2);
+}
+@media (max-width: 480px) {
+  .tisd__stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trole__chev {
+    transition: none;
+  }
+}
+
+/* ---- Lot 2d : édition des personnes (bouton d'ajout, « Réactiver ») ---- */
+.tusers__head:has(.tusers__add) .tusers__tools {
+  flex-basis: 100%;
+}
+.tusers__add {
+  margin-left: auto;
+}
+.tusers--edit .tperson {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto 9rem 6.5rem;
+}
+.tperson__act {
+  justify-self: end;
+}
+@media (max-width: 640px) {
+  .tusers--edit .tperson {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .tperson__act {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .tperson__act:empty {
+    display: none;
+  }
+}
