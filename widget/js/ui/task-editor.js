@@ -270,7 +270,7 @@ export function createTaskEditor(deps) {
     if (!fresh) return;
     st.draft = spec(st).rebase(st.base, st.draft, fresh);
     st.base = fresh;
-    followBase(st);
+    followBase(st, model());
     const task = st.ref.table === 'Tasks' ? model().tasks.get(st.ref.id) : null;
     const w = writer();
     st.canMove = Boolean(task && !task.parentId && w?.can('Tasks', 'Chantier').ok && w.can('Tasks', 'projet').ok);
@@ -363,7 +363,7 @@ export function createTaskEditor(deps) {
     if (result.stored) {
       cur.draft = spec(cur).rebase(cur.base, cur.draft, result.stored);
       cur.base = { ...cur.base, ...result.stored };
-      followBase(cur);
+      followBase(cur, model());
     }
     deps.onUnknown?.();
     return {
@@ -477,7 +477,7 @@ export function createTaskEditor(deps) {
     }
     st.draft = draft;
     st.base = { ...st.base, ...fresh };
-    followBase(st);
+    followBase(st, model(), { rescale: choices.charges !== 'theirs' });
     st.conflict = null;
     if (!Object.keys(batch.changes).length) return close();
     await save(batch);
@@ -533,7 +533,7 @@ export function createTaskEditor(deps) {
         if (result.stored) {
           cur.draft = spec(cur).rebase(cur.base, cur.draft, result.stored);
           cur.base = { ...cur.base, ...result.stored };
-          followBase(cur);
+          followBase(cur, model());
         }
         render('btn-status-menu');
       }
@@ -856,7 +856,7 @@ export function createTaskEditor(deps) {
         st.chargeErrors.clear();
         st.chargeInputs.clear();
         st.chargesTyped.clear();
-        followBase(st);
+        followBase(st, model(), { rescale: false });
       }
       render('btn-form-save');
     } else {

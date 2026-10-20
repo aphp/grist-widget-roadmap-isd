@@ -53,14 +53,42 @@ export const peopleState = (storage, base = null) => ({
 
 /**
  * Nouvelle base de la fiche (ligne relue, conflit résolu, rebaseDraft) : les références des personnes non saisies ici
- * suivent ses charges ; la période du brouillon, éventuellement suivie elle aussi, ne déclenche pas de recalcul.
+ * suivent ses charges, et leurs heures du brouillon sont recalculées depuis elles sur la période du brouillon (sinon
+ * des heures recalculées avant la relecture écraseraient en silence celles de la Feuille ; période égale à la base :
+ * texte de la base remis). Les personnes saisies gardent leur valeur (fusion et conflits inchangés).
  * @param {object} s état du formulaire (draft, base, chargeRefs, chargesTyped)
+ * @param {object} model modèle (bornes de la personne estimation)
+ * @param {{rescale?:boolean}} [opts] rescale : faux quand les charges viennent d'être reprises telles quelles de la
+ *   base (« Rétablir », conflit tranché pour la Feuille)
  */
-export function followBase(s) {
+export function followBase(s, model, { rescale = true } = {}) {
   if (!s?.chargeRefs || !s.base || !('charges' in s.draft)) return;
-  const baseDays = periodDays(s.base.dateDebut, s.base.dateEcheance);
-  s.chargeRefs = followBaseRefs(s.chargeRefs, s.chargesTyped, s.base.charges ?? null, baseDays);
-  s.chargesDays = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+  const baseRaw = s.base.charges ?? null;
+  s.chargeRefs = followBaseRefs(
+    s.chargeRefs,
+    s.chargesTyped,
+    baseRaw,
+    periodDays(s.base.dateDebut, s.base.dateEcheance),
+  );
+  const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+  const untyped = new Map([...s.chargeRefs].filter(([teamId]) => !s.chargesTyped.has(teamId)));
+  const maxOf = (teamId) => maxHours(days, isEstimationPerson(model, teamId));
+  const r = rescale
+    ? rescaleCharges(s.draft.charges, untyped, days, { baseRaw, maxOf })
+    : { raw: s.draft.charges, over: [] };
+  s.draft = r.raw === s.draft.charges ? s.draft : { ...s.draft, charges: r.raw };
+  s.chargesDays = days;
+  s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
+}
+
+/**
+ * Personnes laissées au-dessus de la borne : refusées par le recalcul (over), ou jamais recalculées (heures saisies
+ * sans dates, doublons).
+ */
+function keptOverOf(raw, over, maxOf) {
+  const cell = readChargesCell(raw);
+  const rows = cell.ok ? chargeRows(cell.entries).rows : [];
+  return new Set([...over, ...rows.filter((x) => x.heures > maxOf(x.teamId)).map((x) => x.teamId)]);
 }
 
 /**
@@ -263,11 +291,7 @@ export function createPeopleBlock(deps) {
     const r = rescaleCharges(s.draft.charges, s.chargeRefs, days, { baseRaw: s.base?.charges ?? null, maxOf });
     if (r.raw !== s.draft.charges && !deps.applyDraft({ ...s.draft, charges: r.raw })) return;
     s.chargesDays = days;
-    // Laissées telles quelles au-dessus de la borne : refusées par le recalcul (over), ou jamais recalculées (heures
-    // saisies sans dates, doublons)
-    const cell = readChargesCell(s.draft.charges);
-    const rows = cell.ok ? chargeRows(cell.entries).rows : [];
-    s.chargesKeptOver = new Set([...r.over, ...rows.filter((x) => x.heures > maxOf(x.teamId)).map((x) => x.teamId)]);
+    s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
     if (redraw) render();
   }
 
