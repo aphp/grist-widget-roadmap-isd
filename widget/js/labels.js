@@ -216,7 +216,6 @@ const FR = Object.freeze({
   'gantt.expand': 'Déplier {titre}',
   'gantt.collapse': 'Replier {titre}',
   'gantt.element': 'Élément',
-  'gantt.width': 'Largeur des noms',
   'gantt.width.value': '{n} px',
   'gantt.resizer': 'Largeur de la colonne des noms',
   'gantt.resizer.help':

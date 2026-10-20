@@ -222,23 +222,12 @@ function pdfLegend(colorBy) {
   ];
 }
 
-/** Attributs de valeur de la poignée et du curseur de largeur (les deux restent synchrones). */
+/** Texte de valeur de la poignée de largeur. */
 const widthText = (w) => label('gantt.width.value', { n: w });
 
 /** Poignée de la colonne des noms (séparateur focalisable : flèches, Maj, Début / Fin ; double-clic : défaut). */
 function resizerHtml(width) {
   return h`<div class="gantt__resizer" id="gantt-resizer" role="separator" aria-orientation="vertical" tabindex="0" aria-label="${label('gantt.resizer')}" aria-describedby="gantt-resizer-help" aria-valuemin="${width.min}" aria-valuemax="${width.max}" aria-valuenow="${width.value}" aria-valuetext="${widthText(width.value)}" title="${label('gantt.resizer.title')}" data-resizer></div>`;
-}
-
-/** Curseur « Largeur des noms » de la barre d'outils (mêmes bornes et même pas que la poignée). */
-function widthSliderHtml(width) {
-  return h`<div class="gantt__width">
-    <label class="fr-label gantt__legend-title" for="gantt-width">${label('gantt.width')}</label>
-    <div class="gantt__width-row">
-      <input type="range" id="gantt-width" class="gantt__width-range" min="${width.min}" max="${width.max}" step="${LABEL_WIDTH.step}" value="${width.value}" aria-valuetext="${widthText(width.value)}" data-label-width />
-      <output class="gantt__width-value" id="gantt-width-value" for="gantt-width" aria-hidden="true">${widthText(width.value)}</output>
-    </div>
-  </div>`;
 }
 
 function headHtml(scale, today, width) {
@@ -322,8 +311,7 @@ export function render(el, ctx) {
   }
 
   /**
-   * Largeur posée sans redessiner (glisser, curseur, clavier) : variable CSS de la vue, poignée et curseur
-   * synchrones ; enregistrée dans les préférences si persist (null = retour à la largeur par défaut).
+   * Largeur posée sans redessiner (glisser, clavier) : variable CSS de la vue et valeurs de la poignée ; enregistrée dans les préférences si persist (null = retour à la largeur par défaut).
    */
   function applyWidth(wanted, persist) {
     const width = widthInfo(wanted);
@@ -334,14 +322,6 @@ export function render(el, ctx) {
       handle.setAttribute('aria-valuenow', String(width.value));
       handle.setAttribute('aria-valuetext', widthText(width.value));
     }
-    const range = el.querySelector('[data-label-width]');
-    if (range) {
-      range.max = String(width.max);
-      range.value = String(width.value);
-      range.setAttribute('aria-valuetext', widthText(width.value));
-    }
-    const out = el.querySelector('#gantt-width-value');
-    if (out) out.textContent = widthText(width.value);
     if (persist) {
       st.labelWidth = wanted === null ? null : width.value;
       ctx.setPrefs?.({ ganttLabelWidth: st.labelWidth });
@@ -408,7 +388,6 @@ export function render(el, ctx) {
               )}
             </div>
           </fieldset>
-          ${isList ? '' : widthSliderHtml(width)}
           ${
             isList
               ? ''
@@ -645,12 +624,7 @@ export function render(el, ctx) {
     }
   };
 
-  el.oninput = (e) => {
-    if (e.target.matches('[data-label-width]')) applyWidth(Number(e.target.value), false);
-  };
-
   el.onchange = (e) => {
-    if (e.target.matches('[data-label-width]')) return void applyWidth(Number(e.target.value), true);
     if (e.target.matches('[data-scale]') && SCALES.includes(e.target.value)) {
       const inWindow = ctx.today >= scale.start && ctx.today <= scale.end;
       st.scale = e.target.value;

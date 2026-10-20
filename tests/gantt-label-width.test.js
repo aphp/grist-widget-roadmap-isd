@@ -15,7 +15,7 @@ test('largeur des noms : défaut selon la fenêtre, comme le CSS', () => {
   assert.equal(defaultLabelWidth(1280), 320);
   assert.equal(defaultLabelWidth(1279), 256);
   assert.equal(defaultLabelWidth(0), 320);
-  // Les deux défauts tombent sur la grille des pas (curseur de type range)
+  // Les deux défauts tombent sur la grille des pas (pas de la poignée)
   for (const w of [LABEL_WIDTH.wide, LABEL_WIDTH.medium]) assert.equal((w - LABEL_WIDTH.min) % LABEL_WIDTH.step, 0);
 });
 

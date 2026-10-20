@@ -62,7 +62,7 @@ export const GANTT_LEVELS = Object.freeze(['projet', 'chantier', 'tache', 'sous-
 export const DEFAULT_LEVEL = 'chantier';
 
 /**
- * Largeur de la colonne des noms (px), réglable à la poignée et au curseur « Largeur des noms » : bornes, pas au
+ * Largeur de la colonne des noms (px), réglable à la poignée seule : bornes, pas au
  * clavier (Maj : grand pas), part maximale de la largeur de la vue. Sans réglage, largeur par défaut de la
  * largeur d'écran (identique au CSS : 320 px, 256 px sous 1280 px).
  */
@@ -75,7 +75,7 @@ export function defaultLabelWidth(windowWidth) {
   return windowWidth > 0 && windowWidth < 1280 ? LABEL_WIDTH.medium : LABEL_WIDTH.wide;
 }
 
-/** Largeur posée sur la grille des pas (minimum + n × pas), comme le curseur de type range. */
+/** Largeur posée sur la grille des pas (minimum + n × pas), comme le pas de la poignée. */
 const onStep = (w) => LABEL_WIDTH.min + Math.round((w - LABEL_WIDTH.min) / LABEL_WIDTH.step) * LABEL_WIDTH.step;
 
 /**

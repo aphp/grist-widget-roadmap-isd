@@ -202,29 +202,6 @@
 .gantt__resizer:focus-visible::after {
   background: var(--color-focus);
 }
-.gantt__width {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.gantt__width .fr-label {
-  margin: 0;
-}
-.gantt__width-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-}
-.gantt__width-range {
-  width: 160px;
-  accent-color: var(--color-focus);
-}
-.gantt__width-value {
-  min-width: 4.5em;
-  font-size: var(--font-size-sm);
-  font-variant-numeric: tabular-nums;
-}
 .gantt__scale {
   position: relative;
   height: 48px;

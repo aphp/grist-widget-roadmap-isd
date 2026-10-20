@@ -2890,33 +2890,26 @@ test(
   },
 );
 
-// ---------- Gantt : largeur de la colonne des noms (poignée et curseur « Largeur des noms ») ----------
+// ---------- Gantt : largeur de la colonne des noms (poignée) ----------
 
-/** Largeur de la colonne des noms : cellule affichée, poignée, curseur et préférence enregistrée. */
+/** Largeur de la colonne des noms : cellule affichée, poignée et préférence enregistrée. */
 async function labelWidth() {
-  return w(`const h = D.getElementById('gantt-resizer'); const r = D.getElementById('gantt-width');
+  return w(`const h = D.getElementById('gantt-resizer');
     return {
       cell: Math.round(D.querySelector('.grow__label').getBoundingClientRect().width),
       now: Number(h.getAttribute('aria-valuenow')),
       text: h.getAttribute('aria-valuetext'),
-      slider: Number(r.value),
-      sliderText: r.getAttribute('aria-valuetext'),
-      output: D.getElementById('gantt-width-value').textContent,
       pref: JSON.parse(W.localStorage.getItem('roadmap-isd:prefs') || '{}').ganttLabelWidth ?? null,
     };`);
 }
 
 function assertWidth(actual, px, pref, what) {
   assert.ok(Math.abs(actual.cell - px) <= 1, `${what} : colonne de ${actual.cell} px au lieu de ${px}`);
-  assert.deepEqual(
-    [actual.now, actual.text, actual.slider, actual.sliderText, actual.output, actual.pref],
-    [px, `${px} px`, px, `${px} px`, `${px} px`, pref],
-    what,
-  );
+  assert.deepEqual([actual.now, actual.text, actual.pref], [px, `${px} px`, pref], what);
 }
 
 test(
-  'Gantt : la colonne des noms s’élargit à la poignée, au clavier et au curseur, et la largeur est gardée',
+  'Gantt : la colonne des noms s’élargit à la poignée et au clavier, sans curseur, et la largeur est gardée',
   { skip: SKIP },
   async () => {
     await open('');
@@ -2925,10 +2918,10 @@ test(
     assertWidth(await labelWidth(), 320, null, 'largeur par défaut');
     const sep = await w(`const h = D.getElementById('gantt-resizer');
       return { role: h.getAttribute('role'), o: h.getAttribute('aria-orientation'), min: h.getAttribute('aria-valuemin'),
-        max: Number(h.getAttribute('aria-valuemax')), tab: h.tabIndex, label: D.querySelector('label[for="gantt-width"]').textContent };`);
+        max: Number(h.getAttribute('aria-valuemax')), tab: h.tabIndex, slider: !!D.getElementById('gantt-width'), sliderLabel: !!D.querySelector('.gantt__width') };`);
     assert.deepEqual(
-      [sep.role, sep.o, sep.min, sep.tab, sep.label],
-      ['separator', 'vertical', '160', 0, 'Largeur des noms'],
+      [sep.role, sep.o, sep.min, sep.tab, sep.slider, sep.sliderLabel],
+      ['separator', 'vertical', '160', 0, false, false],
     );
     assert.ok(sep.max >= 592, `maximum ${sep.max}`);
     // Les noms gardent leur nom complet en infobulle
@@ -2988,17 +2981,12 @@ test(
     });
     assertWidth(await labelWidth(), 368, 368, 'Maj+flèche gauche');
 
-    // Curseur « Largeur des noms » : la poignée suit, même préférence
-    await w(`const r = D.getElementById('gantt-width'); r.value = '256';
-      r.dispatchEvent(new W.Event('input', { bubbles: true })); r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
-    assertWidth(await labelWidth(), 256, 256, 'curseur');
-
     // Largeur gardée après un rechargement de la page
     const host = `${BASE}/dev/host.html?donnees=synthetiques`;
     await send('Page.navigate', { url: host });
     await loaded(host);
     await until(`D.getElementById('gantt-resizer') && D.querySelector('.grow__label')`);
-    assertWidth(await labelWidth(), 256, 256, 'après rechargement');
+    assertWidth(await labelWidth(), 368, 368, 'après rechargement');
 
     // Double-clic : largeur par défaut, préférence effacée
     const at2 = await w(`const r = D.getElementById('gantt-resizer').getBoundingClientRect();
