@@ -6,8 +6,7 @@
  * construite ici. Chaque enregistrement travaille sur un instantané : si le formulaire change pendant l'attente,
  * le résultat est quand même annoncé et appliqué au modèle, mais le nouveau formulaire n'est pas touché.
  */
-import { chargeRows, isEstimationPerson, mergeDuplicates, periodDays, readChargesCell } from '../core/charges-edit.js';
-import { addPersonLine, assignPerson, lineInput, removePersonLine } from '../core/task-people.js';
+import { createPeopleBlock, peopleState } from './people-block.js';
 import { conflictBatch, failureKind, runQuickStatus, runSave } from '../core/task-session.js';
 import { FORM_FIELDS, diffDraft, draftFrom, rebaseDraft, setMilestone, validateTask } from '../core/task-form.js';
 import {
@@ -34,11 +33,7 @@ import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags
 import { draftChangeRight, quickStatusRight } from '../core/write-rights.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import {
-  chargeEqText,
-  chargeRowMsgs,
   chargesFootHtml,
-  peopleBlockHtml,
-  peopleCtx,
   depResultsHtml,
   fieldLabel,
   messagesHtml,
@@ -109,7 +104,6 @@ const SPECS = Object.freeze({
 });
 const spec = (s) => SPECS[s.ref.table];
 const MORE_KEY = 'roadmap-isd.formMore';
-const UNIT_KEY = 'roadmap-isd.chargesUnit';
 
 /**
  * @param {{root:HTMLElement, chrome:object, getModel():object, getBase(table:string, id:number):object|null,
@@ -198,49 +192,6 @@ export function createTaskEditor(deps) {
     }
   }
 
-  /** Unité de saisie des charges, mémorisée dans le navigateur (ETP par défaut). */
-  function chargesUnit() {
-    try {
-      return deps.storage.getItem(UNIT_KEY) === 'heures' ? 'heures' : 'etp';
-    } catch {
-      return 'etp';
-    }
-  }
-
-  /** Redessine le seul bloc « Personnes » (dates ou unité changées), sans toucher au reste du formulaire. */
-  function renderCharges(focusId) {
-    validate();
-    const box = document.getElementById('tf-people');
-    if (box) box.outerHTML = peopleBlockHtml(st, model()).toString();
-    refresh();
-    if (focusId) document.getElementById(focusId)?.focus();
-  }
-
-  /** Champ de charge d'une ligne s'il est modifiable, sinon son bouton de retrait, sinon l'ajout. */
-  function lineFocus(id) {
-    const input = document.getElementById(`tf-ch-${id}`);
-    if (input && !input.disabled) return input.id;
-    return document.getElementById(`tf-person-${id}-remove`) ? `tf-person-${id}-remove` : 'tf-assignees';
-  }
-
-  /** Ligne du bloc « Personnes » réaffichée seule (heures, équivalent, messages), sans redessiner les champs. */
-  function lineRefresh(id, days) {
-    const cell = readChargesCell(st.draft.charges);
-    const row = cell.ok ? chargeRows(cell.entries).rows.find((x) => x.teamId === id) : null;
-    const line = {
-      teamId: id,
-      assigned: st.draft.assignees.includes(id),
-      charged: Boolean(row),
-      heures: row ? row.heures : null,
-      count: row ? row.count : 0,
-      known: model().people.has(id),
-    };
-    const eq = document.getElementById(`tf-ch-${id}-eq`);
-    if (eq) eq.textContent = row && !st.chargeErrors.has(id) ? chargeEqText(st, row.heures, days) : '';
-    const msg = document.getElementById(`tf-ch-${id}-msg`);
-    if (msg) msg.innerHTML = chargeRowMsgs(st, model(), line, peopleCtx(st)).toString();
-  }
-
   /**
    * Brouillon modifié par un bouton, un menu ou une saisie de charge : les droits sont relus au moment d'agir
    * (colonnes touchées, writer courant), pas seulement au rendu. Refus (session passée en lecture, colonne
@@ -256,27 +207,15 @@ export function createTaskEditor(deps) {
     return true;
   }
 
-  /** Charge saisie sur une ligne : brouillon mis à jour si la valeur est valide, sinon erreur sous la ligne. */
-  function chargeInput(t) {
-    const id = Number(t.dataset.chargeInput);
-    const days = periodDays(st.draft.dateDebut, st.draft.dateEcheance);
-    // Personne estimation (Team.aph) : pas de borne de 1 ETP, seulement la borne de bon sens
-    const estimation = isEstimationPerson(model(), id);
-    const r = lineInput(st.draft, id, t.value, st.chargesUnit, days, { estimation });
-    if (r.error) {
-      st.chargeErrors.set(id, r.error);
-      st.chargeInputs.set(id, t.value);
-      t.setAttribute('aria-invalid', 'true');
-    } else {
-      if (!applyDraft({ ...st.draft, charges: r.charges })) return;
-      st.chargeErrors.delete(id);
-      st.chargeInputs.delete(id);
-      st.chargeRefDays.set(id, days);
-      t.removeAttribute('aria-invalid');
-    }
-    lineRefresh(id, days);
-    refresh();
-  }
+  // Bloc « Personnes » (assignés et charges) : même contrôleur que les fenêtres de création
+  const people = createPeopleBlock({
+    state: () => st,
+    getModel: model,
+    storage: deps.storage,
+    applyDraft: (next, focusId) => applyDraft(next, focusId),
+    validate: () => validate(),
+    refresh: () => refresh(),
+  });
 
   /** Ouvre le formulaire de la tâche ou du chantier ; faux si la ligne est introuvable. */
   function open(ref) {
@@ -308,11 +247,7 @@ export function createTaskEditor(deps) {
       confirmTagsReplace: false,
       badDates: new Set(),
       badNumber: false,
-      chargeErrors: new Map(),
-      chargeInputs: new Map(),
-      chargeRefDays: new Map(),
-      chargesUnit: chargesUnit(),
-      confirmReplace: false,
+      ...peopleState(deps.storage),
       moreOpen: moreOpen(),
       mode: w.mode,
       can: (f) => w.can(ref.table, f),
@@ -751,8 +686,8 @@ export function createTaskEditor(deps) {
         st.badCapacity = true;
       }
       refresh();
-    } else if (t.dataset.chargeInput) {
-      chargeInput(t);
+    } else if (people.onInput(t)) {
+      // charge d'une ligne du bloc « Personnes »
     } else if (t.dataset.depSearch !== undefined) {
       st.depQuery = t.value;
       const box = document.getElementById('tf-dep-results');
@@ -790,7 +725,7 @@ export function createTaskEditor(deps) {
         st.badDates.add(f);
       }
       // Q8 A : les heures (valeur stockée) sont conservées ; l'ETP et l'écart sont recalculés
-      renderCharges();
+      people.render();
     } else if (f === 'type') {
       st.draft = setMilestone(st.draft, t.checked, st.originalType);
       render('tf-type');
@@ -819,23 +754,8 @@ export function createTaskEditor(deps) {
       render('tf-Contributeurs');
     } else if (t.dataset.reattach !== undefined) {
       st.reattachTo = Number(t.value) || null;
-    } else if (t.dataset.personAdd !== undefined && t.value) {
-      // « Ajouter une personne… » : elle est assignée, sa charge (facultative) est à saisir sur sa ligne
-      const id = Number(t.value);
-      if (!applyDraft(addPersonLine(st.draft, id), 'tf-people-title')) return;
-      st.chargeRefDays.set(id, periodDays(st.draft.dateDebut, st.draft.dateEcheance));
-      renderCharges();
-      document.getElementById(lineFocus(id))?.focus();
-    } else if (t.dataset.chargesUnit !== undefined) {
-      st.chargesUnit = t.value === 'heures' ? 'heures' : 'etp';
-      st.chargeErrors.clear();
-      st.chargeInputs.clear();
-      try {
-        deps.storage.setItem(UNIT_KEY, st.chargesUnit);
-      } catch {
-        // stockage indisponible : le choix vaut pour la session
-      }
-      renderCharges(t.id);
+    } else if (people.onChange(t)) {
+      // ajout d'une personne ou unité de saisie du bloc « Personnes »
     } else if (t.dataset.conflict && st.conflict) {
       st.conflict.choices[t.dataset.conflict] = t.value;
     }
@@ -900,19 +820,8 @@ export function createTaskEditor(deps) {
       const id = Number(t.dataset.removeContrib);
       if (!applyDraft({ ...st.draft, Contributeurs: st.draft.Contributeurs.filter((x) => x !== id) })) return;
       render('tf-Contributeurs');
-    } else if (t.dataset.personRemove) {
-      // Retirer une ligne : assignation et charge de la personne, dans le même brouillon (un seul lot)
-      const id = Number(t.dataset.personRemove);
-      if (!applyDraft(removePersonLine(st.draft, id), 'tf-people-title')) return;
-      st.chargeErrors.delete(id);
-      st.chargeInputs.delete(id);
-      renderCharges(document.getElementById('tf-assignees') ? 'tf-assignees' : 'tf-people-title');
-    } else if (t.dataset.personAssign) {
-      // Charge sans assignation : assignée seulement sur demande (jamais d'office)
-      const id = Number(t.dataset.personAssign);
-      if (!applyDraft(assignPerson(st.draft, id), 'tf-people-title')) return;
-      renderCharges();
-      document.getElementById(lineFocus(id))?.focus();
+    } else if (people.onClick(t)) {
+      // retrait, assignation, fusion ou remplacement dans le bloc « Personnes »
     } else if (t.dataset.removeTag !== undefined) {
       removeTag(Number(t.dataset.removeTag));
     } else if (t.dataset.tagsReplace) {
@@ -929,22 +838,6 @@ export function createTaskEditor(deps) {
       if (!applyDraft({ ...st.draft, dependDe: [...st.draft.dependDe, Number(t.dataset.addDep)] })) return;
       st.depQuery = '';
       render('tf-dep-search');
-    } else if (t.dataset.chargeMerge) {
-      const id = Number(t.dataset.chargeMerge);
-      if (!applyDraft({ ...st.draft, charges: mergeDuplicates(st.draft.charges, id) }, 'tf-people-title')) return;
-      renderCharges(`tf-ch-${id}`);
-    } else if (t.dataset.charges) {
-      // Cellule illisible : remplacement par une saisie vide, seulement après confirmation
-      const a = t.dataset.charges;
-      if (a === 'replace-confirm' && !applyDraft({ ...st.draft, charges: '[]' }, 'tf-people-title')) return;
-      st.confirmReplace = a === 'replace-ask';
-      renderCharges(
-        a === 'replace-ask'
-          ? 'tf-charges-replace-confirm'
-          : a === 'replace-confirm'
-            ? 'tf-assignees'
-            : 'tf-charges-replace',
-      );
     } else if (t.dataset.revert) {
       // Champ refusé par la Feuille : retour à la valeur d'origine, le reste peut être enregistré
       const f = t.dataset.revert;

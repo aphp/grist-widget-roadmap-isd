@@ -843,6 +843,10 @@
   max-width: 100%;
   box-sizing: border-box;
 }
+/* Bloc « Personnes » de la fiche dans une fenêtre de création : même case de charge étroite */
+.cf .tf-charge__input {
+  width: 4.5rem;
+}
 
 @media (max-width: 640px) {
   .cdlg {

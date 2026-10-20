@@ -2,7 +2,8 @@
  * Contrôleur des fenêtres de création (« Nouvelle tâche », « Sous-tâche », « Nouveau chantier ») et du
  * changement de chantier d'une tâche (lot 2c). Les valeurs viennent de core/create-form.js, les envois de
  * core/task-session.js (runCreate, runMove) et donc du writer : aucune action Grist n'est construite ici.
- * La saisie est conservée en cas de refus ; Échap demande confirmation s'il reste une saisie.
+ * La saisie est conservée en cas de refus ; Échap demande confirmation s'il reste une saisie. Tâches : bloc
+ * « Personnes » de la fiche (ui/people-block.js), assignés et charges envoyés dans la même création.
  */
 import {
   creePar,
@@ -21,8 +22,9 @@ import { createDialogRight, rightFailure } from '../core/write-rights.js';
 import { EncodeError, dayFromInput } from '../core/write-encode.js';
 import { label } from '../labels.js';
 import { openDialog } from './dialog.js';
-import { dialogFoot, moveBody, newChantierBody, newTaskBody } from '../views/create-form.js';
-import { fieldLabel, valueText } from '../views/task-form.js';
+import { dialogFoot, moveBody, newChantierBody, newTaskBody, peopleHelp } from '../views/create-form.js';
+import { chargesFootHtml, fieldLabel, valueText } from '../views/task-form.js';
+import { createPeopleBlock, peopleState } from './people-block.js';
 
 const MORE_KEY = 'roadmap-isd.createMore';
 const TITLES = Object.freeze({
@@ -50,9 +52,13 @@ const ORDER = Object.freeze([
   'Debut',
   'Fin',
   'assignees',
+  'charges',
   'Responsable',
   'Contributeurs',
 ]);
+/** Contrôle à focaliser pour une erreur, quand ce n'est pas « cf-<champ> ». */
+const FOCUS = Object.freeze({ charges: 'cf-people-title' });
+const OK = Object.freeze({ ok: true, reason: 'ok' });
 
 /**
  * @param {{getModel():object, getWriter():object|null, getPrefs():object, storage:Storage, toast:{show:Function},
@@ -89,6 +95,11 @@ export function createCreateDialog(deps) {
       st.validation = validateNewChantier(st.draft, { model: m, statuses: m.statuses.chantiers });
     else st.validation = validateNewTask(st.draft, { model: m, statuses: m.statuses.tasks });
     for (const f of st.badDates) st.validation.errors[f] = { key: 'form.error.date' };
+    // Charge saisie invalide sur une ligne du bloc « Personnes » : signalée tout de suite, bloque la création
+    if (st.chargeErrors?.size) {
+      st.validation.errors.charges = { key: 'form.error.charges' };
+      st.touched.add('charges');
+    }
     // Erreurs montrées : champs déjà touchés, ou toutes après une tentative d'envoi (pas d'erreur à l'ouverture)
     st.allErrors = st.validation.errors;
     st.validation.errors = Object.fromEntries(
@@ -138,9 +149,32 @@ export function createCreateDialog(deps) {
       else ctl.removeAttribute('aria-invalid');
       ctl.closest('.tf-field')?.classList.toggle('fr-input-group--error', Boolean(st.validation.errors[f]));
     }
+    const chFoot = document.getElementById('cf-charges-foot');
+    if (chFoot) chFoot.innerHTML = chargesFootHtml(st, model()).toString();
     const foot = dlg.root.querySelector('.cdlg__foot');
     if (foot) foot.innerHTML = dialogFoot(st, errorCount()).toString();
   }
+
+  /**
+   * Bloc « Personnes » (tâche, sous-tâche) : même contrôleur que la fiche. Le brouillon n'est pas encore une ligne
+   * de la Feuille : les droits sont relus à l'envoi (createDialogRight), pas à chaque modification.
+   */
+  const people = createPeopleBlock({
+    state: () => st,
+    getModel: model,
+    storage: deps.storage,
+    applyDraft: (next) => {
+      if (!st || st.busy) return false;
+      st.draft = next;
+      st.touched.add('assignees');
+      st.touched.add('charges');
+      return true;
+    },
+    validate: () => validate(),
+    refresh: () => refresh(),
+    blockOpts: () => ({ help: peopleHelp(st) }),
+  });
+  const hasPeople = () => st && (st.kind === 'task' || st.kind === 'subtask');
 
   /** Une saisie a-t-elle été faite depuis l'ouverture ? */
   const dirty = () => JSON.stringify(st.draft ?? st.target) !== st.initial;
@@ -183,7 +217,9 @@ export function createCreateDialog(deps) {
       touched: new Set(),
       tried: false,
       moreOpen: moreOpen(),
-      can: () => ({ ok: true, reason: 'ok' }),
+      // Assignés et charges : colonnes permises à la création par le writer (sinon le bloc les montre bloquées)
+      can: (f) =>
+        (f !== 'assignees' && f !== 'charges') || w.canAddField(table, f) ? OK : { ok: false, reason: 'colonne' },
       optional: (col) => w.canAddField(table, col),
       validation: { errors: {}, warnings: [] },
     };
@@ -202,6 +238,9 @@ export function createCreateDialog(deps) {
           ? newChantierDraft(m, { projectId: ctx.projectId, me: ctx.me })
           : newTaskDraft(m, { ...ctx, parentId: kind === 'subtask' ? ctx.parentId : null });
       st.me = ctx.me ?? null;
+      // Bloc « Personnes » : aucune période d'origine (écart d'ETP mesuré depuis la dernière saisie d'une ligne)
+      if (kind !== 'chantier')
+        Object.assign(st, peopleState(deps.storage), { base: { dateDebut: null, dateEcheance: null } });
       st.initial = JSON.stringify(st.draft);
     }
     validate();
@@ -254,7 +293,7 @@ export function createCreateDialog(deps) {
     validate();
     if (errorCount()) {
       const first = ORDER.find((f) => st.validation.errors[f]);
-      return render(first ? `cf-${first}` : undefined);
+      return render(first ? (FOCUS[first] ?? `cf-${first}`) : undefined);
     }
     const w = writer();
     // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
@@ -334,6 +373,7 @@ export function createCreateDialog(deps) {
   function bind(root) {
     root.addEventListener('input', (e) => {
       if (!st || st.busy) return;
+      if (hasPeople() && people.onInput(e.target)) return;
       const f = e.target.dataset.cf;
       if (f) st.touched.add(f);
       if (['titre', 'Nom_du_chantier', 'description', 'Description'].includes(f)) {
@@ -348,7 +388,6 @@ export function createCreateDialog(deps) {
       if (f) st.touched.add(f);
       if (f === 'dateDebut') st.touched.add('dateEcheance');
       if (f === 'Debut') st.touched.add('Fin');
-      if (t.dataset.cfAddAssignee !== undefined) st.touched.add('assignees');
       if (t.dataset.addProjet !== undefined) st.touched.add('Projets');
       if (t.dataset.addContrib !== undefined) st.touched.add('Contributeurs');
       if (f === 'cible') {
@@ -361,7 +400,9 @@ export function createCreateDialog(deps) {
         render('cf-cible');
       } else if (['dateDebut', 'dateEcheance', 'Debut', 'Fin'].includes(f)) {
         setDate(f, t.value);
-        refresh();
+        // Tâche : équivalents ETP et borne recalculés sur la nouvelle période (heures conservées)
+        if (hasPeople()) people.render();
+        else refresh();
       } else if (f === 'type') {
         st.draft = setNewMilestone(st.draft, t.checked);
         render('cf-type');
@@ -372,10 +413,8 @@ export function createCreateDialog(deps) {
       } else if (f === 'Responsable') {
         st.draft.Responsable = t.value ? Number(t.value) : null;
         refresh();
-      } else if (t.dataset.cfAddAssignee !== undefined && t.value) {
-        const id = Number(t.value);
-        if (!st.draft.assignees.includes(id)) st.draft.assignees = [...st.draft.assignees, id];
-        render('cf-assignees');
+      } else if (hasPeople() && people.onChange(t)) {
+        // ajout d'une personne ou unité de saisie du bloc « Personnes »
       } else if (t.dataset.addProjet !== undefined && t.value) {
         const id = Number(t.value);
         if (!st.draft.Projets.includes(id)) st.draft.Projets = [...st.draft.Projets, id];
@@ -413,10 +452,8 @@ export function createCreateDialog(deps) {
       if (a === 'create' || a === 'submit') return void submit(false);
       if (a === 'create-open') return void submit(true);
       if (t.dataset.removeProjet) st.touched.add('Projets');
-      if (t.dataset.cfRemoveAssignee) {
-        const id = Number(t.dataset.cfRemoveAssignee);
-        st.draft.assignees = st.draft.assignees.filter((x) => x !== id);
-        render('cf-assignees');
+      if (hasPeople() && people.onClick(t)) {
+        // retrait, assignation, fusion ou remplacement dans le bloc « Personnes »
       } else if (t.dataset.removeProjet) {
         const id = Number(t.dataset.removeProjet);
         st.draft.Projets = st.draft.Projets.filter((x) => x !== id);

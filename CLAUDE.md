@@ -13,8 +13,12 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   `tests/write-guard.test.js` le vérifie.
 - **Liste blanche figée** (`WRITABLE`, comparée à une copie dans write-guard) : Tasks (champs de la fiche, `charges`,
   `assignees`, `Chantier`, `projet`, `tags`), Chantiers (fiche chantier et `tags`, jamais `Priorite`), Team et
-  Disponibilites (lot équipe). `tags` en mise à jour seulement, jamais à la création. Projects et catégories : jamais. `RemoveRecord` seulement pour annuler une création de la session
-  (ligne relue identique, aucune référence), jamais sur Team (une personne se désactive).
+  Disponibilites (lot équipe). `tags` en mise à jour seulement, jamais à la création. `charges` permis à la création
+  d'une tâche (bloc « Personnes » des fenêtres de création) avec les contrôles de la mise à jour (`newChargesProblem` :
+  JSON, personnes existantes, pas de 0,5 h, 1 ETP sur la période des dates du même AddRecord, exemption estimation)
+  et cohérent avec `assignees` (chaque personne chargée assignée, une entrée par personne). Projects et catégories :
+  jamais. `RemoveRecord` seulement pour annuler une création de la session (ligne relue identique, aucune
+  référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
   fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun).
@@ -71,8 +75,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   widget dans le document de test), `check_writes.py save|check|diff` (contrôle avant/après un scénario).
 
 ## État et suite
-- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD, statut
-  depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
+- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes » (fiche et fenêtres
+  « Nouvelle tâche » / « Sous-tâche », un seul contrôleur `ui/people-block.js`, identifiants préfixés `tf-` / `cf-`),
+  équipe ISD, statut depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
   `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte), tags affectés et
   retirés (lot 2e, `core/tags-edit.js`).
 - **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).

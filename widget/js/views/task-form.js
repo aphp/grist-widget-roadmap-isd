@@ -271,6 +271,7 @@ export function alertHtml(st, model) {
  * @param {{teamId:number, assigned:boolean, charged:boolean, heures:number|null, count:number, known:boolean}} l
  */
 function personLineHtml(st, model, l, ctx) {
+  const px = pre(st);
   const id = l.teamId;
   const p = model.people.get(id);
   const name = chargeName(model, id);
@@ -293,24 +294,24 @@ function personLineHtml(st, model, l, ctx) {
     <span class="tf-charge__who">${name}${p ? roleBadge(model, p, true) : ''}${estimationBadge(isEstimationPerson(model, id))}${
       l.assigned
         ? ''
-        : h` <span class="tf-person__flag" id="tf-person-${id}-flag">${label('form.people.unassigned')}</span>${
+        : h` <span class="tf-person__flag" id="${px}-person-${id}-flag">${label('form.people.unassigned')}</span>${
             ctx.canAssign
-              ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tf-person__assign" id="tf-person-${id}-assign" data-person-assign="${id}" aria-label="${label('form.people.assignLabel', { nom: name })}">${label('form.people.assign')}</button>`
+              ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tf-person__assign" id="${px}-person-${id}-assign" data-person-assign="${id}" aria-label="${label('form.people.assignLabel', { nom: name })}">${label('form.people.assign')}</button>`
               : ''
           }`
     }</span>
     ${
       ctx.readable
         ? h`<span class="tf-charge__value">
-      <label class="fr-sr-only" for="tf-ch-${id}">${label('form.people.inputLabel', { nom: name, unite: unit })}</label>
-      <input type="text" inputmode="decimal" id="tf-ch-${id}" class="fr-input tf-num tf-charge__input" value="${typed ?? value}" placeholder="—" data-charge-input="${id}" autocomplete="off" aria-describedby="tf-ch-${id}-msg" ${raw(blocked ? 'disabled' : '')} ${raw(err ? 'aria-invalid="true"' : '')}>
+      <label class="fr-sr-only" for="${px}-ch-${id}">${label('form.people.inputLabel', { nom: name, unite: unit })}</label>
+      <input type="text" inputmode="decimal" id="${px}-ch-${id}" class="fr-input tf-num tf-charge__input" value="${typed ?? value}" placeholder="—" data-charge-input="${id}" autocomplete="off" aria-describedby="${px}-ch-${id}-msg" ${raw(blocked ? 'disabled' : '')} ${raw(err ? 'aria-invalid="true"' : '')}>
       <span class="tf-charge__unit">${unit}</span>
-      <span class="tf-charge__eq" id="tf-ch-${id}-eq">${l.charged ? chargeEqText(st, l.heures, ctx.days) : ''}</span>
+      <span class="tf-charge__eq" id="${px}-ch-${id}-eq">${l.charged ? chargeEqText(st, l.heures, ctx.days) : ''}</span>
     </span>`
         : h`<span></span>`
     }
-    ${canRemove ? h`<button type="button" class="tf-charge__remove fr-btn fr-btn--sm fr-btn--tertiary-no-outline" id="tf-person-${id}-remove" data-person-remove="${id}" title="${label('form.people.remove', { nom: name })}" aria-label="${label('form.people.remove', { nom: name })}">${TRASH}</button>` : h`<span></span>`}
-    <div class="tf-charge__msgs" id="tf-ch-${id}-msg" aria-live="polite">${chargeRowMsgs(st, model, l, ctx)}</div>
+    ${canRemove ? h`<button type="button" class="tf-charge__remove fr-btn fr-btn--sm fr-btn--tertiary-no-outline" id="${px}-person-${id}-remove" data-person-remove="${id}" title="${label('form.people.remove', { nom: name })}" aria-label="${label('form.people.remove', { nom: name })}">${TRASH}</button>` : h`<span></span>`}
+    <div class="tf-charge__msgs" id="${px}-ch-${id}-msg" aria-live="polite">${chargeRowMsgs(st, model, l, ctx)}</div>
   </li>`;
 }
 
@@ -400,9 +401,11 @@ export function peopleCtx(st) {
  * Bloc « Personnes » (assignés et charges réunis) : une ligne par personne, bascule « Saisir en : ETP | heures »,
  * « Ajouter une personne… » (l'assigne ; charge facultative), pied (total, ETP par profil, période). Cellule de
  * charges illisible : les assignés restent modifiables, les charges sont bloquées, contenu montré et remplacement
- * par une saisie vide après confirmation.
+ * par une saisie vide après confirmation. Identifiants préfixés par st.prefix (« tf » dans la fiche, « cf » dans
+ * une fenêtre de création) ; opts.help : aide plus courte (fenêtre de création).
  */
-export function peopleBlockHtml(st, model) {
+export function peopleBlockHtml(st, model, opts = {}) {
+  const p = pre(st);
   const ctx = peopleCtx(st);
   const { readable, cell, invalid, lines } = peopleLines(model, st.draft.assignees, st.draft.charges);
   const err = Boolean(st.validation.errors.charges || st.validation.errors.assignees);
@@ -410,8 +413,8 @@ export function peopleBlockHtml(st, model) {
       <legend class="fr-segmented__legend">${label('form.charges.unit')}</legend>
       <div class="fr-segmented__elements">${['etp', 'heures'].map(
         (u) => h`<div class="fr-segmented__element">
-          <input type="radio" name="tf-charges-unit" id="tf-charges-unit-${u}" value="${u}" data-charges-unit ${chk(st.chargesUnit === u)}>
-          <label class="fr-label" for="tf-charges-unit-${u}">${label(`form.charges.unit.${u}`)}</label>
+          <input type="radio" name="${p}-charges-unit" id="${p}-charges-unit-${u}" value="${u}" data-charges-unit ${chk(st.chargesUnit === u)}>
+          <label class="fr-label" for="${p}-charges-unit-${u}">${label(`form.charges.unit.${u}`)}</label>
         </div>`,
       )}</div>
     </fieldset>`;
@@ -427,20 +430,20 @@ export function peopleBlockHtml(st, model) {
           : st.confirmReplace
             ? h`<p class="tf-charges__ask" role="alert">${label('form.charges.replaceAsk')}</p>
               <div class="tf-alert__actions">
-                <button type="button" class="fr-btn fr-btn--sm edit-primary" data-charges="replace-confirm" id="tf-charges-replace-confirm">${label('form.charges.replaceConfirm')}</button>
+                <button type="button" class="fr-btn fr-btn--sm edit-primary" data-charges="replace-confirm" id="${p}-charges-replace-confirm">${label('form.charges.replaceConfirm')}</button>
                 <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-charges="replace-cancel">${label('form.charges.replaceCancel')}</button>
               </div>`
-            : h`<button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-charges="replace-ask" id="tf-charges-replace">${label('form.charges.replace')}</button>`
+            : h`<button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-charges="replace-ask" id="${p}-charges-replace">${label('form.charges.replace')}</button>`
       }
     </div>`;
-  return h`<section class="tf-field tf-charges tf-people ${raw(err ? 'fr-input-group--error' : '')}" id="tf-people" data-field="charges" aria-labelledby="tf-people-title">
+  return h`<section class="tf-field tf-charges tf-people ${raw(err ? 'fr-input-group--error' : '')}" id="${p}-people" data-field="charges" aria-labelledby="${p}-people-title">
     <div class="tf-charges__head">
-      <h3 class="dt-section__title tf-charges__title" id="tf-people-title" tabindex="-1">${label('form.field.people')}</h3>
+      <h3 class="dt-section__title tf-charges__title" id="${p}-people-title" tabindex="-1">${label('form.field.people')}</h3>
       ${readable ? unitToggle : ''}
     </div>
-    <p class="fr-hint-text tf-hint">${label('form.people.help')} ${label('form.charges.help')}</p>
-    ${readable && st.chargesUnit === 'etp' && !ctx.days ? h`<p class="tf-charges__nodates" id="tf-charges-nodates">${label('form.charges.noDates')}</p>` : ''}
-    ${lines.length ? h`<ul class="list tf-charges__rows" aria-labelledby="tf-people-title">${lines.map((l) => personLineHtml(st, model, l, ctx))}</ul>` : h`<p class="tf-empty">${label('form.people.empty')}</p>`}
+    <p class="fr-hint-text tf-hint">${opts.help ?? `${label('form.people.help')} ${label('form.charges.help')}`}</p>
+    ${readable && st.chargesUnit === 'etp' && !ctx.days ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label('form.charges.noDates')}</p>` : ''}
+    ${lines.length ? h`<ul class="list tf-charges__rows" aria-labelledby="${p}-people-title">${lines.map((l) => personLineHtml(st, model, l, ctx))}</ul>` : h`<p class="tf-empty">${label('form.people.empty')}</p>`}
     ${invalid.map(
       (i) =>
         h`<p class="tf-charges__invalid">${
@@ -453,8 +456,8 @@ export function peopleBlockHtml(st, model) {
     ${
       ctx.canAssign
         ? h`<div class="tf-charges__add">
-      <label class="fr-sr-only" for="tf-assignees">${label('form.people.addLabel')}</label>
-      <select id="tf-assignees" class="fr-select tf-add" data-person-add aria-describedby="tf-assignees-msgs">
+      <label class="fr-sr-only" for="${p}-assignees">${label('form.people.addLabel')}</label>
+      <select id="${p}-assignees" class="fr-select tf-add" data-person-add aria-describedby="${p}-assignees-msgs">
         <option value="" selected>${label('form.people.add')}</option>
         ${personGroups(
           model,
@@ -465,9 +468,9 @@ export function peopleBlockHtml(st, model) {
     </div>`
         : ''
     }
-    ${readable ? h`<p class="tf-charges__foot" id="tf-charges-foot" aria-live="polite">${chargesFootHtml(st, model)}</p>` : ''}
-    <div class="tf-msgs" id="tf-assignees-msgs" aria-live="polite">${messagesHtml(st, 'assignees')}</div>
-    <div class="tf-msgs" id="tf-charges-msgs" aria-live="polite">${messagesHtml(st, 'charges')}</div>
+    ${readable ? h`<p class="tf-charges__foot" id="${p}-charges-foot" aria-live="polite">${chargesFootHtml(st, model)}</p>` : ''}
+    <div class="tf-msgs" id="${p}-assignees-msgs" aria-live="polite">${messagesHtml(st, 'assignees')}</div>
+    <div class="tf-msgs" id="${p}-charges-msgs" aria-live="polite">${messagesHtml(st, 'charges')}</div>
   </section>`;
 }
 

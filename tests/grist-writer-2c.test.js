@@ -96,7 +96,7 @@ test('buildAdd : colonnes de création, obligatoires non vides, encodage ; Proje
     'requis',
   );
   assert.equal(
-    r(() => buildAdd('Tasks', { titre: 'a', Chantier: 1, projet: 1, charges: '[]' })),
+    r(() => buildAdd('Tasks', { titre: 'a', Chantier: 1, projet: 1, tags: ['L', 'x'] })),
     'colonne',
   );
   assert.equal(
@@ -184,7 +184,8 @@ test('création réelle : un seul AddRecord, identifiant lu dans retValues, jour
   const { g, writer } = setup();
   assert.ok(writer.canAdd('Tasks').ok);
   assert.ok(writer.canAddField('Tasks', 'Cree_par'));
-  assert.ok(!writer.canAddField('Tasks', 'charges'));
+  assert.ok(writer.canAddField('Tasks', 'charges'));
+  assert.ok(!writer.canAddField('Tasks', 'tags'));
   const e = await writer.add('Tasks', { titre: 'Nouvelle', Chantier: 100, projet: 10, statut: 'todo', type: 'tache' });
   assert.equal(g.batches.length, 1);
   assert.deepEqual(g.batches[0], [

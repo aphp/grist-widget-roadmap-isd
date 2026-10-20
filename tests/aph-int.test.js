@@ -182,8 +182,8 @@ test('buildUpdate et buildAdd : encodage selon le type relu de Team.aph', () => 
   assert.deepEqual(buildUpdate('Team', 5, { aph: '7654321' }, new Map(), { columns: META })[3], { aph: '7654321' });
   assert.deepEqual(buildUpdate('Team', 5, { aph: '7654321' })[3], { aph: '7654321' });
   const fields = { nom: 'N', role: 'DE', Domaine: ISD, actif: true, aph: '7000001' };
-  assert.equal(buildAdd('Team', fields, new Map(), META_INT)[3].aph, 7000001);
-  assert.equal(buildAdd('Team', fields, new Map(), META)[3].aph, '7000001');
+  assert.equal(buildAdd('Team', fields, new Map(), { columns: META_INT })[3].aph, 7000001);
+  assert.equal(buildAdd('Team', fields, new Map(), { columns: META })[3].aph, '7000001');
   assert.throws(
     () => buildUpdate('Team', 5, { aph: 1234567 }, new Map(), { columns: META_INT }),
     (e) => e.reason === 'encodage',
