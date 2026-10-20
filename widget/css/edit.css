@@ -69,6 +69,53 @@
   gap: var(--space-2);
   margin-left: auto;
 }
+/* Fenêtre de suppression : sous-tâches emportées, rappel « Annuler » ; « Supprimer » en couleur d'erreur */
+.del__lead,
+.del__hint {
+  margin: 0 0 var(--space-2);
+}
+.del__list {
+  margin: 0 0 var(--space-3);
+  white-space: pre-wrap;
+}
+.del__more {
+  color: var(--color-text-muted);
+  list-style: none;
+}
+/* Contrastes mesurés (texte sur fond, WCAG) : clair #fff sur #b91c1c 6,47:1, survol #991b1b 8,31:1, appui #7f1d1d
+   10,02:1 ; sombre #450a0a sur #fecaca 11,16:1, survol #fca5a5 8,51:1, appui #f87171 5,84:1 */
+:root {
+  --del-confirm-bg: #b91c1c;
+  --del-confirm-hover: #991b1b;
+  --del-confirm-active: #7f1d1d;
+  --del-confirm-text: #fff;
+}
+:root[data-fr-theme='dark'] {
+  --del-confirm-bg: #fecaca;
+  --del-confirm-hover: #fca5a5;
+  --del-confirm-active: #f87171;
+  --del-confirm-text: #450a0a;
+}
+.fr-btn.del__confirm {
+  background-color: var(--del-confirm-bg);
+  color: var(--del-confirm-text);
+  --hover: var(--del-confirm-hover);
+  --active: var(--del-confirm-active);
+}
+.fr-btn.del__confirm:hover:not(:disabled) {
+  background-color: var(--del-confirm-hover);
+}
+.fr-btn.del__confirm:active:not(:disabled) {
+  background-color: var(--del-confirm-active);
+}
+.fr-btn.del__confirm:disabled {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-disabled);
+}
+/* « Supprimer » : à gauche du pied, couleur d'erreur sans fond (jamais le bouton principal) */
+.tf-foot__delete {
+  color: var(--badge-error-text);
+}
 .tf-foot--leave .tf-foot__text {
   font-weight: var(--font-weight-bold);
 }

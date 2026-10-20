@@ -36,9 +36,17 @@ function entryName(model, entry) {
 
 /**
  * Lignes en clair d'une écriture du journal : une par colonne modifiée (et par ligne dérivée : sous-tâches qui
- * suivent, tâches rattachées), une pour une création ou son annulation.
+ * suivent, tâches rattachées), une pour une création, une suppression ou leur annulation.
  */
 export function entryLines(model, entry) {
+  // Suppression depuis la fiche (avec ses sous-tâches) et son annulation (lignes recréées au même numéro)
+  if (entry.kind === 'delete' || entry.kind === 'restore') {
+    const n = entry.kind === 'delete' ? (entry.snapshot?.length ?? 1) - 1 : 0;
+    const vars = { table: tableText(entry.table), id: entry.id, nom: entryName(model, entry) };
+    if (entry.kind === 'restore') return [label('edit.entry.restore', vars)];
+    const suite = n > 1 ? label('edit.entry.delete.many', { n }) : n === 1 ? label('edit.entry.delete.one') : '';
+    return [label('edit.entry.delete', { ...vars, suite })];
+  }
   if (entry.kind === 'add' || entry.kind === 'remove')
     return [
       label(entry.kind === 'add' ? 'edit.entry.add' : 'edit.entry.remove', {

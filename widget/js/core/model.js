@@ -153,6 +153,8 @@ export function buildModel(raw) {
         priorite: text(r.Priorite),
         criteres: text(r.Criteres_de_succes),
         description: text(r.Description),
+        // Dépendances du chantier (vers des tâches) : une tâche visée ne se supprime pas (delete-plan.js)
+        dependDe: refs(r.dependDe),
         ...tagFields(r.tags),
       },
     ]),

@@ -609,6 +609,16 @@ export function errorSummary(n) {
   return n === 1 ? label('form.error.summary') : label('form.error.summaryMany', { n });
 }
 
+/**
+ * « Supprimer » (fiche tâche ou chantier en édition) : bouton tertiaire à gauche du pied, jamais le bouton principal ;
+ * absent sans droit de suppression ou hors périmètre (st.canDelete, posé à l'ouverture).
+ */
+function deleteButton(st) {
+  if (!st.canDelete) return '';
+  const title = label(st.ref.table === 'Chantiers' ? 'delete.button.chantier' : 'delete.button.task');
+  return h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline fr-icon-delete-line fr-btn--icon-left tf-foot__delete" data-form="delete" id="btn-form-delete" title="${title}" ${raw(st.busy ? 'disabled' : '')}>${label('delete.button')}</button>`;
+}
+
 /** Pied fixe du formulaire. */
 export function taskFormFoot(st, changes, errorCount) {
   if (st.locked)
@@ -630,6 +640,7 @@ export function taskFormFoot(st, changes, errorCount) {
   const n = Object.keys(changes).length;
   const saveText = st.busy ? label('form.saving') : label(st.mode === 'dry-run' ? 'form.save.dry' : 'form.save');
   return h`<div class="tf-foot">
+    ${deleteButton(st)}
     <p class="tf-foot__text" id="tf-pending" aria-live="polite">
       <span class="tf-foot__count">${pendingText(n)}</span>
       ${errorCount ? h`<span class="tf-foot__error">${errorSummary(errorCount)}</span>` : h`<span class="tf-foot__hint">${label('form.shortcut')}</span>`}

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- Delete from the edit form: a "Supprimer" button (tertiary, left of the form footer, task and chantier forms, shown
+  only with the delete right and inside the ISD scope) deletes a task with all its subtasks (any depth) or an empty
+  chantier, in one `applyUserActions` batch of `RemoveRecord`. A confirmation dialog names the item and lists the
+  subtasks (10 at most, then "et n autres"); a chantier that still holds tasks is refused before anything is sent
+  ("déplacez ou supprimez d'abord ses n tâches"), so is a batch another task or chantier depends on (`dependDe`).
+  The writer re-reads Tasks and Chantiers just before sending, recomputes the batch, refuses if it changed since the
+  confirmation, checks the scope of every row and keeps a snapshot of every data column (formulas excluded). "Annuler"
+  recreates the rows with the same ids and values (`AddRecord` with a fixed id, parents first), refused if an id is
+  in use again; the fixed-id `AddRecord` is accepted only when it reproduces a snapshot of the session. Essai mode
+  logs everything and sends nothing. Never on Team, Projects or Disponibilites. Deletion is also refused when the
+  re-read row lacks a data column known to the metadata (partial snapshot) or when another table references Tasks
+  or Chantiers through a data column; "Annuler" is refused, naming the row, when a recreated row would point to a
+  row that no longer exists (parent, chantier, project, dependencies, chantier projects; Projects re-read in real
+  mode). A delete or restore without answer is kept when the re-read shows it happened; a delete still unknown keeps
+  its snapshot so a later "Annuler" can restore the rows if they did disappear.
 - Gantt: new "Chantier" color mode, now the default ("Couleur par": Étape · Statut · Chantier). Each chantier gets one
   of 7 hues (`--viz-ch-1..7`, light and dark themes, with a darker `-deep` edge and a 7 % `-band` row tint), assigned
   per project over all its chantiers sorted by title, recycled after 7 (`chantierSlots`, `chantierTone` in

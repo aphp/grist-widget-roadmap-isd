@@ -1,6 +1,7 @@
 /**
  * Droits relus au moment d'agir (pas seulement au rendu) : boutons et menus des formulaires, envoi des fenêtres,
- * statut rapide. Fonctions pures sur le writer (core/grist-writer.js : mode, can, canAdd) ; aucune écriture ici.
+ * statut rapide, suppression. Fonctions pures sur le writer (core/grist-writer.js : mode, can, canAdd, canRemove) ;
+ * aucune écriture ici.
  * Le writer refait de toute façon son contrôle strict avant l'envoi : ces relectures évitent qu'un bouton resté
  * affiché après un passage en lecture modifie la saisie ou lance un envoi voué au refus.
  */
@@ -54,6 +55,12 @@ export function personDialogRight(writer, kind) {
 export function quickStatusRight(writer, table) {
   if (!usable(writer)) return OFF;
   return writer.can(table, table === 'Chantiers' ? 'Statut' : 'statut');
+}
+
+/** Suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide) : droit de suppression du writer. */
+export function deleteRight(writer, table) {
+  if (!usable(writer)) return OFF;
+  return writer.canRemove?.(table) ?? { ok: false, reason: 'table' };
 }
 
 /**

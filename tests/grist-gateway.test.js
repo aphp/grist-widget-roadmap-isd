@@ -116,6 +116,29 @@ test('colonne « vide » (formule sans formule, isFormula à 1 dans une photo) :
   });
 });
 
+test('table de résumé (summarySourceTable) : ses colonnes portent summary (jamais une référence à protéger)', async () => {
+  const g = fakeGrist({
+    Team: full('Team'),
+    Projects: full('Projects'),
+    Chantiers: full('Chantiers'),
+    Tasks: full('Tasks'),
+    _grist_Tables: { id: [1, 2], tableId: ['Tasks', 'Tasks_summary_Chantier'], summarySourceTable: [0, 1] },
+    _grist_Tables_column: {
+      id: [1, 2],
+      parentId: [1, 2],
+      colId: ['Chantier', 'Chantier'],
+      type: ['Ref:Chantiers', 'Ref:Chantiers'],
+      isFormula: [false, false],
+      widgetOptions: ['', ''],
+    },
+  });
+  const raw = await createGateway(g).fetchAll();
+  assert.deepEqual(raw.columns, {
+    'Tasks.Chantier': { type: 'Ref:Chantiers', isFormula: false },
+    'Tasks_summary_Chantier.Chantier': { type: 'Ref:Chantiers', isFormula: false, summary: true },
+  });
+});
+
 test('métadonnées sans type : columns = null (le writer retire alors toutes les colonnes)', async () => {
   const g = fakeGrist({
     _grist_Tables: { id: [1], tableId: ['Tasks'] },
