@@ -63,7 +63,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   30 tags au plus (fusion comprise) ; valeurs d'avant recopiées telles quelles (chaîne vide comprise). Fusion en
   multi-ensemble (retirer un exemplaire d'un doublon tient), refaite sur la ligne relue à l'envoi, y compris après la
   fenêtre de conflit (`tagsSeen`). Cellule illisible (texte, `['E', …]`, non-texte) : montrée, champ bloqué, remplacée
-  seulement après confirmation de ce contenu (`replaceTags`, contrôlé par le writer). « Enregistrer sans vérifier »
+  seulement après confirmation de ce contenu (`replaceTags`) ; le writer relit lui-même la ligne (relue en envoi
+  réel, chargée sinon) avant d'écrire des tags, « Annuler » compris, qui saute alors les tags et le signale. « Enregistrer sans vérifier »
   prévient que les tags remplacent toute la liste.
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
