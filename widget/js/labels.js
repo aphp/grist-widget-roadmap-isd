@@ -635,6 +635,19 @@ const FR = Object.freeze({
   'form.tags.added': 'Tag « {nom} » ajouté.',
   'form.tags.removed': 'Tag « {nom} » retiré.',
   'form.tags.remove': 'Retirer le tag {nom}',
+  'form.tags.emptyValue': '(tag vide)',
+  'form.tags.unreadable':
+    'Le contenu de cette cellule n’est pas une liste de tags lisible : il est conservé tel quel et les tags ne sont pas modifiables ici.',
+  'form.tags.replace': 'Remplacer ce contenu par des tags…',
+  'form.tags.replaceAsk':
+    'Les tags choisis remplaceront ce contenu dans la Feuille, et « Annuler » ne pourra pas le rendre. Copiez-le avant si besoin. Confirmer ?',
+  'form.tags.replaceConfirm': 'Oui, remplacer',
+  'form.tags.nocheckWarn':
+    'Sans vérification, vos tags remplacent toute la liste : un tag ajouté ou retiré ailleurs entre-temps serait écrasé.',
+  'detail.tags.unreadable': 'Contenu illisible : {texte}',
+  'form.refused.tags-trop': 'trop de tags sur la ligne (30 au plus), en comptant ceux ajoutés ailleurs entre-temps',
+  'form.refused.tags-illisible':
+    'la cellule des tags n’est pas une liste lisible dans la Feuille ; elle n’est remplacée qu’après confirmation',
   'form.error.tags': 'Corrigez les tags : {raison}.',
   'form.error.tags.trop': 'trop de tags',
   'form.error.tags.doublon': 'un tag est en double',

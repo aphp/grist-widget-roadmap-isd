@@ -9,6 +9,7 @@ import {
   mergeTags,
   mergeTagsChange,
   newTagProblem,
+  readTagsCell,
   searchTags,
   tagOptions,
   tagsWriteProblem,
@@ -35,7 +36,7 @@ import {
 import { tableRows, toCsv } from '../widget/js/core/table-data.js';
 import { diffDraft, draftFrom, rebaseDraft } from '../widget/js/core/task-form.js';
 import { chantierDraftFrom, diffChantier, rebaseChantier } from '../widget/js/core/chantier-form.js';
-import { conflictBatch, runSave } from '../widget/js/core/task-session.js';
+import { conflictBatch, failureKind, runSave } from '../widget/js/core/task-session.js';
 import { createGateway } from '../widget/js/core/grist-gateway.js';
 import { createFakeGrist, lookupOf } from './fixtures/fake-grist.js';
 import { feuille } from './fixtures/feuille.js';
@@ -329,4 +330,131 @@ test('relecture d’une ligne : tags décodés pour les deux tables (decodeRow)'
   assert.deepEqual(decodeRow(t.Chantiers, 'Chantiers', 200).tags, ['Projet pilote']);
   assert.deepEqual(decodeRow(t.Chantiers, 'Chantiers', 300).tags, []);
   assert.deepEqual(decodeRow(t.Tasks, 'Tasks', 1000).tags, ['atelier']);
+});
+
+/** Faux Grist + writer en envoi réel, sur la mini Feuille avec tags (tâche 1001 : base donnée). */
+function realSetup(tags1001) {
+  const tables = tagged().tables;
+  for (const c of WRITABLE.Tasks.update) tables.Tasks[c] ??= tables.Tasks.id.map(() => null);
+  if (tags1001 !== undefined) tables.Tasks.tags[tables.Tasks.id.indexOf(1001)] = tags1001;
+  const g = createFakeGrist(tables);
+  const gw = createGateway(g);
+  const writer = createWriter({ docApi: g.docApi, mode: 'on', columns: META, lookup: lookupOf(g) });
+  return { g, writer, fetchRow: (id) => gw.fetchRow('Tasks', id) };
+}
+
+test('après la fenêtre de conflit : ligne relue à l’envoi, un tag ajouté ailleurs pendant la fenêtre survit', async () => {
+  const { g, writer, fetchRow } = realSetup(['L', 'a']);
+  const base = await fetchRow(1001);
+  const draft = { ...draftFrom(base), titre: 'Mien', tags: ['a', 'mine'] };
+  g.otherUserSets('Tasks', 1001, { titre: 'Leur' });
+  const r1 = await runSave({ taskId: 1001, base, draft, writer, fetchRow });
+  assert.equal(r1.kind, 'conflict');
+  assert.deepEqual(r1.cols, ['titre']);
+  // Fenêtre ouverte : quelqu'un ajoute « other » et retire « a » ; l'utilisateur garde son titre
+  g.otherUserSets('Tasks', 1001, { tags: ['L', 'other'] });
+  const batch = conflictBatch(base, draft, r1.fresh, { titre: 'mine' });
+  assert.deepEqual(batch.tagsSeen, ['a']);
+  const r2 = await runSave({ taskId: 1001, base, draft, writer, fetchRow, ...batch });
+  assert.equal(r2.kind, 'saved');
+  assert.deepEqual(g.batches.at(-1), [
+    ['UpdateRecord', 'Tasks', 1001, { titre: 'Mien', tags: ['L', 'other', 'mine'] }],
+  ]);
+  assert.deepEqual(r2.entry.before.tags, ['other']);
+  // Fusion qui redonne la cellule relue : seuls les autres champs partent
+  const b3 = await fetchRow(1001);
+  const d3 = { ...draftFrom(b3), titre: 'Encore', tags: [...b3.tags, 'z'] };
+  g.otherUserSets('Tasks', 1001, { titre: 'Autre' });
+  const r3 = await runSave({ taskId: 1001, base: b3, draft: d3, writer, fetchRow });
+  g.otherUserSets('Tasks', 1001, { tags: ['L', ...b3.tags, 'z'] });
+  const r4 = await runSave({
+    taskId: 1001,
+    base: b3,
+    draft: d3,
+    writer,
+    fetchRow,
+    ...conflictBatch(b3, d3, r3.fresh, {}),
+  });
+  assert.equal(r4.kind, 'saved');
+  assert.deepEqual(g.batches.at(-1), [['UpdateRecord', 'Tasks', 1001, { titre: 'Encore' }]]);
+});
+
+test('fusion au-delà de 30 tags (ajouts faits ailleurs) : refusée avec une raison claire, rien n’est envoyé', async () => {
+  const many = Array.from({ length: TAGS_MAX_COUNT - 1 }, (_, i) => `t${i}`);
+  const { g, writer, fetchRow } = realSetup(['L', ...many]);
+  const base = await fetchRow(1001);
+  g.otherUserSets('Tasks', 1001, { tags: ['L', ...many, 'ailleurs'] });
+  const r = await runSave({
+    taskId: 1001,
+    base,
+    draft: { ...draftFrom(base), tags: [...many, 'mien'] },
+    writer,
+    fetchRow,
+  });
+  assert.equal(r.kind, 'failed');
+  assert.equal(r.error.reason, 'tags-trop');
+  assert.equal(failureKind(r.error), 'refused:tags-trop');
+  assert.equal(g.batches.length, 0);
+  assert.equal(mergeTags(many, [...many, 'mien'], [...many, 'ailleurs']).length, TAGS_MAX_COUNT + 1);
+});
+
+test('cellule de tags illisible (texte, erreur, non-texte) : signalée, jamais réécrite sans confirmation', async () => {
+  for (const cell of ['texte libre', ['E', 'TypeError'], ['L', 'a', 3]]) {
+    const c = readTagsCell(cell);
+    assert.equal(c.ok, false);
+    assert.equal(c.raw, typeof cell === 'string' ? cell : JSON.stringify(cell));
+  }
+  for (const cell of [null, undefined, '', ['L'], ['L', '', 'a']]) assert.equal(readTagsCell(cell).ok, true);
+  const { g, writer, fetchRow } = realSetup('texte libre');
+  const base = await fetchRow(1001);
+  assert.deepEqual(base.tags, []);
+  assert.equal(base.tagsUnreadable, 'texte libre');
+  const draft = { ...draftFrom(base), tags: ['nouveau'] };
+  const r = await runSave({ taskId: 1001, base, draft, writer, fetchRow });
+  assert.equal(r.kind, 'failed');
+  assert.equal(r.error.reason, 'tags-illisible');
+  assert.equal(g.batches.length, 0);
+  // Confirmation d'un autre contenu : toujours refusé ; confirmation de ce contenu : remplacé
+  const r2 = await runSave({ taskId: 1001, base, draft, writer, fetchRow, tagsReplace: 'autre chose' });
+  assert.equal(r2.error.reason, 'tags-illisible');
+  const r3 = await runSave({ taskId: 1001, base, draft, writer, fetchRow, tagsReplace: 'texte libre' });
+  assert.equal(r3.kind, 'saved');
+  assert.deepEqual(g.batches, [[['UpdateRecord', 'Tasks', 1001, { tags: ['L', 'nouveau'] }]]]);
+  // Autres colonnes de la ligne : modifiables sans toucher à la cellule illisible
+  assert.throws(
+    () => buildUpdate('Tasks', 1, { tags: ['x'] }, new Map(), { before: { tags: [], tagsUnreadable: '"x"' } }),
+    (e) => e.reason === 'tags-illisible',
+  );
+  assert.doesNotThrow(() => buildUpdate('Tasks', 1, { titre: 'x' }, new Map(), { before: { titre: 'y' } }));
+  // Modèle (vues en lecture) : contenu brut gardé pour l'affichage
+  const raw = tagged();
+  raw.tables.Tasks.tags[0] = ['E', 'Err'];
+  assert.equal(buildModel(raw).tasks.get(raw.tables.Tasks.id[0]).tagsUnreadable, '["E","Err"]');
+});
+
+test('tag vide déjà dans la cellule : gardé tel quel, sans bloquer les autres modifications', async () => {
+  assert.equal(tagsWriteProblem(['', 'a', 'b'], ['', 'a']), null);
+  assert.equal(tagsWriteProblem(['a', ''], ['a']), 'vide');
+  const { g, writer, fetchRow } = realSetup(['L', '', 'a']);
+  const base = await fetchRow(1001);
+  assert.deepEqual(base.tags, ['', 'a']);
+  const r = await runSave({
+    taskId: 1001,
+    base,
+    draft: { ...draftFrom(base), tags: ['', 'a', 'b'] },
+    writer,
+    fetchRow,
+  });
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(g.batches[0][0][3], { tags: ['L', '', 'a', 'b'] });
+  const undo = await writer.undoLast(async (t, id) => fetchRow(id));
+  assert.deepEqual(undo.undoEntry.actions[0][3], { tags: ['L', '', 'a'] });
+});
+
+test('doublons : retirer un exemplaire d’un tag en double survit à la fusion (multi-ensemble)', () => {
+  assert.deepEqual(mergeTags(['d', 'd'], ['d'], ['d', 'd', 'x']), ['d', 'x']);
+  assert.deepEqual(mergeTags(['d', 'd'], ['d', 'd'], ['d']), ['d']);
+  assert.deepEqual(mergeTags(['d'], ['d', 'n'], ['d', 'n']), ['d', 'n']); // même ajout des deux côtés : une fois
+  assert.deepEqual(mergeTags(['a', 'b'], ['b'], ['b']), ['b']); // même retrait des deux côtés
+  assert.deepEqual(mergeTags(['d', 'd', 'd'], ['d'], ['d', 'd']), ['d']); // le plus grand retrait l'emporte
 });

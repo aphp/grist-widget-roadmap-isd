@@ -18,7 +18,7 @@
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
-import { tagsWriteProblem } from './tags-edit.js';
+import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
 
@@ -305,10 +305,14 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
       );
       if (problem) throw new WriteRefused('charges', problem);
     }
-    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées
+    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées.
+    // Cellule d'avant illisible (tagsUnreadable) : remplacée seulement sur confirmation de CE contenu (replaceTags)
     if (col === 'tags' && !ctx.restoring?.includes(col)) {
+      const unreadable = ctx.before?.tagsUnreadable;
+      if (typeof unreadable === 'string' && ctx.replaceTags !== unreadable)
+        throw new WriteRefused('tags-illisible', key(table, col));
       const problem = tagsWriteProblem(changes[col], ctx.before?.[col] ?? []);
-      if (problem) throw new WriteRefused('tags', problem);
+      if (problem) throw new WriteRefused(problem === 'trop' ? 'tags-trop' : 'tags', problem);
     }
     fields[col] = encodeCol(table, col, changes[col]);
   }
@@ -452,6 +456,12 @@ export function decodeRow(tableData, table, id) {
   const out = {};
   for (const col of [...(WRITABLE[table]?.update ?? []), ...(READ_ALSO[table] ?? [])])
     out[col] = decodeValue(EXPECTED_TYPES[key(table, col)], tableData[col]?.[i]);
+  // Cellule de tags illisible (texte, ['E', …], éléments non textuels) : son contenu, pour ne jamais l'écraser en
+  // silence (la clé n'existe que dans ce cas)
+  if ('tags' in out) {
+    const cell = readTagsCell(tableData.tags?.[i]);
+    if (!cell.ok) out.tagsUnreadable = cell.raw;
+  }
   return out;
 }
 
@@ -903,8 +913,10 @@ export function createWriter({
    * @param {number} id
    * @param {object} changes valeurs du modèle des colonnes modifiées
    * @param {{before?:object, undoOf?:number, period?:{start:number|null, end:number|null},
-   *          also?:{table:string, id:number, changes:object, before?:object}[]}} [opts] valeurs d'avant
-   *   (pour « Annuler ») ; period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées
+   *          also?:{table:string, id:number, changes:object, before?:object}[], replaceTags?:string}} [opts]
+   *   valeurs d'avant (pour « Annuler » ; before.tagsUnreadable : contenu d'une cellule de tags illisible) ;
+   *   period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées ; replaceTags :
+   *   contenu illisible dont l'utilisateur a confirmé le remplacement
    * @returns {Promise<{seq:number, table:string, id:number, before:object, after:object, actions:any[], sent:boolean}>}
    */
   async function update(table, id, changes, opts = {}) {
@@ -927,6 +939,7 @@ export function createWriter({
       refExists: exists,
       restoring,
       days,
+      replaceTags: opts.replaceTags,
     });
     const also = opts.also ?? [];
     const derived = also.map((r) => buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before }));

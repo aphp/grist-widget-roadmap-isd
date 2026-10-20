@@ -120,7 +120,7 @@ export function field(st, f, control, opts = {}) {
     ? h`<span class="tf-req" aria-hidden="true"> *</span><span class="fr-sr-only"> (${label('form.required')})</span>`
     : '';
   return h`<div class="tf-field fr-input-group ${raw(err ? 'fr-input-group--error' : '')} ${raw(opts.wide ? 'tf-field--wide' : '')}" data-field="${f}" ${raw(opts.legend ? `role="group" aria-labelledby="${p}-${f}-label"` : '')}>
-    ${opts.legend ? h`<p class="fr-label tf-label" id="${p}-${f}-label">${opts.labelText ?? fieldLabel(f)}${required}</p>` : h`<label class="fr-label tf-label" for="${p}-${f}">${opts.labelText ?? fieldLabel(f)}${required}${opts.help ? h`<span class="fr-hint-text" id="${p}-${f}-help">${opts.help}</span>` : ''}</label>`}
+    ${opts.legend ? h`<p class="fr-label tf-label" id="${p}-${f}-label" tabindex="-1">${opts.labelText ?? fieldLabel(f)}${required}</p>` : h`<label class="fr-label tf-label" for="${p}-${f}">${opts.labelText ?? fieldLabel(f)}${required}${opts.help ? h`<span class="fr-hint-text" id="${p}-${f}-help">${opts.help}</span>` : ''}</label>`}
     ${control}
     ${opts.hintAfter ? h`<p class="fr-hint-text tf-hint" id="${p}-${f}-help">${opts.hintAfter}</p>` : ''}
     <div class="tf-msgs" id="${p}-${f}-msgs" aria-live="polite">${messagesHtml(st, f)}</div>
@@ -237,6 +237,7 @@ export function alertHtml(st, model) {
         : label(itemKey(st, `form.fail.${['acl', 'missing', 'reread'].includes(f.kind) ? f.kind : 'other'}`));
     return h`<div class="fr-alert ${raw(f.kind === 'reread' ? 'fr-alert--warning' : 'fr-alert--error')} fr-alert--sm tf-alert" role="alert" id="tf-alert" tabindex="-1">
       <p>${text}</p>
+      ${st.confirmNoCheck && 'tags' in st.draft && JSON.stringify(st.draft.tags) !== JSON.stringify(st.base.tags ?? []) ? h`<p class="tf-warn" id="tf-nocheck-tags">${label('form.tags.nocheckWarn')}</p>` : ''}
       ${
         st.confirmNoCheck
           ? h`<div class="tf-alert__actions">

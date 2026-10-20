@@ -1418,3 +1418,35 @@ test('tags (2e), mode essai : l’ajout est noté dans le journal, rien n’est 
   assert.equal(await w(`return W.__writes.length;`), 0);
   assert.match(await w(`return D.getElementById('btn-edit-pill').textContent;`), /Mode essai · 1/);
 });
+
+test(
+  'tags (2e) : cellule illisible montrée et bloquée, remplacée seulement après confirmation ; annonce lue',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    const id = await w(`return Number(D.querySelector('.view [data-task]').dataset.task);`);
+    await w(
+      `await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { tags: 'texte libre' }]]); return true;`,
+    );
+    await sleep(800);
+    assert.equal(await openForm(), id);
+    assert.equal(await w(`return D.getElementById('tf-tags').disabled;`), true);
+    assert.match(await w(`return D.querySelector('.tf-tags__unreadable').textContent;`), /texte libre/);
+    await clickOn('#tf-tags-replace');
+    await until(`D.getElementById('tf-tags-replace-confirm')`);
+    await clickOn('#tf-tags-replace-confirm');
+    await until(`!D.getElementById('tf-tags').disabled`);
+    // Région d'annonce : le même nœud reste en place après le rendu, avec le message d'ajout
+    await w(`W.__live = D.getElementById('tf-tags-status'); D.getElementById('tf-tags').focus(); return true;`);
+    await typeIn('#tf-tags', 'remplacé');
+    await until(`D.querySelector('.tf-tagopt--create')`);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    assert.equal(await w(`return D.getElementById('tf-tags-status') === W.__live;`), true);
+    assert.match(await w(`return W.__live.textContent;`), /« remplacé » ajouté/);
+    assert.equal(await w(`return D.getElementById('tf-tags-label').getAttribute('tabindex');`), '-1');
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 2`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { tags: ['L', 'remplacé'] }]]);
+  },
+);

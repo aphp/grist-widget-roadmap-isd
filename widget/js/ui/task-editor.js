@@ -30,7 +30,7 @@ import {
 import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { tagsWriteProblem } from '../core/tags-edit.js';
-import { tagItems, tagListHtml } from '../views/tags-field.js';
+import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags-field.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargeEqText,
@@ -153,11 +153,19 @@ export function createTaskEditor(deps) {
     validate();
     const active = deps.root.contains(document.activeElement) ? document.activeElement.id : '';
     const scroll = deps.root.querySelector('.drawer__body')?.scrollTop ?? 0;
+    // Région d'annonce des tags : le même nœud est gardé d'un rendu à l'autre (un nœud neuf n'est pas lu)
+    const live = document.getElementById('tf-tags-status');
     deps.chrome.openDetail(deps.kindOf(st.ref), deps.titleOf(st.ref), spec(st).body(st, model()), {
       foot: taskFormFoot(st, changes(), errorCount()),
       mode: 'edit',
       focus: focusId || active || spec(st).focus,
     });
+    const fresh = document.getElementById('tf-tags-status');
+    if (live && fresh && live !== fresh) {
+      const html = fresh.innerHTML;
+      fresh.replaceWith(live);
+      if (live.innerHTML !== html) live.innerHTML = html;
+    }
     const body = deps.root.querySelector('.drawer__body');
     if (body) body.scrollTop = scroll;
   }
@@ -280,6 +288,8 @@ export function createTaskEditor(deps) {
       tagOpen: false,
       tagActive: 0,
       tagAnnounce: '',
+      tagsReplace: null,
+      confirmTagsReplace: false,
       badDates: new Set(),
       badNumber: false,
       chargeErrors: new Map(),
@@ -454,6 +464,8 @@ export function createTaskEditor(deps) {
       before: opts.before,
       chargesBase: opts.chargesBase,
       chargesSeen: opts.chargesSeen,
+      tagsSeen: opts.tagsSeen,
+      tagsReplace: cur.tagsReplace ?? undefined,
       timeoutMs: deps.timeoutMs?.(),
     });
     cur.busy = false;
@@ -585,6 +597,8 @@ export function createTaskEditor(deps) {
   function tagRefresh() {
     const box = document.getElementById('tf-tags-results');
     if (box) box.innerHTML = tagListHtml(st, model()).toString();
+    const status = document.getElementById('tf-tags-status');
+    if (status) status.innerHTML = tagStatusHtml(st, model()).toString();
     const input = document.getElementById('tf-tags');
     if (!input) return;
     const n = st.tagOpen ? tagItems(st, model()).items.length : 0;
@@ -597,7 +611,7 @@ export function createTaskEditor(deps) {
 
   /** Ajoute le tag de l'option choisie (existant, ou nom nouveau non déclaré) ; la recherche se vide. */
   function addTag(item) {
-    if (!item || !st.can('tags').ok) return;
+    if (!item || !st.can('tags').ok || tagsBlocked(st)) return;
     const tags = st.draft.tags ?? [];
     if (!tags.includes(item.value)) st.draft.tags = [...tags, item.value];
     st.tagQuery = '';
@@ -610,7 +624,7 @@ export function createTaskEditor(deps) {
   /** Retire le tag à cette position (les autres valeurs de la cellule restent telles quelles). */
   function removeTag(i) {
     const tags = st.draft.tags ?? [];
-    if (!st.can('tags').ok || !Number.isInteger(i) || i < 0 || i >= tags.length) return;
+    if (!st.can('tags').ok || tagsBlocked(st) || !Number.isInteger(i) || i < 0 || i >= tags.length) return;
     st.tagAnnounce = label('form.tags.removed', { nom: tags[i] });
     st.draft.tags = tags.filter((_, k) => k !== i);
     st.tagOpen = false;
@@ -847,6 +861,12 @@ export function createTaskEditor(deps) {
       document.getElementById(lineFocus(id))?.focus();
     } else if (t.dataset.removeTag !== undefined) {
       removeTag(Number(t.dataset.removeTag));
+    } else if (t.dataset.tagsReplace) {
+      // Cellule de tags illisible : remplacement seulement après confirmation (le contenu reste montré)
+      const a = t.dataset.tagsReplace;
+      st.confirmTagsReplace = a === 'ask';
+      if (a === 'confirm') st.tagsReplace = st.base.tagsUnreadable;
+      render(a === 'ask' ? 'tf-tags-replace-confirm' : a === 'confirm' ? 'tf-tags' : 'tf-tags-replace');
     } else if (t.dataset.removeDep) {
       const id = Number(t.dataset.removeDep);
       st.draft.dependDe = st.draft.dependDe.filter((x) => x !== id);

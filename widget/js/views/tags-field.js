@@ -15,7 +15,7 @@ import { h } from '../ui/kit.js';
 function chip(value, declared, remove = null, visibleNote = false) {
   const note = label('form.tags.undeclared');
   return h`<li class="tf-chip tf-tagchip${raw(declared ? '' : ' tf-tagchip--undeclared')}">
-    <span class="tf-chip__text" title="${declared ? value : `${value} — ${label('form.tags.undeclaredTitle')}`}">${value}${
+    <span class="tf-chip__text" title="${declared ? value : `${value} — ${label('form.tags.undeclaredTitle')}`}">${value === '' ? label('form.tags.emptyValue') : value}${
       declared
         ? ''
         : visibleNote
@@ -52,13 +52,13 @@ const usesText = (n) =>
   n === 0 ? label('form.tags.uses.none') : n === 1 ? label('form.tags.uses.one') : label('form.tags.uses.many', { n });
 
 /**
- * Liste des tags proposés (mise à jour sans redessiner le formulaire) et son message (nombre de résultats, nom
- * invalide, déjà choisi).
+ * Message de la zone de recherche (nombre de résultats, nom invalide, déjà choisi, tag ajouté ou retiré), dans la
+ * région #tf-tags-status : un seul nœud, gardé d'un rendu à l'autre (ui/task-editor.js) pour que les annonces
+ * soient lues.
  */
-export function tagListHtml(st, model) {
+export function tagStatusHtml(st, model) {
   const { items, invalid, duplicate } = tagItems(st, model);
   const open = Boolean(st.tagOpen);
-  const active = Math.min(st.tagActive ?? 0, items.length - 1);
   const full = (st.draft.tags ?? []).length >= TAGS_MAX_COUNT;
   const status = !open
     ? ''
@@ -81,6 +81,14 @@ export function tagListHtml(st, model) {
       : known === 1
         ? label('form.tags.count.one')
         : label('form.tags.count.many', { n: known });
+  return h`${status ? h`<span class="tf-warn">${status}</span>` : ''}<span class="fr-sr-only">${count} ${st.tagAnnounce ?? ''}</span>`;
+}
+
+/** Liste des tags proposés (mise à jour sans redessiner le formulaire). */
+export function tagListHtml(st, model) {
+  const { items } = tagItems(st, model);
+  const open = Boolean(st.tagOpen);
+  const active = Math.min(st.tagActive ?? 0, items.length - 1);
   return h`<ul class="tf-tagopts" id="tf-tags-list" role="listbox" aria-label="${label('form.tags.listLabel')}" ${raw(open && items.length ? '' : 'hidden')}>${items.map(
     (it, i) =>
       h`<li class="tf-tagopt${raw(i === active ? ' is-active' : '')}${raw(it.create ? ' tf-tagopt--create' : '')}" role="option" id="tf-tags-opt-${i}" data-tag-opt="${i}" aria-selected="${String(i === active)}">${
@@ -88,9 +96,36 @@ export function tagListHtml(st, model) {
           ? h`<span class="tf-tagopt__name">${label('form.tags.create', { nom: it.value })}</span><span class="tf-tagopt__meta">${label('form.tags.createNote')}</span>`
           : h`<span class="tf-tagopt__name${raw(it.declared ? '' : ' tf-tagopt__name--undeclared')}">${it.value}</span><span class="tf-tagopt__meta">${it.declared ? label('form.tags.declared') : label('form.tags.undeclared')} · ${usesText(it.count)}</span>`
       }</li>`,
-  )}</ul>
-  <p class="tf-tags__status" id="tf-tags-status" aria-live="polite">${status ? h`<span class="tf-warn">${status}</span>` : ''}<span class="fr-sr-only">${count} ${st.tagAnnounce ?? ''}</span></p>`;
+  )}</ul>`;
 }
+
+/**
+ * Cellule de tags illisible dans la Feuille (texte, erreur, éléments non textuels) : contenu montré, champ bloqué ;
+ * « Remplacer » demande une confirmation, après quoi les tags choisis remplaceront ce contenu.
+ */
+function unreadableHtml(st, can) {
+  const rawText = st.base.tagsUnreadable;
+  return h`<div class="tf-charges__unreadable tf-tags__unreadable">
+    <p class="tf-warn">${label('form.tags.unreadable')}</p>
+    <p class="tf-sublabel">${label('form.charges.unreadableRaw')}</p>
+    <pre class="tf-charges__raw">${rawText}</pre>
+    ${
+      !can
+        ? ''
+        : st.confirmTagsReplace
+          ? h`<p class="tf-charges__ask" role="alert">${label('form.tags.replaceAsk')}</p>
+            <div class="tf-alert__actions">
+              <button type="button" class="fr-btn fr-btn--sm edit-primary" data-tags-replace="confirm" id="tf-tags-replace-confirm">${label('form.tags.replaceConfirm')}</button>
+              <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-tags-replace="cancel">${label('form.charges.replaceCancel')}</button>
+            </div>`
+          : h`<button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-tags-replace="ask" id="tf-tags-replace">${label('form.tags.replace')}</button>`
+    }
+  </div>`;
+}
+
+/** Vrai si la cellule de tags lue est illisible et que son remplacement n'est pas confirmé (champ bloqué). */
+export const tagsBlocked = (st) =>
+  typeof st.base?.tagsUnreadable === 'string' && st.tagsReplace !== st.base.tagsUnreadable;
 
 /**
  * Champ « Tags » d'un formulaire : pastilles retirables, recherche avec liste de tags proposés.
@@ -103,8 +138,10 @@ export function tagsFieldHtml(st, model, field, attrs) {
   const table = tableOf(st);
   const declared = declaredTags(model, table);
   const tags = st.draft.tags ?? [];
-  const can = st.can('tags').ok && !st.busy;
-  const items = st.tagOpen ? tagItems(st, model).items : [];
+  const editable = st.can('tags').ok && !st.busy;
+  const blocked = tagsBlocked(st);
+  const can = editable && !blocked;
+  const items = st.tagOpen && can ? tagItems(st, model).items : [];
   const active = Math.min(st.tagActive ?? 0, items.length - 1);
   const remove = (t, i) =>
     can
@@ -118,12 +155,16 @@ export function tagsFieldHtml(st, model, field, attrs) {
         ? h`<ul class="list tf-chips tf-tags" aria-label="${label('form.field.tags')}">${tags.map((t, i) =>
             chip(t, declared.includes(t), remove(t, i), true),
           )}</ul>`
-        : h`<p class="tf-empty">${label('form.field.tags.none')}</p>`
+        : blocked
+          ? ''
+          : h`<p class="tf-empty">${label('form.field.tags.none')}</p>`
     }
+    ${blocked ? unreadableHtml(st, editable) : ''}
     <div class="tf-tags__box">
       <label class="fr-label tf-sublabel" for="tf-tags">${label('form.tags.search')}<span class="fr-hint-text">${label('form.tags.searchHelp')}</span></label>
-      <input type="text" id="tf-tags" class="fr-input tf-tags__input" autocomplete="off" spellcheck="false" maxlength="${TAG_MAX + 20}" value="${st.tagQuery ?? ''}" data-tag-search role="combobox" aria-autocomplete="list" aria-controls="tf-tags-list" aria-expanded="${String(Boolean(st.tagOpen && items.length))}" ${raw(st.tagOpen && items.length ? `aria-activedescendant="tf-tags-opt-${active}"` : '')} ${attrs(st, 'tags', true)}>
+      <input type="text" id="tf-tags" class="fr-input tf-tags__input" autocomplete="off" spellcheck="false" maxlength="${TAG_MAX + 20}" value="${st.tagQuery ?? ''}" data-tag-search role="combobox" aria-autocomplete="list" aria-controls="tf-tags-list" aria-expanded="${String(Boolean(st.tagOpen && items.length))}" ${raw(st.tagOpen && items.length ? `aria-activedescendant="tf-tags-opt-${active}"` : '')} ${attrs(st, 'tags', true)} ${raw(blocked ? 'disabled' : '')}>
       <div id="tf-tags-results">${tagListHtml(st, model)}</div>
+      <p class="tf-tags__status" id="tf-tags-status" aria-live="polite">${tagStatusHtml(st, model)}</p>
     </div>`,
     {
       legend: true,

@@ -113,8 +113,10 @@ export function encodeValue(type, value) {
       if (!value.every(isPositiveInt)) throw new EncodeError('identifiant entier attendu');
       return value.length ? ['L', ...value] : null;
     case 'ChoiceList':
+      // Une chaîne vide déjà présente dans la cellule est recopiée telle quelle ; un nouveau choix vide est refusé
+      // en amont (tags-edit.js:tagsWriteProblem)
       if (!Array.isArray(value)) throw new EncodeError('liste de choix attendue');
-      if (!value.every((x) => typeof x === 'string' && x !== '')) throw new EncodeError('choix non vide attendu');
+      if (!value.every((x) => typeof x === 'string')) throw new EncodeError('choix en texte attendu');
       return value.length ? ['L', ...value] : null;
     default:
       throw new EncodeError(`type de colonne non pris en charge : ${type}`);

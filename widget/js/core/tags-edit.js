@@ -43,11 +43,11 @@ export function newTagProblem(s) {
   return null;
 }
 
-const counts = (list) => {
+function counts(list) {
   const m = new Map();
   for (const v of list) m.set(v, (m.get(v) ?? 0) + 1);
   return m;
-};
+}
 
 /**
  * Contrôle strict d'une liste de tags à écrire, par rapport à la cellule d'avant : liste de chaînes ; chaque valeur
@@ -78,21 +78,71 @@ export function tagsWriteProblem(next, before) {
 const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**
- * Fusion à trois voies d'une liste de tags (ensemble) : les tags ajoutés et retirés dans la saisie (par rapport à
- * l'ouverture) sont appliqués à la cellule relue. Les modifications faites ailleurs entre-temps survivent, l'ordre
- * et les valeurs de la cellule relue sont conservés, les ajouts viennent à la fin. Jamais de conflit.
+ * Fusion à trois voies d'une liste de tags, valeur par valeur en comptant les exemplaires (multi-ensemble) : les
+ * ajouts et retraits de la saisie (par rapport à l'ouverture) sont appliqués à la cellule relue. Les modifications
+ * faites ailleurs entre-temps survivent ; même changement des deux côtés = appliqué une fois ; retirer un exemplaire
+ * d'un tag en double retire bien un exemplaire. L'ordre et les valeurs de la cellule relue sont conservés (les
+ * exemplaires retirés sont les derniers), les ajouts viennent à la fin, dans l'ordre de la saisie. Jamais de conflit.
  * @param {string[]} base cellule à l'ouverture du formulaire
  * @param {string[]} mine saisie
  * @param {string[]} fresh cellule relue
  * @returns {string[]}
  */
 export function mergeTags(base, mine, fresh) {
-  const b = new Set(base ?? []);
-  const m = new Set(mine ?? []);
-  const removed = new Set([...b].filter((v) => !m.has(v)));
-  const out = (fresh ?? []).filter((v) => !removed.has(v));
-  for (const v of mine ?? []) if (!b.has(v) && !out.includes(v)) out.push(v);
+  const b = counts(base ?? []);
+  const m = counts(mine ?? []);
+  const f = counts(fresh ?? []);
+  const target = new Map();
+  for (const v of new Set([...b.keys(), ...m.keys(), ...f.keys()])) {
+    const nb = b.get(v) ?? 0;
+    const dm = (m.get(v) ?? 0) - nb;
+    const df = (f.get(v) ?? 0) - nb;
+    // Même sens des deux côtés : le plus grand changement (une seule fois) ; sinon les deux s'ajoutent
+    const n =
+      dm === 0
+        ? nb + df
+        : df === 0
+          ? nb + dm
+          : Math.sign(dm) === Math.sign(df)
+            ? nb + (Math.abs(dm) > Math.abs(df) ? dm : df)
+            : nb + dm + df;
+    target.set(v, Math.max(0, n));
+  }
+  const kept = new Map();
+  const out = [];
+  // Cellule relue, de la fin vers le début : les derniers exemplaires en trop sont retirés
+  for (const v of [...(fresh ?? [])].reverse()) {
+    if ((kept.get(v) ?? 0) < target.get(v)) {
+      kept.set(v, (kept.get(v) ?? 0) + 1);
+      out.unshift(v);
+    }
+  }
+  for (const v of mine ?? [])
+    if ((kept.get(v) ?? 0) < target.get(v)) {
+      kept.set(v, (kept.get(v) ?? 0) + 1);
+      out.push(v);
+    }
   return out;
+}
+
+/**
+ * Cellule de tags lue dans la Feuille : lisible si elle est vide (null, '', ['L']) ou une liste ['L', …] de chaînes
+ * (une chaîne vide comprise, gardée telle quelle). Sinon (texte libre d'un import, ['E', …] d'une erreur, liste avec
+ * des nombres…) : illisible, `raw` en donne le contenu (JSON), et la cellule n'est jamais réécrite sans
+ * confirmation de remplacement.
+ * @returns {{ok:boolean, tags:string[], raw:string|null}}
+ */
+export function readTagsCell(cell) {
+  if (cell === null || cell === undefined || cell === '') return { ok: true, tags: [], raw: null };
+  if (Array.isArray(cell) && cell[0] === 'L' && cell.slice(1).every((x) => typeof x === 'string'))
+    return { ok: true, tags: cell.slice(1), raw: null };
+  let raw;
+  try {
+    raw = typeof cell === 'string' ? cell : JSON.stringify(cell);
+  } catch {
+    raw = String(cell);
+  }
+  return { ok: false, tags: [], raw };
 }
 
 /**
