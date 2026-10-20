@@ -4,7 +4,7 @@ import { pickerGroups } from '../core/team-directory.js';
 import { label, statusLabel } from '../labels.js';
 
 /** Onglets, dans l'ordre de la spec ; « Mes tâches » (vue personnelle, P-UX-1) en tête. */
-export const TABS = Object.freeze(['mytasks', 'kanban', 'table', 'gantt', 'portfolio', 'stats', 'synthesis', 'team']);
+export const TABS = Object.freeze(['mytasks', 'gantt', 'kanban', 'table', 'portfolio', 'stats', 'synthesis', 'team']);
 /** Icône DSFR de chaque onglet (décorative, devant le libellé). */
 export const TAB_ICONS = Object.freeze({
   mytasks: 'calendar-todo-line',

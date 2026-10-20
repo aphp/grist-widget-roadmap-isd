@@ -105,7 +105,7 @@ export function editPill(edit, open = false) {
   return h`<span class="popover-anchor edit-anchor">
     <button type="button" id="btn-edit-pill" class="readonly-pill edit-pill ${raw(dry ? 'edit-pill--dry' : 'edit-pill--on')}"
       title="${label(dry ? 'edit.pill.dry' : 'edit.pill.on')}" aria-haspopup="true" aria-expanded="${String(open)}" aria-controls="edit-panel">
-      ${icon(dry ? 'flask-line' : 'edit-line', 'fr-icon--sm')}
+      ${icon(dry ? 'test-tube-line' : 'edit-line', 'fr-icon--sm')}
       <span>${text}</span>
     </button>
     <div id="edit-panel" class="popover edit-panel" role="group" aria-label="${label(dry ? 'edit.panel.title' : 'edit.pill.on.short')}" ${raw(open ? '' : 'hidden')}></div>

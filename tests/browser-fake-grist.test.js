@@ -164,7 +164,7 @@ function test(name, opts, fn) {
   });
 }
 
-const TABS = ['kanban', 'table', 'gantt', 'portfolio', 'stats', 'synthesis', 'team'];
+const TABS = ['gantt', 'kanban', 'table', 'portfolio', 'stats', 'synthesis', 'team'];
 
 before(async () => {
   if (SKIP) return;
