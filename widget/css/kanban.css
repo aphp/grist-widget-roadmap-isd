@@ -1,0 +1,398 @@
+/*
+ * Vue Kanban : plateau de colonnes défilant en x (la page défile seule en y), cartes-boutons. Couleurs = variables
+ * DSFR (clair/sombre).
+ */
+.kanban {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.kanban__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+.kanban__bar .kanban__field.fr-select-group {
+  margin: 0;
+  min-width: 200px;
+}
+.kanban__field .fr-label {
+  font-size: var(--font-size-sm);
+}
+
+.kanban__viewport {
+  position: relative;
+}
+/* Ombres de bord quand des colonnes sont hors champ (doublées par l'indice « +n colonnes ») */
+.kanban__viewport::before,
+.kanban__viewport::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: var(--space-2);
+  z-index: 2;
+  width: 24px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.kanban__viewport::before {
+  left: 0;
+  background: linear-gradient(to right, rgb(0 0 0 / 0.14), transparent);
+}
+.kanban__viewport::after {
+  right: 0;
+  background: linear-gradient(to left, rgb(0 0 0 / 0.14), transparent);
+}
+.kanban__viewport--more-left::before,
+.kanban__viewport--more-right::after {
+  opacity: 1;
+}
+/* Indices « +n colonnes » : barre propre au-dessus du plateau, dans le flux (ne recouvre aucune carte) */
+.kanban__peeks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 2rem;
+  margin-bottom: calc(-1 * var(--space-2));
+}
+.kanban__peeks[hidden],
+.kanban__peek[hidden] {
+  display: none;
+}
+.kanban__peek.fr-btn {
+  gap: var(--space-1);
+  margin: 0;
+  border-radius: var(--radius-pill);
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+.kanban__peek--right.fr-btn {
+  margin-left: auto;
+  flex-direction: row-reverse;
+}
+.kanban__peek [class*='fr-icon-']::before {
+  --icon-size: 1rem;
+}
+
+.kanban__board {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  scroll-snap-type: x proximity;
+}
+
+.kcol {
+  flex: 0 0 300px;
+  min-width: 0;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-indicator);
+  border-radius: var(--radius-lg);
+}
+/* Colonne repliée : bande étroite, titre vertical */
+.kcol--collapsed {
+  flex-basis: 3.25rem;
+}
+.kcol--collapsed .kcol__head {
+  flex-direction: column;
+  padding: var(--space-2) var(--space-1);
+}
+.kcol--collapsed .kcol__title {
+  writing-mode: vertical-rl;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+.kcol--collapsed .kcol__title::before {
+  margin: 0 0 var(--space-2);
+}
+/* Colonnes par statut : liseré et fond teinté de la couleur du statut (mêmes jetons que le Tableau et les Statistiques). */
+.kcol--todo {
+  --kcol-tone: var(--status-todo-mark);
+}
+.kcol--inprogress {
+  --kcol-tone: var(--status-inprogress-mark);
+}
+.kcol--review {
+  --kcol-tone: var(--status-review-mark);
+}
+.kcol--done {
+  --kcol-tone: var(--status-done-mark);
+}
+.kcol--other {
+  --kcol-tone: var(--status-other-mark);
+}
+.kcol--todo,
+.kcol--inprogress,
+.kcol--review,
+.kcol--done,
+.kcol--other {
+  border-top-color: var(--kcol-tone);
+  background: color-mix(in srgb, var(--kcol-tone) 9%, var(--color-surface-2));
+}
+:is(.kcol--todo, .kcol--inprogress, .kcol--review, .kcol--done, .kcol--other) .kcol__title::before {
+  content: '';
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: var(--kcol-tone);
+  vertical-align: 0.05em;
+}
+.kcol__head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  /* Opaque (teinte de la colonne) : l'en-tête recouvre les cartes quand il suit le défilement de la page */
+  background: inherit;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.kcol__head--stuck {
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.12);
+}
+.kcol__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  overflow-wrap: anywhere;
+}
+.kcol__toggle {
+  flex: none;
+}
+/* Le texte du bouton de repli reste pour les lecteurs d'écran (infobulle = même libellé) */
+.kcol__toggle.fr-btn {
+  font-size: 0;
+  min-height: 2rem;
+}
+.kcol__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+.kcol__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kcol__empty {
+  margin: 0;
+  padding: var(--space-4) 0;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.kcol__more {
+  align-self: center;
+}
+
+/* ---- Carte ---- */
+.kcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  text-align: left;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  /* Le focus amené par les flèches ne doit pas finir sous l'en-tête de colonne collé en haut */
+  scroll-margin-top: 4.5rem;
+  scroll-margin-bottom: var(--space-4);
+}
+.kcard:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+.kcard:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.kcard--late {
+  border-left: 4px solid var(--border-plain-error);
+}
+.kcard__path {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.kcard__title {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-title);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
+}
+.kcard__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.kcard__badges .fr-badge {
+  margin: 0;
+}
+.kcard__dates {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.kcard__dates [class*='fr-icon-']::before {
+  --icon-size: 0.875rem;
+}
+.kcard__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.kcard__people {
+  position: relative;
+  min-width: 0;
+}
+.kcard__people-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.kcard__person {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.kcard__name {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-title);
+  white-space: nowrap;
+}
+.kcard__person--named {
+  gap: var(--space-1);
+}
+.kcard__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+.kcard__avatar--more {
+  padding: 0 var(--space-1);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+.kcard__role {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+/* Infobulle des noms complets : au survol des personnes et au focus clavier de la carte ; Échap la ferme */
+.kcard__tip {
+  /* Sous la ligne des personnes : ne masque ni le titre ni les dates de la carte focalisée */
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  width: max-content;
+  max-width: 260px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-title);
+  color: var(--color-surface);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  box-shadow: var(--shadow-1);
+  pointer-events: none;
+}
+.kcard__people:hover .kcard__tip,
+.kcard:focus-visible .kcard__tip {
+  display: flex;
+}
+.kcard.kcard--tipoff .kcard__tip {
+  display: none;
+}
+.kcard__roles {
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.kcard__etp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+
+@media (max-width: 767px) {
+  .kanban__board {
+    flex-direction: column;
+    align-items: stretch;
+    overflow-x: visible;
+  }
+  .kcol,
+  .kcol--collapsed {
+    flex-basis: auto;
+  }
+  /* Empilées, les colonnes repliées reprennent un en-tête horizontal */
+  .kcol--collapsed .kcol__head {
+    flex-direction: row;
+    padding: var(--space-2) var(--space-3);
+  }
+  .kcol--collapsed .kcol__title {
+    writing-mode: horizontal-tb;
+  }
+  .kcol--collapsed .kcol__title::before {
+    margin: 0 var(--space-2) 0 0;
+  }
+  .kanban__field {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+}
+
+/* Personne chargée mais non assignée : marque discrète (nom souligné en pointillé, avatar à contour pointillé) */
+.kcard__person--unassigned .kcard__name {
+  text-decoration: underline dotted var(--color-text-muted);
+  text-underline-offset: 3px;
+  font-style: italic;
+}
+.kcard__person--unassigned .kcard__avatar {
+  background: transparent;
+  border: 1px dashed var(--color-accent-text);
+}

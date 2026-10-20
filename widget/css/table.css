@@ -1,0 +1,500 @@
+/*
+ * Vue Tableau : barre d'outils, tableau DSFR dans un cadre défilant à en-tête fixe, en-têtes de groupe
+ * (projet, chantier) repliables, lignes compactes sur une ligne. Couleurs = variables de tokens.css uniquement
+ * (statuts, priorités, profils --viz-1 à --viz-4, badges), clair et sombre.
+ */
+.tbl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tbl__count {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.tbl__hint,
+.tbl__muted {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-regular);
+}
+.tbl__notice {
+  color: var(--color-accent-text);
+}
+.tbl__more {
+  display: flex;
+  justify-content: center;
+}
+.tbl__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tbl .popover {
+  width: 280px;
+}
+.tbl .popover__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ---- Cadre et grille ---- */
+.tbl__table.fr-table {
+  margin: 0;
+  padding: 0;
+}
+.tbl__table .fr-table__wrapper {
+  margin: 0;
+  max-height: 72vh;
+  min-height: 320px;
+  overflow: auto;
+  /* Référence de largeur (cqi) pour les en-têtes de groupe collés à gauche */
+  container-type: inline-size;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.tbl__table .fr-table__wrapper::after {
+  display: none;
+}
+.tbl__table .fr-table__container,
+.tbl__table .fr-table__content {
+  overflow: visible;
+  display: block;
+}
+.tbl__table .tbl__grid {
+  width: 100%;
+  table-layout: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+/* Spécificité supérieure aux règles .fr-table__content table … du DSFR */
+.tbl__table .tbl__grid th,
+.tbl__table .tbl__grid td {
+  width: auto;
+  /* Les bordures du DSFR sont des dégradés en arrière-plan : remplacées par de vraies bordures */
+  background-image: none;
+}
+.tbl__table .tbl__grid caption {
+  /* Légende pour lecteurs d'écran seulement : le DSFR la remet dans le flux, sous l'en-tête collant */
+  position: absolute;
+  margin: 0;
+}
+.tbl__table .tbl__grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 0;
+  height: auto;
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.tbl__sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.tbl__th[aria-sort='ascending'] .tbl__sort,
+.tbl__th[aria-sort='descending'] .tbl__sort {
+  color: var(--color-accent-text);
+}
+.tbl__sort:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-title);
+}
+.tbl__sort [class*='fr-icon-']::before {
+  --icon-size: 0.875rem;
+}
+.tbl__sort-idle {
+  opacity: 0.45;
+}
+
+/* ---- Lignes de tâche : une seule ligne, zébrées, survol ---- */
+.tbl__table .tbl__grid tbody td {
+  height: 40px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-tight);
+  vertical-align: middle;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.tbl__row {
+  cursor: pointer;
+}
+.tbl__table .tbl__grid .tbl__row--alt td {
+  background: var(--color-bg);
+}
+.tbl__table .tbl__grid .tbl__row:hover td {
+  background: var(--color-surface-hover);
+}
+/* Liseré de statut à gauche de la ligne (redondant avec la pastille, jamais seul) */
+.tbl__table .tbl__grid td.tbl__td--tache {
+  box-shadow: inset 3px 0 0 var(--tbl-status, var(--status-other-mark));
+}
+.tbl-s--todo {
+  --tbl-status: var(--status-todo-mark);
+}
+.tbl-s--inprogress {
+  --tbl-status: var(--status-inprogress-mark);
+}
+.tbl-s--review {
+  --tbl-status: var(--status-review-mark);
+}
+.tbl-s--done {
+  --tbl-status: var(--status-done-mark);
+}
+.tbl__table .tbl__grid td.tbl__td--num,
+.tbl__table .tbl__grid td.tbl__td--date {
+  font-variant-numeric: tabular-nums;
+}
+.tbl__table .tbl__grid td.tbl__td--num {
+  text-align: right;
+}
+.tbl__empty {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+.tbl-ellipsis {
+  display: block;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tbl-ico::before {
+  --icon-size: 0.875rem;
+}
+
+/* ---- Cellule « Tâche » : pictogramme (« ↳ » pour une sous-tâche), titre tronqué ---- */
+.tbl-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 12rem;
+  max-width: 12.5rem;
+}
+.tbl-title--sub {
+  padding-left: var(--space-2);
+}
+.tbl-sub {
+  flex: none;
+  width: 1rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.tbl-level {
+  flex: none;
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+.tbl-level [class*='fr-icon-']::before {
+  --icon-size: 1rem;
+}
+.tbl-level--jalon {
+  color: var(--badge-purple-text);
+}
+.tbl__open {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-title);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+  cursor: pointer;
+}
+.tbl__row:hover .tbl__open {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tbl-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--badge-grey-bg);
+  color: var(--badge-grey-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.375rem;
+  white-space: nowrap;
+}
+.tbl-tag--jalon {
+  background: var(--badge-purple-bg);
+  color: var(--badge-purple-text);
+}
+
+/* ---- Statut : pastille à point coloré (familles des badges du Kanban), liseré de ligne en --status-*-mark ---- */
+.tbl-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--space-2) 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--badge-grey-bg);
+  color: var(--badge-grey-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+.tbl-status__text {
+  max-width: 5.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tbl-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /*
+   * Couleur du texte de la pastille (famille du badge, ≥ 6:1 sur son fond, clair et sombre) : les marques
+   * --status-*-mark descendent sous 3:1 sur certains fonds de badge (terminé en sombre, autres statuts).
+   */
+  background: currentColor;
+}
+.tbl-status--inprogress {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-text);
+}
+.tbl-status--review {
+  background: var(--badge-new-bg);
+  color: var(--badge-new-text);
+}
+.tbl-status--done {
+  background: var(--badge-success-bg);
+  color: var(--badge-success-text);
+}
+
+/* ---- Priorité : drapeau coloré par rang (rampe violette des statistiques) et valeur ---- */
+.tbl-prio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+.tbl-prio [class*='fr-icon-'] {
+  color: var(--viz-neutral);
+}
+.tbl-prio--1 [class*='fr-icon-'] {
+  color: var(--prio-1-mark);
+}
+.tbl-prio--2 [class*='fr-icon-'] {
+  color: var(--prio-2-mark);
+}
+.tbl-prio--3 [class*='fr-icon-'] {
+  color: var(--prio-3-mark);
+}
+.tbl-prio--4 [class*='fr-icon-'] {
+  color: var(--prio-4-mark);
+}
+
+/* ---- Dates et retard ---- */
+.tbl-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.tbl-date [class*='fr-icon-'] {
+  color: var(--color-text-muted);
+}
+.tbl-late {
+  /* Pictogramme seul (alternative textuelle « En retard » pour les lecteurs d'écran et en infobulle) */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: var(--space-1);
+  border-radius: 50%;
+  background: var(--badge-error-bg);
+  color: var(--badge-error-text);
+  vertical-align: middle;
+}
+
+/* ---- Personnes : avatars à initiales, couleur du profil (PO, DA, DS, DE), empilés ---- */
+.tbl-people {
+  display: inline-flex;
+  align-items: center;
+}
+.tbl-avatar {
+  --tbl-role: var(--viz-neutral);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--tbl-role);
+  background: color-mix(in srgb, var(--tbl-role) 18%, var(--color-surface));
+  color: var(--color-title);
+  font-size: 0.625rem;
+  font-weight: var(--font-weight-bold);
+}
+.tbl-people {
+  gap: var(--space-1);
+}
+.tbl-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.tbl-person__role::before {
+  content: '· ';
+}
+.tbl-person__role {
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+}
+.tbl-avatar--po {
+  --tbl-role: var(--viz-1);
+}
+.tbl-avatar--da {
+  --tbl-role: var(--viz-2);
+}
+.tbl-avatar--ds {
+  --tbl-role: var(--viz-3);
+}
+.tbl-avatar--de {
+  --tbl-role: var(--viz-4);
+}
+.tbl-avatar--more {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+}
+
+/* ---- Équipe (ETP) : pastilles par profil dans la cellule (2 lignes au plus), puis le total « Σ » ---- */
+.tbl-etp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-1);
+  min-width: 6rem;
+  max-width: 11.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.tbl-etp__total {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.tbl-chip {
+  --tbl-role: var(--viz-neutral);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  /* Teinte du profil et liseré de sa couleur (≥ 3:1) : la couleur double le libellé, jamais seule */
+  background: color-mix(in srgb, var(--tbl-role) 14%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--tbl-role);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+.tbl-chip__role {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.tbl-chip--po {
+  --tbl-role: var(--viz-1);
+}
+.tbl-chip--da {
+  --tbl-role: var(--viz-2);
+}
+.tbl-chip--ds {
+  --tbl-role: var(--viz-3);
+}
+.tbl-chip--de {
+  --tbl-role: var(--viz-4);
+}
+/* Management : violet des badges (comme la teinte « mgmt » de l'onglet Équipe), ≥ 3:1 dans les deux thèmes */
+.tbl-chip--mgmt {
+  --tbl-role: var(--badge-purple-text);
+}
+
+/* ---- Chantier (point indigo) et projet (pilule claire) ---- */
+.tbl-chantier {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 11.5rem;
+}
+.tbl-chantier .tbl-ellipsis {
+  min-width: 0;
+  max-width: none;
+}
+.tbl-chantier__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-indicator);
+}
+.tbl-projet {
+  display: inline-block;
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.375rem;
+}
+
+/* ---- Focus clavier ---- */
+.tbl__open:focus-visible,
+.tbl__sort:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 767px) {
+  .tbl-title {
+    min-width: 10rem;
+    max-width: 12rem;
+  }
+  /* Colonne Tâche figée pendant le défilement horizontal du tableau */
+  .tbl__table .tbl__grid td.tbl__td--tache,
+  .tbl__table .tbl__grid th.tbl__th--tache {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    border-right: 1px solid var(--color-border);
+  }
+  .tbl__table .tbl__grid thead th.tbl__th--tache {
+    z-index: 4;
+  }
+}
+
+/* Personne chargée mais non assignée : anneau pointillé (le texte de l'infobulle le dit aussi) */
+.tbl-avatar--unassigned {
+  border-style: dashed;
+  background: var(--color-surface);
+}
