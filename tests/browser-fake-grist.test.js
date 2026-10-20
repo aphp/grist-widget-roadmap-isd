@@ -1436,14 +1436,25 @@ test(
     await until(`D.getElementById('tf-tags-replace-confirm')`);
     await clickOn('#tf-tags-replace-confirm');
     await until(`!D.getElementById('tf-tags').disabled`);
-    // Région d'annonce : le même nœud reste en place après le rendu, avec le message d'ajout
-    await w(`W.__live = D.getElementById('tf-tags-status'); D.getElementById('tf-tags').focus(); return true;`);
+    // Annonces : région persistante hors de la fiche redessinée, même nœud connecté d'un rendu à l'autre
+    await w(`D.getElementById('tf-tags').focus(); return true;`);
     await typeIn('#tf-tags', 'remplacé');
     await until(`D.querySelector('.tf-tagopt--create')`);
     await tagKey('Enter');
     await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
-    assert.equal(await w(`return D.getElementById('tf-tags-status') === W.__live;`), true);
-    assert.match(await w(`return W.__live.textContent;`), /« remplacé » ajouté/);
+    await until(`/« remplacé » ajouté/.test(D.getElementById('tf-live')?.textContent ?? '')`);
+    assert.equal(
+      await w(`W.__live = D.getElementById('tf-live'); return !D.getElementById('app-detail').contains(W.__live);`),
+      true,
+    );
+    await clickOn('[data-remove-tag="0"]');
+    await until(`/« remplacé » retiré/.test(W.__live.textContent)`);
+    assert.equal(await w(`return W.__live.isConnected && D.getElementById('tf-live') === W.__live;`), true);
+    await typeIn('#tf-tags', 'remplacé');
+    await until(`D.querySelector('.tf-tagopt')`);
+    await tagKey('Enter');
+    await until(`/« remplacé » ajouté/.test(W.__live.textContent)`);
+    assert.equal(await w(`return W.__live.isConnected && D.getElementById('tf-live') === W.__live;`), true);
     assert.equal(await w(`return D.getElementById('tf-tags-label').getAttribute('tabindex');`), '-1');
     await clickOn('#btn-form-save');
     await until(`W.__writes.length === 2`);

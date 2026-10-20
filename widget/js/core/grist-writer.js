@@ -282,7 +282,8 @@ function encodeCol(table, col, value) {
  *          days?:number|null}} [ctx] days : jours de la période de la tâche après modification (borne 1 ETP)
  *   before : valeurs d'avant (les entrées de charges conservées telles quelles ne sont pas recontrôlées) ;
  *   refExists : existence d'une ligne (teamId des charges dans Team) ; restoring : colonnes remises à leur
- *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle).
+ *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle) ; current : ligne
+ *   lue par le writer lui-même (cellule de tags illisible, contrôlée même pour « Annuler »).
  * @returns {['UpdateRecord', string, number, Record<string,*>]}
  */
 export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) {
@@ -305,12 +306,15 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
       );
       if (problem) throw new WriteRefused('charges', problem);
     }
-    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées.
-    // Cellule d'avant illisible (tagsUnreadable) : remplacée seulement sur confirmation de CE contenu (replaceTags)
-    if (col === 'tags' && !ctx.restoring?.includes(col)) {
-      const unreadable = ctx.before?.tagsUnreadable;
-      if (typeof unreadable === 'string' && ctx.replaceTags !== unreadable)
+    // Cellule de tags illisible dans la ligne lue par le writer (current) ou d'après l'appelant (before) : remplacée
+    // seulement sur confirmation de CE contenu (replaceTags), jamais par « Annuler »
+    if (col === 'tags') {
+      const unreadable = [ctx.current?.tagsUnreadable, ctx.before?.tagsUnreadable].find((x) => typeof x === 'string');
+      if (unreadable !== undefined && ctx.replaceTags !== unreadable)
         throw new WriteRefused('tags-illisible', key(table, col));
+    }
+    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées
+    if (col === 'tags' && !ctx.restoring?.includes(col)) {
       const problem = tagsWriteProblem(changes[col], ctx.before?.[col] ?? []);
       if (problem) throw new WriteRefused(problem === 'trop' ? 'tags-trop' : 'tags', problem);
     }
@@ -457,10 +461,10 @@ export function decodeRow(tableData, table, id) {
   for (const col of [...(WRITABLE[table]?.update ?? []), ...(READ_ALSO[table] ?? [])])
     out[col] = decodeValue(EXPECTED_TYPES[key(table, col)], tableData[col]?.[i]);
   // Cellule de tags illisible (texte, ['E', …], éléments non textuels) : son contenu, pour ne jamais l'écraser en
-  // silence (la clé n'existe que dans ce cas)
+  // silence ; null si elle est lisible (toujours présente : un ancien signalement ne survit pas à une relecture)
   if ('tags' in out) {
     const cell = readTagsCell(tableData.tags?.[i]);
-    if (!cell.ok) out.tagsUnreadable = cell.raw;
+    out.tagsUnreadable = cell.ok ? null : cell.raw;
   }
   return out;
 }
@@ -476,7 +480,9 @@ export function planUndo(entry, fresh) {
   const changes = {};
   const skipped = [];
   for (const [col, v] of Object.entries(entry.after)) {
-    if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
+    // Cellule de tags devenue illisible (texte importé…) : jamais réécrite par une annulation
+    if (col === 'tags' && typeof fresh?.tagsUnreadable === 'string') skipped.push(col);
+    else if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
     else skipped.push(col);
   }
   return { changes, skipped };
@@ -934,7 +940,16 @@ export function createWriter({
       'dateDebut' in ch ? ch.dateDebut : period.start,
       'dateEcheance' in ch ? ch.dateEcheance : period.end,
     );
+    // Tags : la ligne est lue par le writer lui-même (relue dans la Feuille en envoi réel, sinon les données
+    // chargées), pour ne jamais écraser une cellule illisible, quel que soit l'appelant (« Annuler » compris)
+    const current =
+      changes && 'tags' in changes
+        ? mode === 'on' && readTable
+          ? decodeRow(await readFresh(table), table, id)
+          : (lookup?.row(table, id) ?? null)
+        : null;
     const action = buildUpdate(table, id, changes, disabled, {
+      current,
       before: opts.before,
       refExists: exists,
       restoring,

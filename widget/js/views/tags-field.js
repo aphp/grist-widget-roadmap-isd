@@ -52,9 +52,9 @@ const usesText = (n) =>
   n === 0 ? label('form.tags.uses.none') : n === 1 ? label('form.tags.uses.one') : label('form.tags.uses.many', { n });
 
 /**
- * Message de la zone de recherche (nombre de résultats, nom invalide, déjà choisi, tag ajouté ou retiré), dans la
- * région #tf-tags-status : un seul nœud, gardé d'un rendu à l'autre (ui/task-editor.js) pour que les annonces
- * soient lues.
+ * Message de la zone de recherche (nombre de résultats, nom invalide, déjà choisi), dans la région
+ * #tf-tags-status, mise à jour en place pendant la frappe. « Tag ajouté / retiré » est annoncé hors de la fiche
+ * (ui/task-editor.js:speakTags).
  */
 export function tagStatusHtml(st, model) {
   const { items, invalid, duplicate } = tagItems(st, model);
@@ -81,7 +81,7 @@ export function tagStatusHtml(st, model) {
       : known === 1
         ? label('form.tags.count.one')
         : label('form.tags.count.many', { n: known });
-  return h`${status ? h`<span class="tf-warn">${status}</span>` : ''}<span class="fr-sr-only">${count} ${st.tagAnnounce ?? ''}</span>`;
+  return h`${status ? h`<span class="tf-warn">${status}</span>` : ''}<span class="fr-sr-only">${count}</span>`;
 }
 
 /** Liste des tags proposés (mise à jour sans redessiner le formulaire). */

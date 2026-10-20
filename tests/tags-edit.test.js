@@ -458,3 +458,46 @@ test('doublons : retirer un exemplaire d’un tag en double survit à la fusion 
   assert.deepEqual(mergeTags(['a', 'b'], ['b'], ['b']), ['b']); // même retrait des deux côtés
   assert.deepEqual(mergeTags(['d', 'd', 'd'], ['d'], ['d', 'd']), ['d']); // le plus grand retrait l'emporte
 });
+
+test('« Annuler » ne réécrit jamais une cellule de tags devenue illisible ; le writer relit lui-même la ligne', async () => {
+  const { g, writer, fetchRow } = realSetup(['L', 'a']);
+  const base = await fetchRow(1001);
+  assert.equal(base.tagsUnreadable, null);
+  const r = await runSave({ taskId: 1001, base, draft: { ...draftFrom(base), tags: [] }, writer, fetchRow });
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(g.batches.at(-1), [['UpdateRecord', 'Tasks', 1001, { tags: null }]]);
+  // Quelqu'un importe un texte dans la cellule ; l'utilisateur annule : tags sautés et signalés, rien n'est envoyé
+  g.otherUserSets('Tasks', 1001, { tags: 'texte libre importé' });
+  const u = await writer.undoLast((t, id) => fetchRow(id));
+  assert.deepEqual(u.skipped, ['tags']);
+  assert.equal(u.undoEntry, null);
+  assert.equal(g.batches.length, 1);
+  assert.equal((await fetchRow(1001)).tagsUnreadable, 'texte libre importé');
+  // Contrôle du writer sur la ligne qu'il lit, même pour une remise à la valeur d'avant, sans aide de l'appelant
+  await assert.rejects(writer.update('Tasks', 1001, { tags: ['a'] }), (e) => e.reason === 'tags-illisible');
+  assert.throws(
+    () =>
+      buildUpdate('Tasks', 1, { tags: ['a'] }, new Map(), {
+        current: { tagsUnreadable: '"x"' },
+        restoring: ['tags'],
+        before: { tags: ['a'] },
+      }),
+    (e) => e.reason === 'tags-illisible',
+  );
+  assert.equal(g.batches.length, 1);
+  // Mode essai : la ligne des données chargées est contrôlée de la même façon
+  const dry = createWriter({ docApi: g.docApi, mode: 'dry-run', columns: META, lookup: lookupOf(g) });
+  await assert.rejects(dry.update('Tasks', 1001, { tags: ['b'] }), (e) => e.reason === 'tags-illisible');
+});
+
+test('relecture : tagsUnreadable toujours présent (null si lisible), aucun ancien signalement ne survit', () => {
+  const t = tagged().tables;
+  assert.equal(decodeRow(t.Tasks, 'Tasks', 1000).tagsUnreadable, null);
+  t.Tasks.tags[t.Tasks.id.indexOf(1000)] = ['E', 'Err'];
+  const bad = decodeRow(t.Tasks, 'Tasks', 1000);
+  assert.equal(bad.tagsUnreadable, '["E","Err"]');
+  t.Tasks.tags[t.Tasks.id.indexOf(1000)] = ['L', 'ok'];
+  const merged = { ...bad, ...decodeRow(t.Tasks, 'Tasks', 1000) };
+  assert.equal(merged.tagsUnreadable, null);
+  assert.deepEqual(merged.tags, ['ok']);
+});

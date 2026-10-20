@@ -153,19 +153,11 @@ export function createTaskEditor(deps) {
     validate();
     const active = deps.root.contains(document.activeElement) ? document.activeElement.id : '';
     const scroll = deps.root.querySelector('.drawer__body')?.scrollTop ?? 0;
-    // Région d'annonce des tags : le même nœud est gardé d'un rendu à l'autre (un nœud neuf n'est pas lu)
-    const live = document.getElementById('tf-tags-status');
     deps.chrome.openDetail(deps.kindOf(st.ref), deps.titleOf(st.ref), spec(st).body(st, model()), {
       foot: taskFormFoot(st, changes(), errorCount()),
       mode: 'edit',
       focus: focusId || active || spec(st).focus,
     });
-    const fresh = document.getElementById('tf-tags-status');
-    if (live && fresh && live !== fresh) {
-      const html = fresh.innerHTML;
-      fresh.replaceWith(live);
-      if (live.innerHTML !== html) live.innerHTML = html;
-    }
     const body = deps.root.querySelector('.drawer__body');
     if (body) body.scrollTop = scroll;
   }
@@ -287,7 +279,6 @@ export function createTaskEditor(deps) {
       tagQuery: '',
       tagOpen: false,
       tagActive: 0,
-      tagAnnounce: '',
       tagsReplace: null,
       confirmTagsReplace: false,
       badDates: new Set(),
@@ -609,6 +600,27 @@ export function createTaskEditor(deps) {
     document.getElementById(`tf-tags-opt-${st.tagActive}`)?.scrollIntoView?.({ block: 'nearest' });
   }
 
+  /**
+   * Annonce aux lecteurs d'écran (tag ajouté, retiré) dans une région persistante hors de la fiche : la fiche est
+   * entièrement redessinée à chaque rendu, une région créée avec son texte n'y serait pas lue. Le texte est vidé
+   * puis posé au tour suivant, pour qu'un même message répété soit relu.
+   */
+  function speakTags(text) {
+    let el = document.getElementById('tf-live');
+    if (!el) {
+      el = document.createElement('p');
+      el.id = 'tf-live';
+      el.className = 'fr-sr-only';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      document.body.append(el);
+    }
+    el.textContent = '';
+    setTimeout(() => {
+      el.textContent = text;
+    }, 60);
+  }
+
   /** Ajoute le tag de l'option choisie (existant, ou nom nouveau non déclaré) ; la recherche se vide. */
   function addTag(item) {
     if (!item || !st.can('tags').ok || tagsBlocked(st)) return;
@@ -617,18 +629,19 @@ export function createTaskEditor(deps) {
     st.tagQuery = '';
     st.tagOpen = false;
     st.tagActive = 0;
-    st.tagAnnounce = label('form.tags.added', { nom: item.value });
     render('tf-tags');
+    speakTags(label('form.tags.added', { nom: item.value }));
   }
 
   /** Retire le tag à cette position (les autres valeurs de la cellule restent telles quelles). */
   function removeTag(i) {
     const tags = st.draft.tags ?? [];
     if (!st.can('tags').ok || tagsBlocked(st) || !Number.isInteger(i) || i < 0 || i >= tags.length) return;
-    st.tagAnnounce = label('form.tags.removed', { nom: tags[i] });
+    const name = tags[i];
     st.draft.tags = tags.filter((_, k) => k !== i);
     st.tagOpen = false;
     render('tf-tags');
+    speakTags(label('form.tags.removed', { nom: name }));
   }
 
   /** Clavier de la zone de recherche des tags ; vrai si la touche est traitée. */
@@ -712,7 +725,6 @@ export function createTaskEditor(deps) {
       st.tagQuery = t.value;
       st.tagOpen = true;
       st.tagActive = 0;
-      st.tagAnnounce = '';
       tagRefresh();
     }
   });
