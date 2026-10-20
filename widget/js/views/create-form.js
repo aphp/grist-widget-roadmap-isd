@@ -1,7 +1,8 @@
 /**
  * Fenêtres « Nouvelle tâche », « Sous-tâche », « Nouveau chantier » et « Changer de chantier » (lot 2c) : rendu
- * seul (fragments h``), à partir de l'état tenu par ui/create-dialog.js. Champs obligatoires d'abord, le reste
- * sous « Plus d'options ». Identifiants préfixés « cf- » (la fiche ouverte dessous garde les siens).
+ * seul (fragments h``), à partir de l'état tenu par ui/create-dialog.js. Champs obligatoires d'abord, puis le bloc
+ * « Personnes » des tâches, le reste sous « Plus d'options ». Identifiants préfixés « cf- » (la fiche ouverte
+ * dessous garde les siens).
  */
 import { chantierOptions, parseTarget, targetValue } from '../core/create-form.js';
 import { breadcrumb } from '../core/detail-data.js';
@@ -11,7 +12,7 @@ import { CHANTIER_NAME_MAX } from '../core/chantier-form.js';
 import { label, statusLabel } from '../labels.js';
 import { h } from '../ui/kit.js';
 import { contributeursControl, dateControl, projetsControl, responsableControl } from './chantier-form.js';
-import { attrs, field, personChip, personGroups, refusedText } from './task-form.js';
+import { attrs, field, peopleBlockHtml, refusedText } from './task-form.js';
 
 const untitled = (s) => s || label('common.untitled');
 const sel = (on) => raw(on ? 'selected' : '');
@@ -65,7 +66,14 @@ function alertHtml(st) {
   </div>`;
 }
 
-/** Corps de « Nouvelle tâche » ou « Sous-tâche ». */
+/** Aide du bloc « Personnes » de la fenêtre (plus courte que dans la fiche ; « Je suis… » proposé par défaut). */
+export const peopleHelp = (st) =>
+  st.me ? `${label('create.people.help')} ${label('create.people.helpMe')}` : label('create.people.help');
+
+/**
+ * Corps de « Nouvelle tâche » ou « Sous-tâche ». Bloc « Personnes » de la fiche (views/task-form.js) juste après
+ * les dates : assignés et charges en ETP ou en heures, ETP recalculés quand les dates changent.
+ */
 export function newTaskBody(st, model) {
   const d = st.draft;
   const jalon = d.type === 'jalon';
@@ -103,17 +111,7 @@ export function newTaskBody(st, model) {
     <div class="tf-row">
       ${jalon ? date('dateEcheance', 'form.field.date') : h`${date('dateDebut')}${date('dateEcheance')}`}
     </div>
-    ${field(
-      st,
-      'assignees',
-      h`${d.assignees.length ? h`<ul class="list tf-chips" aria-label="${label('form.field.assignees')}">${d.assignees.map((id) => personChip(model, id, !st.busy, 'data-cf-remove-assignee'))}</ul>` : h`<p class="tf-empty">${label('form.field.assignees.empty')}</p>`}
-        <label class="fr-sr-only" for="cf-assignees">${label('form.field.assignees.addLabel')}</label>
-        <select id="cf-assignees" class="fr-select tf-add" data-cf-add-assignee ${attrs(st, 'assignees')}>
-          <option value="" selected>${label('form.field.assignees.add')}</option>
-          ${personGroups(model, [], d.assignees)}
-        </select>`,
-      { legend: true, hintAfter: st.me ? label('create.field.assignees.help') : '' },
-    )}
+    ${peopleBlockHtml(st, model, { help: peopleHelp(st) })}
     <details class="tf-more" id="cf-more" ${raw(st.moreOpen ? 'open' : '')}>
       <summary class="tf-more__summary">${label('create.more')} <span class="tf-more__hint">(${label('create.more.hint.task')})</span></summary>
       <div class="tf-more__body">
