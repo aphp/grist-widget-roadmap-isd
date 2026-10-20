@@ -21,6 +21,8 @@ import {
   deletionBatch,
   linksFromTables,
   lookupFromTables,
+  missingReference,
+  otherTableRefs,
   referencesIn,
 } from '../widget/js/core/grist-writer.js';
 import { buildModel } from '../widget/js/core/model.js';
@@ -340,7 +342,164 @@ test('sans réponse dans le délai : lignes disparues à la relecture → suppre
   assert.equal(after.writer.lastUndoable(), e);
   const before = setup({ grist: { hang: 'before' }, writer: { timeoutMs: 30 } });
   await assert.rejects(before.writer.remove('Chantiers', 500), (x) => x instanceof WriteFailed && x.kind === 'timeout');
+  // Résultat inconnu : l'instantané est gardé ; lignes encore là à la relecture → rien à annuler, rien d'envoyé
+  const u = before.writer.lastUndoable();
+  assert.equal(u.kind, 'delete');
+  assert.equal(u.unknown, true);
+  assert.equal(u.sent, false);
+  const n = before.g.batches.length;
+  const r = await before.writer.undoLast(async () => null);
+  assert.equal(r.reason, 'non-supprimee');
+  assert.equal(r.undoEntry, null);
+  assert.equal(before.g.batches.length, n);
   assert.equal(before.writer.lastUndoable(), null);
+});
+
+test('suppression sans réponse puis lignes disparues : « Annuler » après relecture les recrée', async () => {
+  const grist = { hang: 'before' };
+  const s1 = setup({ grist, writer: { timeoutMs: 30 } });
+  await assert.rejects(s1.writer.remove('Tasks', 1000), (x) => x instanceof WriteFailed && x.kind === 'timeout');
+  // La suppression a fini par avoir lieu (réponse perdue) : les lignes ont disparu
+  for (const id of [1000, 1001, 1002]) {
+    const i = s1.g.data.Tasks.id.indexOf(id);
+    for (const c of Object.keys(s1.g.data.Tasks)) s1.g.data.Tasks[c].splice(i, 1);
+  }
+  grist.hang = undefined;
+  const r = await s1.writer.undoLast(async () => null);
+  assert.equal(r.undoEntry.kind, 'restore');
+  assert.deepEqual(
+    s1.g.batches.at(-1).map((a) => a[2]),
+    [1000, 1001, 1002],
+  );
+});
+
+test('restauration sans réponse : lignes retrouvées identiques → faite ; sinon résultat inconnu', async () => {
+  const grist = {};
+  const s1 = setup({ grist, writer: { timeoutMs: 30 } });
+  await s1.writer.remove('Tasks', 1000);
+  grist.hang = 'after';
+  const r = await s1.writer.undoLast(async () => null);
+  assert.equal(r.undoEntry.recovered, true);
+  assert.equal(r.undoEntry.sent, true);
+  assert.equal(r.entry.undone, true);
+  const g2 = {};
+  const s2 = setup({ grist: g2, writer: { timeoutMs: 30 } });
+  await s2.writer.remove('Tasks', 1000);
+  g2.hang = 'before';
+  await assert.rejects(
+    s2.writer.undoLast(async () => null),
+    (x) => x instanceof WriteFailed && x.kind === 'timeout',
+  );
+  assert.equal(s2.writer.lastUndoable()?.kind, 'delete');
+});
+
+test('missingReference : chaque colonne de référence d’une ligne restaurée, lignes du lot comprises', () => {
+  const have = new Set(['Tasks:1', 'Chantiers:5', 'Projects:10']);
+  const exists = (t, id) => have.has(`${t}:${id}`);
+  const task = (values) => [{ table: 'Tasks', id: 7, values: { parentTask: 0, Chantier: 5, projet: 10, ...values } }];
+  assert.equal(missingReference(task({}), exists), null);
+  for (const [values, miss] of [
+    [{ parentTask: 2 }, { table: 'Tasks', id: 2, col: 'parentTask' }],
+    [{ Chantier: 6 }, { table: 'Chantiers', id: 6, col: 'Chantier' }],
+    [{ projet: 11 }, { table: 'Projects', id: 11, col: 'projet' }],
+    [{ dependDe: ['L', 1, 3] }, { table: 'Tasks', id: 3, col: 'dependDe' }],
+  ])
+    assert.deepEqual(missingReference(task(values), exists), { ...miss, from: { table: 'Tasks', id: 7 } });
+  const ch = (values) => [{ table: 'Chantiers', id: 8, values: { Projets: ['L', 10], ...values } }];
+  assert.equal(missingReference(ch({ dependDe: ['L', 1] }), exists), null);
+  assert.deepEqual(missingReference(ch({ dependDe: ['L', 4] }), exists), {
+    table: 'Tasks',
+    id: 4,
+    col: 'dependDe',
+    from: { table: 'Chantiers', id: 8 },
+  });
+  assert.deepEqual(missingReference(ch({ Projets: ['L', 10, 12] }), exists), {
+    table: 'Projects',
+    id: 12,
+    col: 'Projets',
+    from: { table: 'Chantiers', id: 8 },
+  });
+  // Parent restauré dans le même lot : pas manquant
+  const batch = [
+    { table: 'Tasks', id: 2, values: { parentTask: 0, Chantier: 5, projet: 10 } },
+    { table: 'Tasks', id: 3, values: { parentTask: 2, Chantier: 5, projet: 10, dependDe: ['L', 2] } },
+  ];
+  assert.equal(missingReference(batch, exists), null);
+});
+
+test('« Annuler » refusé si une ligne référencée n’existe plus (chantier, projet relu, dépendance)', async () => {
+  const drop = (g, table, id) => {
+    const i = g.data[table].id.indexOf(id);
+    for (const c of Object.keys(g.data[table])) g.data[table][c].splice(i, 1);
+  };
+  // Chantier de la tâche supprimé entre-temps
+  const s1 = setup();
+  await s1.writer.remove('Tasks', 1000);
+  drop(s1.g, 'Chantiers', 100);
+  const n = s1.g.batches.length;
+  const r1 = await s1.writer.undoLast(async () => null);
+  assert.equal(r1.reason, 'reference-absente');
+  assert.deepEqual(r1.missing, { table: 'Chantiers', id: 100, col: 'Chantier', from: { table: 'Tasks', id: 1000 } });
+  assert.equal(s1.g.batches.length, n);
+  // Projet supprimé dans la Feuille : Projects est relu en envoi réel (données chargées périmées)
+  const s2 = setup({ writer: { lookup: { ...lookupOf(createFakeGrist(tables())), table: () => null } } });
+  await s2.writer.remove('Chantiers', 500);
+  drop(s2.g, 'Projects', 10);
+  assert.equal((await s2.writer.undoLast(async () => null)).missing.table, 'Projects');
+  // Dépendance vers une tâche supprimée ailleurs
+  const s3 = setup();
+  s3.g.otherUserSets('Tasks', 1001, { dependDe: ['L', 4000] });
+  await s3.writer.remove('Tasks', 1000);
+  drop(s3.g, 'Tasks', 4000);
+  assert.deepEqual((await s3.writer.undoLast(async () => null)).missing, {
+    table: 'Tasks',
+    id: 4000,
+    col: 'dependDe',
+    from: { table: 'Tasks', id: 1001 },
+  });
+  // Mode essai : Projects des données chargées
+  const t = tables();
+  const g = createFakeGrist(t);
+  let loaded = structuredClone(g.data);
+  const w = createWriter({
+    docApi: g.docApi,
+    mode: 'dry-run',
+    columns: metaOf(t),
+    lookup: lookupFromTables(new Proxy({}, { get: (_, k) => loaded[k] })),
+  });
+  const e = await w.remove('Chantiers', 500);
+  loaded = applyToTables(loaded, e.applied);
+  loaded = applyToTables(loaded, [['RemoveRecord', 'Projects', 10]]);
+  assert.equal((await w.undoLast(async () => null)).reason, 'reference-absente');
+});
+
+test('dataCells : une colonne de données connue des métadonnées absente de la ligne relue → null', () => {
+  const meta = {
+    'Tasks.titre': { isFormula: false },
+    'Tasks.secret': { isFormula: false },
+    'Tasks.f': { isFormula: true },
+    'Chantiers.x': { isFormula: false },
+  };
+  assert.equal(dataCells('Tasks', { id: 1, titre: 'T' }, meta), null);
+  assert.deepEqual(dataCells('Tasks', { id: 1, titre: 'T', secret: 's' }, meta), { titre: 'T', secret: 's' });
+});
+
+test('canRemove : refusé si une autre table référence cette table par une colonne de données', async () => {
+  const t = tables();
+  const meta = {
+    ...metaOf(t),
+    'Temps.tache': { type: 'Ref:Tasks', isFormula: false },
+    'Temps.calc': { type: 'RefList:Chantiers', isFormula: true },
+  };
+  assert.deepEqual(otherTableRefs(meta, 'Tasks'), ['Temps.tache']);
+  assert.deepEqual(otherTableRefs(meta, 'Chantiers'), []);
+  assert.deepEqual(otherTableRefs({ 'Tasks.parentTask': { type: 'Ref:Tasks' } }, 'Tasks'), []);
+  assert.deepEqual(otherTableRefs({ 'X.y': { type: 'RefList:Chantiers' } }, 'Chantiers'), ['X.y']);
+  const s1 = setup({ writer: { columns: meta } });
+  assert.deepEqual(s1.writer.canRemove('Tasks'), { ok: false, reason: 'reference-autre-table' });
+  assert.equal(s1.writer.canRemove('Chantiers').ok, true);
+  assert.equal(await reason(s1.writer.remove('Tasks', 1000)), 'reference-autre-table');
+  assert.equal(s1.g.batches.length, 0);
 });
 
 test('runDelete : saved, refused, failed, unknown', async () => {

@@ -234,6 +234,14 @@ test('RemoveRecord n’est produit qu’à deux endroits du writer : annuler une
   // AddRecord à identifiant fixe : seulement l'instantané exact d'une suppression de la session (restorable)
   assert.match(code, /if \(!isId\(id\) \|\| !opts\.restorable\?\.\(table, id, fields\)\) throw new WriteRefused/);
   assert.equal(code.match(/\['AddRecord', r\.table, r\.id, \{ \.\.\.r\.values \}\]/g).length, 1);
+  // Lignes supprimables du lot en cours et instantanés restaurables : posés seulement dans remove
+  const body = code.slice(code.indexOf('async function remove('), code.indexOf('async function allGone('));
+  assert.ok(body.length > 0);
+  for (const re of [/removing\.add\(/g, /restorable\.set\(/g]) {
+    const all = code.match(re)?.length ?? 0;
+    assert.ok(all > 0, String(re));
+    assert.equal(body.match(re)?.length ?? 0, all, String(re));
+  }
 });
 
 test('interrupteur d’édition coupé par défaut ; seul un paramètre explicite l’ouvre', () => {

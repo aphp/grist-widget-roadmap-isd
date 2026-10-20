@@ -11,7 +11,12 @@
   confirmation, checks the scope of every row and keeps a snapshot of every data column (formulas excluded). "Annuler"
   recreates the rows with the same ids and values (`AddRecord` with a fixed id, parents first), refused if an id is
   in use again; the fixed-id `AddRecord` is accepted only when it reproduces a snapshot of the session. Essai mode
-  logs everything and sends nothing. Never on Team, Projects or Disponibilites.
+  logs everything and sends nothing. Never on Team, Projects or Disponibilites. Deletion is also refused when the
+  re-read row lacks a data column known to the metadata (partial snapshot) or when another table references Tasks
+  or Chantiers through a data column; "Annuler" is refused, naming the row, when a recreated row would point to a
+  row that no longer exists (parent, chantier, project, dependencies, chantier projects; Projects re-read in real
+  mode). A delete or restore without answer is kept when the re-read shows it happened; a delete still unknown keeps
+  its snapshot so a later "Annuler" can restore the rows if they did disappear.
 - The widget always opens on the Gantt tab: the last viewed tab is no longer restored at load (`DEFAULT_PREFS.view`
   is now `gantt`; other preferences are kept). The first "Je suis…" no longer sets a profile home view (Management
   used to land on Synthèse); home views saved before this are reset once (`homeViewV: 2` marker in the prefs). A home

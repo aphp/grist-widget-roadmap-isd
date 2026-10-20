@@ -26,7 +26,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   suppression depuis la fiche jamais sur Team, Projects ni Disponibilites (`REMOVABLE`), et jamais aucune ligne de
   Team (une personne se désactive). Lignes relues juste avant (toutes les colonnes de données), restaurables par
   « Annuler » (AddRecord au même identifiant, valeurs relues, parents avant enfants), seule création qui porte des
-  colonnes hors de la liste de création.
+  colonnes hors de la liste de création. Refus aussi : colonne de données absente de la ligne relue (instantané
+  incomplet), autre table qui référence Tasks ou Chantiers par une colonne de données ; « Annuler » refusé si une
+  ligne recréée viserait une ligne disparue (parent, chantier, projet, dépendances, projets du chantier).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
   fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun).

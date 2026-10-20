@@ -1045,6 +1045,14 @@ const FR = Object.freeze({
   'toast.undoneDelete': 'Suppression annulée : les éléments sont recréés avec leur numéro.',
   'toast.undoDelete.reutilise':
     'Suppression conservée, rien n’a été recréé : un de ces numéros est de nouveau utilisé dans la Feuille.',
+  'toast.undoDelete.reference-absente': 'Suppression conservée, rien n’a été recréé : {ligne} n’existe plus.',
+  'toast.undoDelete.non-supprimee':
+    'Rien à annuler : la suppression restée sans réponse n’a pas eu lieu, les éléments sont toujours dans la Feuille.',
+  'delete.ref.Tasks': 'la tâche n° {id}',
+  'delete.ref.Chantiers': 'le chantier n° {id}',
+  'delete.ref.Projects': 'le projet n° {id}',
+  'form.refused.reference-autre-table':
+    'une autre table de la Feuille référence ces lignes ; la suppression laisserait des références orphelines',
   'toast.undoDelete.relecture':
     'Suppression conservée : impossible de relire la Feuille pour vérifier les numéros. Réessayez.',
   'form.refused.chantier-non-vide': 'le chantier porte encore des tâches',

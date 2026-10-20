@@ -915,11 +915,18 @@ const UNRESTORABLE = new Set(['E', 'C', 'P', 'U']);
 /**
  * Cellules de DONNÉES d'une ligne brute relue, gardées pour la recréer telle quelle (« Annuler » une suppression) :
  * toutes les colonnes sauf id, les colonnes formules (d'après les métadonnées lues) et les colonnes d'affichage
- * calculées. null si une colonne est inconnue des métadonnées ou une cellule non réécrivable. Fonction pure.
+ * calculées. null si une colonne est inconnue des métadonnées, si une colonne de données des métadonnées manque à
+ * la ligne relue (règle d'accès sur une colonne, lecture partielle) ou si une cellule n'est pas réécrivable.
+ * Fonction pure.
  * @param {Record<string,{isFormula?:boolean}>|null} columns métadonnées 'Table.colonne'
  */
 export function dataCells(table, row, columns) {
   if (!row || !columns) return null;
+  for (const [k, m] of Object.entries(columns)) {
+    const c = k.slice(table.length + 1);
+    if (k.startsWith(`${table}.`) && !m.isFormula && c !== 'id' && !c.startsWith('gristHelper_') && !(c in row))
+      return null;
+  }
   const out = {};
   for (const [c, v] of Object.entries(row)) {
     if (c === 'id' || c.startsWith('gristHelper_')) continue;
@@ -930,6 +937,55 @@ export function dataCells(table, row, columns) {
     out[c] = v;
   }
   return out;
+}
+
+/** Colonnes de référence d'une ligne restaurée, et la table visée (dependDe des chantiers : vers des tâches). */
+const RESTORE_REFS = Object.freeze({
+  Tasks: [
+    ['parentTask', 'Tasks'],
+    ['Chantier', 'Chantiers'],
+    ['projet', 'Projects'],
+    ['dependDe', 'Tasks'],
+  ],
+  Chantiers: [
+    ['dependDe', 'Tasks'],
+    ['Projets', 'Projects'],
+  ],
+});
+
+/**
+ * Première référence d'une ligne à restaurer vers une ligne qui n'existe plus (ni dans les tables relues, ni dans le
+ * lot restauré) : parentTask, Chantier, projet et dependDe d'une tâche ; dependDe et Projets d'un chantier.
+ * Fonction pure.
+ * @param {{table:string, id:number, values:object}[]} snapshot
+ * @param {(table:string, id:number) => boolean} exists
+ * @returns {{table:string, id:number, col:string, from:{table:string, id:number}}|null}
+ */
+export function missingReference(snapshot, exists) {
+  const restored = new Set(snapshot.map((r) => `${r.table}:${r.id}`));
+  for (const r of snapshot)
+    for (const [col, target] of RESTORE_REFS[r.table] ?? []) {
+      const v = r.values[col];
+      for (const id of Array.isArray(v) ? refList(v) : isId(v) ? [v] : [])
+        if (!restored.has(`${target}:${id}`) && !exists(target, id))
+          return { table: target, id, col, from: { table: r.table, id: r.id } };
+    }
+  return null;
+}
+
+/**
+ * Colonnes de DONNÉES d'autres tables que Tasks et Chantiers qui référencent cette table (Ref: ou RefList:) : une
+ * suppression y laisserait des références orphelines, elle est refusée pour cette table. Les formules se
+ * recalculent et ne comptent pas. Fonction pure.
+ * @returns {string[]} 'Table.colonne'
+ */
+export function otherTableRefs(columns, table) {
+  return Object.entries(columns ?? {})
+    .filter(([k, m]) => {
+      const t = k.slice(0, k.indexOf('.'));
+      return !m.isFormula && !REMOVABLE.includes(t) && (m.type === `Ref:${table}` || m.type === `RefList:${table}`);
+    })
+    .map(([k]) => k);
 }
 
 /** Mêmes cellules, colonne par colonne (une restauration reproduit exactement l'instantané). */
@@ -1037,6 +1093,8 @@ export function createWriter({
     if (removeRefused.has(table)) return { ok: false, reason: 'acl' };
     // Sans métadonnées, l'instantané (colonnes de données) ne peut pas être pris : rien ne serait restaurable
     if (!meta) return { ok: false, reason: 'meta' };
+    // Une autre table qui référence celle-ci garderait des références orphelines
+    if (otherTableRefs(meta, table).length) return { ok: false, reason: 'reference-autre-table' };
     return { ok: true, reason: 'ok' };
   }
 
@@ -1437,7 +1495,17 @@ export function createWriter({
           if (err instanceof WriteFailed && err.document) blocked = 'viewer';
           else if (err instanceof WriteFailed && err.kind === 'acl') removeRefused.add(table);
           // Sans réponse : si toutes les lignes ont disparu à la relecture, la suppression a eu lieu (annulable)
-          if (!(err instanceof WriteFailed && err.kind === 'timeout' && (await allGone(plan.rows)))) throw err;
+          const timeout = err instanceof WriteFailed && err.kind === 'timeout';
+          if (!(timeout && (await allGone(plan.rows)))) {
+            // Résultat inconnu : l'instantané est gardé ; « Annuler » relira et recréera les lignes si elles ont
+            // fini par disparaître
+            if (timeout) {
+              entry.unknown = true;
+              for (const r of snapshot) restorable.set(`${r.table}:${r.id}`, r.values);
+              journal.push(entry);
+            }
+            throw err;
+          }
           entry.recovered = true;
         }
         entry.sent = true;
@@ -1460,10 +1528,22 @@ export function createWriter({
     }
   }
 
+  /** Après une restauration sans réponse : chaque ligne est-elle relue avec les cellules de l'instantané ? */
+  async function allRestored(snapshot) {
+    try {
+      const tables = await deletionTables();
+      return snapshot.every((r) => sameCells(dataCells(r.table, rawRow(tables[r.table], r.id), meta), r.values));
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Annule une suppression : chaque ligne est recréée au même identifiant avec les cellules relues avant la
    * suppression (AddRecord, parents avant enfants). Refus 'reutilise' si un identifiant existe de nouveau dans les
-   * tables relues, 'relecture' si elles ne peuvent pas être lues. Une restauration ne s'annule pas.
+   * tables relues, 'reference-absente' (missing) si une ligne recréée viserait une ligne qui n'existe plus,
+   * 'non-supprimee' si une suppression sans réponse n'a finalement pas eu lieu, 'relecture' si les tables ne
+   * peuvent pas être lues. Une restauration ne s'annule pas.
    */
   async function undoDelete(entry) {
     const keep = (reason) => ({ entry, skipped: [], undoEntry: null, busy: false, reason });
@@ -1473,7 +1553,30 @@ export function createWriter({
     } catch {
       return keep('relecture');
     }
-    if (entry.snapshot.some((r) => tables[r.table]?.id?.includes(r.id))) return keep('reutilise');
+    const present = entry.snapshot.filter((r) => tables[r.table]?.id?.includes(r.id));
+    // Suppression sans réponse dont les lignes sont toujours là : elle n'a pas eu lieu, rien à recréer
+    if (entry.unknown && present.length === entry.snapshot.length) {
+      entry.undone = true;
+      for (const r of entry.snapshot) restorable.delete(`${r.table}:${r.id}`);
+      return keep('non-supprimee');
+    }
+    if (present.length) return keep('reutilise');
+    // Références des lignes recréées : tâches et chantiers relus ; projets relus aussi en envoi réel (les données
+    // chargées peuvent être en retard), données chargées en mode essai (refExists sans table chargée)
+    let projects;
+    try {
+      projects = mode === 'on' ? await readFresh('Projects') : (lookup?.table?.('Projects') ?? null);
+    } catch {
+      return keep('relecture');
+    }
+    const found = (t, id) =>
+      t === 'Projects'
+        ? projects
+          ? projects.id.includes(id)
+          : Boolean(exists?.('Projects', id))
+        : Boolean(tables[t]?.id?.includes(id));
+    const missing = missingReference(entry.snapshot, found);
+    if (missing) return { ...keep('reference-absente'), missing };
     const actions = entry.snapshot.map((r) => ['AddRecord', r.table, r.id, { ...r.values }]);
     const undoEntry = {
       seq: ++seq,
@@ -1501,7 +1604,9 @@ export function createWriter({
         await send(actions);
       } catch (err) {
         if (err instanceof WriteFailed && err.document) blocked = 'viewer';
-        throw err;
+        // Sans réponse : restauration faite si chaque ligne est relue avec exactement les cellules de l'instantané
+        if (!(err instanceof WriteFailed && err.kind === 'timeout' && (await allRestored(entry.snapshot)))) throw err;
+        undoEntry.recovered = true;
       }
       undoEntry.sent = true;
     } else assertActions(actions, guards);

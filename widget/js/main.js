@@ -587,8 +587,13 @@ async function undoLast() {
     const names = r.skipped.map((c) => label(`form.field.${c}`)).join(', ');
     if (r.entry.kind === 'add')
       return toast.show(label(r.undoEntry ? 'toast.undoneAdd' : `toast.undoAdd.${r.reason ?? 'modifiee'}`));
-    if (r.entry.kind === 'delete')
-      return toast.show(label(r.undoEntry ? 'toast.undoneDelete' : `toast.undoDelete.${r.reason ?? 'relecture'}`));
+    if (r.entry.kind === 'delete') {
+      // Ligne visée par une ligne à recréer et disparue entre-temps : nommée dans le message
+      const ligne = r.missing ? label(`delete.ref.${r.missing.table}`, { id: r.missing.id }) : '';
+      return toast.show(
+        label(r.undoEntry ? 'toast.undoneDelete' : `toast.undoDelete.${r.reason ?? 'relecture'}`, { ligne }),
+      );
+    }
     toast.show(
       !r.undoEntry
         ? label('toast.undoNone')
