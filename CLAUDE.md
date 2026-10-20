@@ -66,9 +66,11 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   30 tags au plus (fusion comprise) ; valeurs d'avant recopiées telles quelles (chaîne vide comprise). Fusion en
   multi-ensemble (retirer un exemplaire d'un doublon tient), refaite sur la ligne relue à l'envoi, y compris après la
   fenêtre de conflit (`tagsSeen`). Cellule illisible (texte, `['E', …]`, non-texte) : montrée, champ bloqué, remplacée
-  seulement après confirmation de ce contenu (`replaceTags`) ; le writer relit lui-même la ligne (relue en envoi
-  réel, chargée sinon) avant d'écrire des tags, « Annuler » compris, qui saute alors les tags et le signale. « Enregistrer sans vérifier »
-  prévient que les tags remplacent toute la liste.
+  seulement après confirmation de ce contenu (`replaceTags`). Le writer contrôle lui-même la ligne avant d'écrire
+  des tags, « Annuler » compris (qui saute alors les tags et le signale) : ligne relue par l'appelant pour cet envoi
+  (`fresh`, une seule lecture), sinon table relue (échec : refus `tags-relecture`), données chargées en mode essai.
+  Les tags ne s'enregistrent jamais sans vérification : « Enregistrer sans vérifier » n'envoie que les autres champs
+  et le dit. Annonces des tags dans `#drawer-live`, région persistante du panneau (hors du contenu redessiné).
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
 - Lots suivants : glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
