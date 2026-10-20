@@ -127,3 +127,28 @@ test('filtres : seules les tâches visibles comptent', () => {
   assert.equal(eve.DE, 0);
   close(eve.DA, etp(14, 30));
 });
+
+test('rendu : segments à « 0,0 » omis, mois courant marqué, pas d’infobulle, filtre Personne expliqué', async () => {
+  const { rolesCard } = await import('../widget/js/views/stats.js');
+  const m = withTasks([
+    {
+      id: 1,
+      start: '2026-10-01',
+      end: '2026-10-31',
+      charges: [
+        { personId: 1, heures: 155 }, // DE : 1,0 ETP
+        { personId: 2, heures: 4 }, // PO : 0,03 ETP → « 0,0 »
+      ],
+    },
+  ]);
+  const rows = roleLoad(m, [1], today);
+  const out = rolesCard(rows, roleSeries(rows), { today }).toString();
+  assert.equal((out.match(/class="rbars__seg /g) ?? []).length, 1);
+  assert.match(out, /class="rbars__seg tone--role-de"/);
+  assert.doesNotMatch(out, /class="rbars__seg tone--role-po"/);
+  assert.equal((out.match(/rbars__row--current/g) ?? []).length, 1);
+  assert.doesNotMatch(out, /rbars__seg[^>]*title=/);
+  assert.match(out, /Le filtre Personne retient des tâches et compte toutes leurs charges/);
+  // Le tableau garde la colonne PO (0,0)
+  assert.match(out, /<th scope="col">PO<\/th>/);
+});

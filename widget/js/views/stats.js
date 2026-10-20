@@ -108,12 +108,14 @@ function timelineBars(line) {
 }
 
 const etp1 = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const ZERO = etp1(0);
 const roleName = (k) => (k === 'Mgmt' ? label('stats.roles.Mgmt') : etpLabel(k));
 const roleTone = (k) => `role-${k.toLowerCase()}`;
 
 /**
  * Charge par profil : une ligne par mois, barre empilée par profil (ordre fixe PO DA DS DE Mgmt Autre, mêmes
- * teintes que l'onglet Équipe), total écrit au bout ; le mois courant est marqué. Infobulle par segment.
+ * teintes que l'onglet Équipe), total écrit au bout ; le mois courant est marqué. Pas d'infobulle (ni clavier
+ * ni tactile) : le détail par profil est dans le tableau de valeurs. Un segment qui s'afficherait « 0,0 » est omis.
  */
 function roleBars(rows, keys, current) {
   const max = Math.max(...rows.map((r) => r.total));
@@ -128,13 +130,12 @@ function roleBars(rows, keys, current) {
           <span class="hbars__track">
             <span class="rbars__stack" style="--p:${barPercent(r.total, max).toFixed(1)}">
               ${keys
-                .filter((k) => r[k] > 0)
+                .filter((k) => etp1(r[k]) !== ZERO)
                 .map(
-                  (k) =>
-                    h`<span class="rbars__seg tone--${roleTone(k)}" style="flex-grow:${r[k].toFixed(4)}" title="${label('stats.roles.tip', { mois: m, profil: roleName(k), valeur: etp1(r[k]) })}"></span>`,
+                  (k) => h`<span class="rbars__seg tone--${roleTone(k)}" style="flex-grow:${r[k].toFixed(4)}"></span>`,
                 )}
             </span>
-            <span class="hbars__value" title="${label('stats.roles.totalTip', { mois: m, valeur: etp1(r.total) })}">${etp1(r.total)}</span>
+            <span class="hbars__value">${etp1(r.total)}</span>
           </span>
         </li>`;
       })}
@@ -143,7 +144,7 @@ function roleBars(rows, keys, current) {
   </div>`;
 }
 
-function rolesCard(rows, keys, ctx) {
+export function rolesCard(rows, keys, ctx) {
   const T = label('stats.chart.roles');
   if (!rows.length) return card('roles', T, empty(), { wide: true });
   const sub = label('stats.roles.sub', { debut: monthLabel(rows[0].month), fin: monthLabel(rows.at(-1).month) });

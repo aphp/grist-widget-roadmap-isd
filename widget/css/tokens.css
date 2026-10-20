@@ -74,8 +74,8 @@
   --viz-late: #dc2626;
   --viz-today: #e11d48;
   /*
-   * Management ISD dans les graphiques empilés (Statistiques, charge par profil) : en clair, le violet des badges
-   * (teinte « mgmt » de l'Équipe) ; en sombre, un violet moyen (le texte de badge #ddd6fe, trop clair et peu
+   * Management ISD (Équipe, pastilles ETP du Tableau, charge par profil des Statistiques) : en clair, le violet
+   * des badges ; en sombre, un violet moyen (le texte de badge #ddd6fe, trop clair et peu
    * saturé, sortait de la bande du validateur dataviz et se confondait avec le gris « Autre »).
    */
   --viz-mgmt: #5b21b6;
