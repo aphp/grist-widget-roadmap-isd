@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Tags: assign and remove existing tags on tasks and chantiers in their forms (searchable, keyboard-accessible chip
+  picker). A new name can be assigned without being declared in the sheet (column options are never changed) and is
+  marked "non déclaré". Tags shown in the detail panel, an optional "Tags" column in the Table and a "Tag" filter
+  under "+ Filtres". Strict writer checks and a set merge when the tags changed elsewhere meanwhile.
+
 ## [0.2.0] — 2026-10-20
 First published version.
 

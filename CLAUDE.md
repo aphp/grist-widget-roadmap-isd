@@ -12,12 +12,12 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   seulement (main.js, passerelle) ; `getAccessToken` avec `{ readOnly: true }` ; ni `getTable` ni `selectedTable`.
   `tests/write-guard.test.js` le vérifie.
 - **Liste blanche figée** (`WRITABLE`, comparée à une copie dans write-guard) : Tasks (champs de la fiche, `charges`,
-  `assignees`, `Chantier`, `projet`), Chantiers (fiche chantier, jamais `Priorite` ni `tags`), Team et Disponibilites
-  (lot équipe). Projects et catégories : jamais. `RemoveRecord` seulement pour annuler une création de la session
+  `assignees`, `Chantier`, `projet`, `tags`), Chantiers (fiche chantier et `tags`, jamais `Priorite`), Team et
+  Disponibilites (lot équipe). `tags` en mise à jour seulement, jamais à la création. Projects et catégories : jamais. `RemoveRecord` seulement pour annuler une création de la session
   (ligne relue identique, aucune référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
-  fusion par champ et, pour `charges`, par personne. Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`)
+  fusion par champ, pour `charges` par personne et, pour `tags`, en ensemble (ajouts et retraits de chacun). Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`)
   jamais écrites.
 - **Édition coupée par défaut** : seule l'adresse l'ouvre (`?edition=essai` = rien n'est envoyé ;
   `?edition=1&doc=<id>` = envoi seulement si `doc` est le document ouvert) et `flags.json` (`{ "edition": true }`,
@@ -54,12 +54,17 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   widget dans le document de test), `check_writes.py save|check|diff` (contrôle avant/après un scénario).
 
 ## État et suite
-- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD.
+- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD, tags
+  affectés et retirés (lot 2e, `core/tags-edit.js`).
+- **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
+  Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
+  (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
+  seulement, nouveaux tags sans espaces de bord ni caractère de contrôle, 80 caractères au plus, aucun doublon ajouté,
+  30 tags au plus ; valeurs d'avant recopiées telles quelles.
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
-- Lots suivants : « Mes tâches » et vue d'accueil par profil, statut depuis la carte, tags (attribuer), glisser-
-  déposer du Kanban, dates à la souris dans le Gantt.
+- Lots suivants : statut depuis la carte, glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
-  d'aide), gestion des tags (options de colonne), échelle de priorité, demandeur par chantier. Pas de création de
+  d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité, demandeur par chantier. Pas de création de
   rôle. `Team.capaciteHebdo` reste en lecture (colonne jamais remplie dans la Feuille).
 - Production : page du widget dans la Feuille, servie depuis une adresse https, seulement après les tests.
