@@ -901,9 +901,11 @@ async function reload({ ifChanged = false } = {}) {
     const raw = await gateway.fetchAll();
     if (accessRefused(raw.problems)) {
       renderScreen('access');
+      shownFingerprint = null; // la vue n'est plus affichée : la relecture suivante redessine
       return;
     }
-    const fingerprint = dataFingerprint(raw);
+    // Jour compris : au passage de minuit, les retards et la ligne « Aujourd'hui » changent sans donnée changée
+    const fingerprint = `${dataFingerprint(raw)}|${todayDay()}`;
     const render = !state.loaded || needsRender(shownFingerprint, fingerprint, force);
     if (render) {
       state.raw = raw;
@@ -929,6 +931,7 @@ async function reload({ ifChanged = false } = {}) {
     shownFingerprint = fingerprint;
   } catch (err) {
     renderScreen('error', { message: err?.message ?? String(err) });
+    shownFingerprint = null;
   } finally {
     loading = false;
     chrome.setRefreshing(false);

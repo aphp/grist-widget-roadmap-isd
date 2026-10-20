@@ -99,3 +99,22 @@ test('défilements : une zone déjà à la bonne position n’est pas réécrite
   restoreScrolls(root([n]), { k: { top: 10, left: 0 } });
   assert.equal(writes, 0);
 });
+
+test('défilements : une clé répétée est numérotée dans l’ordre du document (d’où des clés uniques par graphique)', () => {
+  // Deux graphiques sous la même clé : si le premier disparaît, le second hérite de sa position
+  const saved = captureScrolls(root([node('vbars', 0, 40), node('vbars', 0, 90)]));
+  const second = node('vbars');
+  restoreScrolls(root([second]), saved);
+  assert.equal(second.scrollLeft, 40);
+  // Clés propres à chaque graphique : chacun retrouve la sienne
+  const own = captureScrolls(root([node('vbars-status', 0, 40), node('vbars-priority', 0, 90)]));
+  const priority = node('vbars-priority');
+  restoreScrolls(root([priority]), own);
+  assert.equal(priority.scrollLeft, 90);
+});
+
+test('needsRender : même données, autre jour (empreinte suivie du jour) : redessiner', () => {
+  const fp = dataFingerprint(raw());
+  assert.equal(needsRender(`${fp}|20381`, `${fp}|20381`), false);
+  assert.equal(needsRender(`${fp}|20381`, `${fp}|20382`), true);
+});

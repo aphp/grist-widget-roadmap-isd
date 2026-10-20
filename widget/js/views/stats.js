@@ -36,7 +36,7 @@ const tip = (text, value) => `${text} : ${label('stats.value', { valeur: fr(valu
 
 /** Alternative textuelle : tableau lisible, replié sous le graphique. */
 function dataTable(caption, heads, rows) {
-  return h`<details class="stats__alt" data-scroll-key="stats-alt"><summary>${label('stats.table.show')}</summary>
+  return h`<details class="stats__alt"><summary>${label('stats.table.show')}</summary>
     <table class="stats__table"><caption class="fr-sr-only">${caption}</caption>
       <thead><tr>${heads.map((x) => h`<th scope="col">${x}</th>`)}</tr></thead>
       <tbody>${rows.map((r) => h`<tr>${r.map((c, i) => (i ? h`<td>${c}</td>` : h`<th scope="row">${c}</th>`))}</tr>`)}</tbody>
@@ -51,9 +51,10 @@ const countTable = (title, rows) =>
   );
 
 /** Colonnes verticales : valeur au-dessus, libellé en dessous, une couleur par ligne (tone). */
-function columns(title, rows, tones) {
+/** Histogramme en colonnes ; key = nom stable de sa zone défilante (un par graphique). */
+function columns(key, title, rows, tones) {
   const max = Math.max(...rows.map((r) => r.value));
-  return h`<ul class="list vbars" data-scroll-key="stats-vbars" aria-label="${title}">
+  return h`<ul class="list vbars" data-scroll-key="stats-vbars-${key}" aria-label="${title}">
     ${rows.map(
       (r, i) => h`<li class="vbars__col" title="${tip(r.label, r.value)}">
         <span class="vbars__plot">
@@ -266,6 +267,7 @@ export function render(el, ctx) {
         T('status'),
         status.length
           ? h`${columns(
+              'status',
               T('status'),
               status,
               status.map((r) => statusTone(r.key)),
@@ -276,7 +278,7 @@ export function render(el, ctx) {
         'priority',
         T('priority'),
         priority.length
-          ? h`${columns(T('priority'), priority, priorityTones(priority))}${countTable(T('priority'), priority)}`
+          ? h`${columns('priority', T('priority'), priority, priorityTones(priority))}${countTable(T('priority'), priority)}`
           : empty(),
       )}
       ${card(

@@ -23,6 +23,7 @@
 //   aph-entier      : comme aph-donnee, mais colonne Int (ce que Grist devine après une saisie de chiffres dans la
 //                     colonne vide) : APH en nombres, 0 = vide (la personne n° 2 du jeu synthétique).
 // grist.__simulateChange([action]) simule onRecords (modification faite ailleurs), avec ou sans donnée changée.
+// window.__accesRefuse = true : les tables de la Feuille sont refusées pour niveau d'accès (écran « accès »).
 // En cours de session, window.__lectureEchoue = true fait échouer toute lecture de table (relecture avant l'envoi).
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
 (function () {
@@ -223,6 +224,8 @@
         window.__reads.push(t);
         // Relecture en échec (tests de bout en bout) : window.__lectureEchoue = true en cours de session
         if (window.__lectureEchoue) throw new Error('lecture impossible (simulée)');
+        // Accès complet retiré au widget (écran « accès ») : window.__accesRefuse = true en cours de session
+        if (window.__accesRefuse && !t.startsWith('_grist')) throw new Error('Widget does not have full access');
         const d = await load();
         if (!d[t]) throw new Error(`KeyError: ${t}`);
         return structuredClone(d[t]);
