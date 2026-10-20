@@ -27,6 +27,7 @@ import {
   validatePerson,
   validateUnav,
 } from '../widget/js/core/person-form.js';
+import { n1Control } from '../widget/js/views/person-form.js';
 
 const ISD = 'Ingénierie et sciences des données - ISD';
 const raw = feuille();
@@ -147,17 +148,45 @@ test('création : rôle obligatoire (ISD ou Management), nom en double signalé,
   );
 });
 
-test('candidats N+1 : actifs de l’équipe ISD puis autres, la personne exclue, valeur actuelle gardée', () => {
-  const c = n1Candidates(m, 1, 3);
+test('candidats N+1 : Management de tous les Domaines d’abord, puis équipe ISD par profil, personne exclue', () => {
+  const c = n1Candidates(m, 1, null);
+  // Management actif de l'ISD (6) et d'un autre Domaine (7), par nom
   assert.deepEqual(
-    c.isd.map((p) => p.id),
-    [2, 3, 5, 6],
+    c.management.map((p) => p.id),
+    [6, 7],
   );
+  // Équipe ISD (pickerGroups) sans son Management, déjà en tête ; Alice (1) exclue, Carl (3) inactif absent
   assert.deepEqual(
-    c.others.map((p) => p.id),
-    [4, 7],
+    c.isd.map((g) => [g.role, g.people.map((p) => p.id)]),
+    [
+      ['PO', [2]],
+      ['DA', [5]],
+    ],
   );
-  assert.ok(!n1Candidates(m, 1).isd.some((p) => p.id === 3)); // inactif non proposé
+  assert.equal(c.kept, null);
+  // Personne hors ISD sans rôle Management : jamais proposée
+  assert.ok(![...c.management, ...c.isd.flatMap((g) => g.people)].some((p) => p.id === 4));
+  // Un manager n'est pas proposé comme son propre N+1
+  assert.deepEqual(
+    n1Candidates(m, 6).management.map((p) => p.id),
+    [7],
+  );
+});
+
+test('candidats N+1 : la valeur actuelle hors des groupes reste affichée', () => {
+  assert.deepEqual(n1Candidates(m, 1, 3).kept, { id: 3, person: m.people.get(3), inactive: true });
+  assert.deepEqual(n1Candidates(m, 1, 4).kept, { id: 4, person: m.people.get(4), inactive: false });
+  assert.deepEqual(n1Candidates(m, 1, 999).kept, { id: 999, person: null, inactive: false });
+  // Valeur déjà proposée, ou la personne elle-même : rien de plus
+  assert.equal(n1Candidates(m, 1, 7).kept, null);
+  assert.equal(n1Candidates(m, 1, 5).kept, null);
+  assert.equal(n1Candidates(m, 1, 1).kept, null);
+});
+
+test('N+1 Management d’un autre Domaine : accepté par la validation du formulaire', () => {
+  const draft = { ...personDraftFrom({ nom: 'Alice DE', role: 'DE' }), n_1: 7 };
+  assert.deepEqual(validatePerson(draft, { model: m, personId: 1, domaine: ISD }).errors, {});
+  assert.deepEqual(diffPerson({ nom: 'Alice DE', role: 'DE', n_1: 2 }, draft), { n_1: 7 });
 });
 
 test('indisponibilités : brouillon (pourcentage ancien ramené à 0-1), différences, validation, création', () => {
@@ -191,4 +220,19 @@ test('indisponibilités : brouillon (pourcentage ancien ramené à 0-1), différ
     dispo: 0.5,
     commentaire: 'ok',
   });
+});
+
+test('menu N+1 : Management en tête, puis équipe ISD par profil ; valeur actuelle hors liste gardée', () => {
+  const out = (n_1) =>
+    n1Control({ prefix: 'tf', draft: { n_1 }, can: () => ({ ok: true }), validation: { errors: {} } }, m, 1).toString();
+  const groups = (s) => [...s.matchAll(/<optgroup label="([^"]+)"/g)].map((x) => x[1]);
+  const s = out(7);
+  assert.deepEqual(groups(s), ['Management (tous Domaines)', 'ISD — PO', 'ISD — DA']);
+  assert.match(s, /<option value="7" selected>Gus BNDMR<\/option>/);
+  assert.ok(s.indexOf('Fanny Manager') < s.indexOf('Bob PO'));
+  assert.doesNotMatch(s, /Dora/);
+  assert.match(out(4), /<option value="4" selected>Dora \(hors ISD\) \(hors liste\)<\/option>/);
+  assert.match(out(3), /<option value="3" selected>Carl DS \(inactif\)<\/option>/);
+  assert.match(out(999), /<option value="999" selected>n° 999 \(hors liste\)<\/option>/);
+  assert.match(out(null), /<option value="" selected>Aucun<\/option>/);
 });

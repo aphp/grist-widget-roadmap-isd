@@ -1217,6 +1217,33 @@ test(
   },
 );
 
+test(
+  'équipe (2d) : N+1 choisi parmi le Management de tous les Domaines (UpdateRecord n_1)',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    const groups = await w(`return [...D.querySelectorAll('#tf-n_1 optgroup')].map((g) => g.label);`);
+    assert.equal(groups[0], 'Management (tous Domaines)');
+    const managers = await w(
+      `return [...D.querySelectorAll('#tf-n_1 optgroup:first-of-type option')].map((o) => o.textContent);`,
+    );
+    assert.deepEqual(managers, ['Fanny Manager', 'Gus Manager Externe', 'Marius Manager']);
+    // Ni la personne elle-même, ni une personne hors ISD sans rôle Management
+    assert.equal(
+      await w(`return Boolean(D.querySelector('#tf-n_1 option[value="1"], #tf-n_1 option[value="16"]'));`),
+      false,
+    );
+    await change('#tf-n_1', '15');
+    await clickOn('#btn-form-save');
+    await until(`!D.getElementById('person-form') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [[['UpdateRecord', 'Team', 1, { n_1: 15 }]]]);
+  },
+);
+
 test('équipe (2d) : indisponibilité ajoutée puis modifiée (AddRecord puis UpdateRecord)', { skip: SKIP }, async () => {
   await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
   await w(`D.querySelector('[data-person]').click(); return true;`);
