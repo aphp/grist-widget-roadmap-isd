@@ -18,8 +18,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   JSON, personnes existantes, pas de 0,5 h, 1 ETP sur la période des dates du même AddRecord, exemption estimation)
   et cohérent avec `assignees` (chaque personne chargée assignée, une entrée par personne, `charges` jamais sans assignés,
   entrées exactement `{teamId, heures}`). Si le writer n'autorise plus assignés ou charges à l'envoi, la fenêtre bloque
-  et copie la saisie au lieu de la perdre en silence. Dates ajoutées ou changées ensuite (fiche) : les entrées déjà là
-  sont recopiées telles quelles (règle ci-dessous), la fiche avertit des lignes au-dessus de 1 ETP, sans les refuser. Projects et catégories :
+  et copie la saisie au lieu de la perdre en silence. Dates ajoutées ou changées ensuite (fiche, fenêtre de
+  création) : ETP gardé, heures recalculées (`core/charges-rescale.js`) ; entrées au-dessus de la borne laissées telles
+  quelles et signalées (dates remises à l'identique : texte d'origine recopié). Projects et catégories :
   jamais. `RemoveRecord` seulement pour annuler une création de la session (ligne relue identique, aucune
   référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
@@ -33,7 +34,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   `?edition=1&doc=<id>` = envoi seulement si `doc` est le document ouvert) et `flags.json` (`{ "edition": true }`,
   adresse fixe, relu avant chaque envoi) peut tout couper. Délai maximal de 10 s sur chaque requête.
 - **Charges** : `Tasks.charges` = JSON `[{"teamId": n, "heures": h}]`, total d'heures sur la tâche. 1 ETP = 35 h par
-  semaine de la tâche (jours calendaires), au plus 1 ETP par personne, ETP à une décimale, heures à 0,5 h près ;
+  semaine de la tâche (jours calendaires), au plus 1 ETP par personne, ETP saisi à deux décimales sous 1 (une au-delà), heures à 0,5 h près ;
+  l'ETP fait foi quand les dates changent (h = ETP × 35 × jours / 7) ;
   entrées non touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : les personnes estimation
   (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer », « Data Scientist »… une par profil pour
   estimer dans la roadmap), bornées à `ESTIMATION_MAX_ETP` = 50 ETP sur la période (2 000 h sans dates), dans la

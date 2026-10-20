@@ -8,9 +8,9 @@ import {
   chargeRows,
   chargesSummary,
   etpDecimals,
-  etpDelta,
   ESTIMATION_MAX_ETP,
   etpOf,
+  hoursDelta,
   inputValue,
   isEstimationPerson,
   maxHours,
@@ -325,19 +325,18 @@ export function chargeEqText(st, heures, days) {
 }
 
 /**
- * Écart d'ETP d'une ligne (Q8 A) : période de référence = celle de la dernière saisie de la ligne dans ce
- * formulaire, sinon celle de la tâche à l'ouverture. Aucun écart pour une ligne sans charge.
+ * Écart d'heures d'une ligne (l'ETP fait foi) : heures de sa référence (dernière saisie dans ce formulaire, sinon
+ * la tâche à l'ouverture) → heures du brouillon, seulement si la période a changé depuis. Ni charge ni référence :
+ * aucun écart.
  */
-const rowDelta = (st, l, ctx) =>
-  l.heures === null
-    ? null
-    : etpDelta(l.heures, st.chargeRefDays?.has(l.teamId) ? st.chargeRefDays.get(l.teamId) : ctx.baseDays, ctx.days);
+function rowDelta(st, l, ctx) {
+  const ref = l.heures === null ? null : st.chargeRefs?.get(l.teamId);
+  return ref && ref.days !== ctx.days ? hoursDelta(ref, l.heures) : null;
+}
 
-/** Messages d'une ligne : saisie invalide, plafond, doublon à fusionner, personne absente, écart d'ETP (Q8). */
+/** Messages d'une ligne : saisie invalide, plafond, doublon à fusionner, personne absente, écart d'heures. */
 export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const err = st.chargeErrors.get(l.teamId);
-  const from = delta ? etpFormat.format(delta.from) : '';
-  const to = delta ? etpFormat.format(delta.to) : '';
   const errKey = err?.error === 'max' && !ctx.days ? 'maxNoDates' : err?.error;
   // Personne estimation (Team.aph) : borne de ESTIMATION_MAX_ETP au lieu de 1 ETP
   const estimation = isEstimationPerson(model, l.teamId);
@@ -353,8 +352,8 @@ export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
       ? h`<p class="tf-warn">${label('form.charges.duplicate', { n: l.count })}</p>${ctx.canCharges ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-charge-merge="${l.teamId}">${label('form.charges.merge', { n: l.count })}</button>` : ''}`
       : ''
   }${model.people.has(l.teamId) || !l.charged ? '' : h`<p class="tf-warn">${label('form.charges.unknownHelp')}</p>`}${
-    delta && from !== to
-      ? h`<p class="tf-charge__delta">${label('form.charges.delta', { avant: from, apres: to })}</p>`
+    delta
+      ? h`<p class="tf-charge__delta">${label('form.charges.delta', { avant: hoursFormat.format(delta.from), apres: hoursFormat.format(delta.to) })}</p>`
       : ''
   }`;
 }
@@ -384,7 +383,7 @@ export function chargesFootHtml(st, model) {
   }${parts.length ? h` (${parts.join(' · ')})` : ''} · ${period}`;
 }
 
-/** Contexte de rendu des lignes : droits par colonne, lisibilité des charges, périodes. */
+/** Contexte de rendu des lignes : droits par colonne, lisibilité des charges, période. */
 export function peopleCtx(st) {
   const cell = readChargesCell(st.draft.charges);
   return {
@@ -392,7 +391,6 @@ export function peopleCtx(st) {
     canAssign: st.can('assignees').ok && !st.busy,
     canCharges: st.can('charges').ok && !st.busy,
     days: periodDays(st.draft.dateDebut, st.draft.dateEcheance),
-    baseDays: periodDays(st.base.dateDebut, st.base.dateEcheance),
   };
 }
 

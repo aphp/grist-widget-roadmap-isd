@@ -226,18 +226,43 @@ test('charges : avertissements doublon, personne absente de l’équipe, charges
   assert.deepEqual(validateTask({ ...d, charges: 'oops' }, ctx(2010)).errors, {});
 });
 
-test('dates ajoutées ou changées : avertit des charges conservées au-dessus de 1 ETP sur la nouvelle période', () => {
+test('dates ajoutées ou changées : avertit des seules charges laissées telles quelles au-dessus de la borne', () => {
   const d = { ...draftFrom(base(2010)), dateDebut: dayOfIso('2026-10-01'), dateEcheance: dayOfIso('2026-10-14') };
   const week = { ...d, dateEcheance: dayOfIso('2026-10-07') };
   const charged = (x) => ({ ...x, charges: '[{"teamId":5,"heures":60}]' });
-  const keys = (x, b) => validateTask(x, { ...ctx(2010), base: b }).warnings.map((w) => w.key);
-  // 60 h sur 14 jours (70 h) : dans la borne ; sur 7 jours (35 h) : au-dessus, dates changées => avertissement
-  assert.deepEqual(keys(charged(d), d), []);
-  assert.ok(keys(charged(week), d).includes('form.warn.chargesOverDates'));
-  // Dates ajoutées à une tâche sans dates (créée sans dates : borne de 2 000 h)
+  const keys = (x, b, keptOver) => validateTask(x, { ...ctx(2010), base: b, keptOver }).warnings.map((w) => w.key);
+  // Recalculées (keptOver vide ou absent) : pas d'avertissement, la ligne montre l'écart d'heures
+  assert.ok(!keys(charged(week), d).includes('form.warn.chargesOverDates'));
+  assert.ok(!keys(charged(week), d, new Set()).includes('form.warn.chargesOverDates'));
+  // Laissées telles quelles (au-dessus de la borne sur la nouvelle période) : avertissement
+  assert.ok(keys(charged(week), d, new Set([5])).includes('form.warn.chargesOverDates'));
   const none = { ...week, dateDebut: null, dateEcheance: null };
-  assert.ok(keys(charged(week), none).includes('form.warn.chargesOverDates'));
-  // Dates inchangées ou sans période de référence : pas d'avertissement de ce type (la ligne le dit déjà)
-  assert.ok(!keys(charged(week), week).includes('form.warn.chargesOverDates'));
-  assert.ok(!keys(charged(week)).includes('form.warn.chargesOverDates'));
+  assert.ok(keys(charged(week), none, new Set([5])).includes('form.warn.chargesOverDates'));
+  // Dates inchangées ou sans période de référence : pas d'avertissement de ce type
+  assert.ok(!keys(charged(week), week, new Set([5])).includes('form.warn.chargesOverDates'));
+  assert.ok(!keys(charged(week), undefined, new Set([5])).includes('form.warn.chargesOverDates'));
+  // Personne retirée depuis : plus comptée
+  assert.ok(!keys({ ...week, charges: '[]' }, d, new Set([5])).includes('form.warn.chargesOverDates'));
+});
+
+test('avertissement de dates : seulement les charges laissées telles quelles', () => {
+  const D = dayOfIso('2026-10-01');
+  const draftWith = (x) => ({ ...draftFrom(base(2010)), ...x });
+  const v = validateTask(draftWith({ dateDebut: D, dateEcheance: D + 6, charges: '[{"teamId":1,"heures":70}]' }), {
+    model,
+    taskId: 2010,
+    base: { dateDebut: D, dateEcheance: D + 13 },
+    keptOver: new Set([1]),
+  });
+  assert.deepEqual(v.warnings.find((w) => w.key === 'form.warn.chargesOverDates').vars, { n: 1 });
+  const ok = validateTask(draftWith({ dateDebut: D, dateEcheance: D + 6, charges: '[{"teamId":1,"heures":35}]' }), {
+    model,
+    taskId: 2010,
+    base: { dateDebut: D, dateEcheance: D + 13 },
+    keptOver: new Set(),
+  });
+  assert.equal(
+    ok.warnings.some((w) => w.key === 'form.warn.chargesOverDates'),
+    false,
+  );
 });

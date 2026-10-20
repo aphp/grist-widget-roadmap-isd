@@ -9,7 +9,8 @@
  * entier, clé en double) n'est pas modifiable dans le widget, comme une cellule illisible.
  *
  * Conversion (1 ETP = 35 h par semaine pour tous, jours calendaires de dateDebut à dateEcheance) :
- * h = ETP × 35 × jours / 7 ; ETP = h × 7 / (35 × jours).
+ * h = ETP × 35 × jours / 7 ; ETP = h × 7 / (35 × jours). Dates changées : l'ETP fait foi, les heures sont
+ * recalculées (charges-rescale.js) ; dates inchangées, les entrées sont recopiées octet par octet.
  */
 import { etpToHours, hoursToEtp } from './capacity.js';
 import { taskEtpByRole } from './kanban-data.js';
@@ -437,12 +438,13 @@ export function hoursFromInput(text, unit, days, current = null, { estimation = 
 export const etpOf = (heures, days) => (days ? hoursToEtp(heures, days) : null);
 
 /**
- * Écart d'ETP quand les dates changent (Q8 A : les heures, valeur stockée, sont conservées).
- * @returns {{from:number, to:number}|null} null si les périodes sont égales ou l'une manque
+ * Écart d'heures d'une ligne quand les dates changent (l'ETP fait foi : charges-rescale.js recalcule les heures).
+ * @param {{heures:number}} ref référence de la ligne (ChargeRef)
+ * @param {number} heures heures actuelles du brouillon
+ * @returns {{from:number, to:number}|null} null si les heures n'ont pas changé
  */
-export function etpDelta(heures, oldDays, newDays) {
-  if (!oldDays || !newDays || oldDays === newDays) return null;
-  return { from: hoursToEtp(heures, oldDays), to: hoursToEtp(heures, newDays) };
+export function hoursDelta(ref, heures) {
+  return heures === ref.heures ? null : { from: ref.heures, to: heures };
 }
 
 /**

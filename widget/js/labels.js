@@ -694,7 +694,7 @@ const FR = Object.freeze({
   'form.charges.unit.etp': 'ETP',
   'form.charges.unit.heures': 'heures',
   'form.charges.help':
-    '1 ETP = 35 h par semaine, sur les jours calendaires du début à l’échéance ; 1 ETP au plus par personne (sauf la personne d’estimation). Les heures sont enregistrées à 0,5 h près.',
+    '1 ETP = 35 h par semaine, sur les jours calendaires du début à l’échéance ; 1 ETP au plus par personne (sauf la personne d’estimation). Les heures sont enregistrées à 0,5 h près. Si les dates changent, l’ETP est conservé et les heures sont recalculées.',
   'form.charges.noDates': 'Indiquez début et échéance pour saisir en ETP',
   'form.charges.eqHours': '= {h} h',
   'form.charges.eqEtp': '= {valeur} ETP',
@@ -703,7 +703,7 @@ const FR = Object.freeze({
   'form.charges.unknownHelp': 'Personne absente de l’équipe : sa charge est conservée, vous pouvez la retirer.',
   'form.charges.duplicate': '{n} entrées pour cette personne : fusionnez-les pour modifier ses heures.',
   'form.charges.merge': 'Fusionner les {n} entrées',
-  'form.charges.delta': 'Dates modifiées : ETP {avant} → {apres} (heures conservées)',
+  'form.charges.delta': 'Dates modifiées : {avant} h → {apres} h (ETP conservé)',
   'form.charges.invalid': 'Entrée illisible, conservée telle quelle : {texte}',
   'form.charges.total': 'Total {h} h',
   'form.charges.totalEtp': '{valeur} ETP',
@@ -776,7 +776,7 @@ const FR = Object.freeze({
   'form.error.summaryMany': 'Corrigez les {n} champs signalés pour pouvoir enregistrer.',
   'form.warn.outsideParent': 'Les dates sortent de celles de la tâche parente.',
   'form.warn.chargesOverDates':
-    'Dates modifiées : {n} charge(s) au-dessus de 1 ETP sur la nouvelle période, conservée(s) telle(s) quelle(s) (le widget ne les contrôle pas à nouveau). Vérifiez-les ou ajustez-les.',
+    'Dates modifiées : {n} charge(s) dépasseraient la borne sur la nouvelle période ; leurs heures sont gardées telles quelles. Vérifiez-les.',
   'form.warn.chargesNoDates': 'Cette tâche porte des charges : sans début ni échéance, l’ETP ne peut pas être calculé.',
   'form.warn.doneNoClosure': 'Tâche terminée sans date de clôture.',
   'form.warn.reopened': 'Tâche rouverte : la date de clôture est conservée. Vous pouvez la vider ci-dessous.',

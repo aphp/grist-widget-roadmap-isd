@@ -338,7 +338,11 @@ test('estimation : saisie au-delà de 1 ETP acceptée jusqu’à 50 ETP sur la p
   assert.deepEqual(hoursFromInput('2001', 'heures', null, null, est), { error: 'max', max: 2000 });
   // Bloc « Personnes » (lineInput)
   const draft = { assignees: [1, 2], charges: '' };
-  assert.deepEqual(lineInput(draft, 1, '3', 'etp', 14, est), { charges: '[{"teamId":1,"heures":210}]', heures: 210 });
+  assert.deepEqual(lineInput(draft, 1, '3', 'etp', 14, est), {
+    charges: '[{"teamId":1,"heures":210}]',
+    heures: 210,
+    etp: 3,
+  });
   assert.deepEqual(lineInput(draft, 2, '3', 'etp', 14), { error: { error: 'max', max: 70 } });
 });
 

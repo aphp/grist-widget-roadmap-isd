@@ -11,8 +11,8 @@ import {
   encodeCharges,
   entryHours,
   entryTeamId,
-  etpDelta,
   etpOf,
+  hoursDelta,
   hoursFromInput,
   inputValue,
   maxHours,
@@ -196,13 +196,9 @@ test('pied : total, ETP par profil (calcul de taskEtpByRole), période', () => {
   near(s.byRole.total, 1.6);
 });
 
-test('dates changées (Q8 A) : heures conservées, écart d’ETP signalé', () => {
-  const d = etpDelta(70, 14, 20);
-  near(d.from, 1);
-  near(d.to, 0.7);
-  assert.equal(etpDelta(70, 14, 14), null);
-  assert.equal(etpDelta(70, null, 14), null);
-  assert.equal(etpDelta(70, 14, null), null);
+test('hoursDelta : heures de la référence → heures du brouillon (ETP conservé)', () => {
+  assert.deepEqual(hoursDelta({ etp: 1, heures: 70, days: 14 }, 140), { from: 70, to: 140 });
+  assert.equal(hoursDelta({ etp: 1, heures: 70, days: 14 }, 70), null);
 });
 
 test('pas d’écriture si inchangé : comparaison sur les valeurs, cellule vide ≠ réécrite en []', () => {

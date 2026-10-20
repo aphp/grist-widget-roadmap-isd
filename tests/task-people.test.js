@@ -94,7 +94,11 @@ test('saisie d’une ligne : règles du 1 ETP, valeur affichée, charge vidée, 
   const days = 14;
   const draft = { assignees: [1], charges: null };
   // 1,0 ETP sur 14 jours = 70 h, ajoutée en fin de cellule
-  assert.deepEqual(lineInput(draft, 1, '1', 'etp', days), { charges: '[{"teamId":1,"heures":70}]', heures: 70 });
+  assert.deepEqual(lineInput(draft, 1, '1', 'etp', days), {
+    charges: '[{"teamId":1,"heures":70}]',
+    heures: 70,
+    etp: 1,
+  });
   // Au plus 1 ETP, ETP à deux décimales sous 1 (une au-delà), moins de 0,25 h refusé, sans dates en ETP
   assert.equal(lineInput(draft, 1, '1,5', 'etp', days).error.error, 'max');
   assert.equal(lineInput(draft, 1, '0,255', 'etp', days).error.error, 'decimale');
@@ -103,10 +107,10 @@ test('saisie d’une ligne : règles du 1 ETP, valeur affichée, charge vidée, 
   assert.equal(lineInput(draft, 1, 'abc', 'heures', days).error.error, 'nombre');
   // Valeur affichée ressaisie : heures inchangées, cellule identique (10 h sur 14 jours s'affichent 0,14 ETP)
   const ten = { assignees: [1], charges: '[{"teamId":1,"heures":10}]' };
-  assert.deepEqual(lineInput(ten, 1, '0,14', 'etp', days), { charges: ten.charges, heures: 10 });
+  assert.deepEqual(lineInput(ten, 1, '0,14', 'etp', days), { charges: ten.charges, heures: 10, etp: null });
   // Charge vidée : assignée → entrée retirée (la ligne reste, charge vide) ; non assignée → erreur « vide »
-  assert.deepEqual(lineInput(ten, 1, '  ', 'etp', days), { charges: '[]', heures: null });
-  assert.deepEqual(lineInput(draft, 1, '', 'etp', days), { charges: null, heures: null });
+  assert.deepEqual(lineInput(ten, 1, '  ', 'etp', days), { charges: '[]', heures: null, etp: null });
+  assert.deepEqual(lineInput(draft, 1, '', 'etp', days), { charges: null, heures: null, etp: null });
   assert.equal(lineInput({ assignees: [], charges: ten.charges }, 1, '', 'etp', days).error.error, 'vide');
   // Doublon non fusionné ou cellule illisible : refus, rien n'est changé
   const dup = { assignees: [1], charges: '[{"teamId":1,"heures":2},{"teamId":1,"heures":3}]' };
@@ -143,4 +147,10 @@ test('lecture : liste unique (taskPeopleRows), heures cumulées, ETP, non assign
     taskPeople(model, task).map((p) => p.id),
     [2, 1, 3],
   );
+});
+
+test('lineInput rend l’ETP saisi', () => {
+  const r = lineInput({ assignees: [40], charges: null }, 40, '0,25', 'etp', 28);
+  assert.deepEqual([r.heures, r.etp], [35, 0.25]);
+  assert.equal(lineInput({ assignees: [40], charges: null }, 40, '35', 'heures', 28).etp, null);
 });

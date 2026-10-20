@@ -276,7 +276,7 @@ export function createCreateDialog(deps) {
           ? newChantierDraft(m, { projectId: ctx.projectId, me: ctx.me })
           : newTaskDraft(m, { ...ctx, parentId: kind === 'subtask' ? ctx.parentId : null });
       st.me = ctx.me ?? null;
-      // Bloc « Personnes » : aucune période d'origine (écart d'ETP mesuré depuis la dernière saisie d'une ligne)
+      // Bloc « Personnes » : aucune ligne d'origine (ETP de référence posé par la saisie de chaque ligne)
       if (kind !== 'chantier')
         Object.assign(st, peopleState(deps.storage), { base: { dateDebut: null, dateEcheance: null } });
       st.initial = JSON.stringify(st.draft);
@@ -456,11 +456,12 @@ export function createCreateDialog(deps) {
         render('cf-cible');
       } else if (['dateDebut', 'dateEcheance', 'Debut', 'Fin'].includes(f)) {
         setDate(f, t.value);
-        // Tâche : équivalents ETP et borne recalculés sur la nouvelle période (heures conservées)
-        if (hasPeople()) people.render();
+        // Tâche : l'ETP fait foi, heures des charges recalculées sur la nouvelle période
+        if (hasPeople()) people.onDatesChanged();
         else refresh();
       } else if (f === 'type') {
         st.draft = setNewMilestone(st.draft, t.checked);
+        if (hasPeople()) people.onDatesChanged({ render: false });
         render('cf-type');
       } else if (f === 'statut' || f === 'Statut' || f === 'priorite') {
         st.draft[f] = t.value;

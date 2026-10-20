@@ -73,6 +73,7 @@ const SPECS = Object.freeze({
         statuses: model.statuses.tasks,
         priorities: model.choices?.['Tasks.priorite'] ?? [],
         base: st.base,
+        keptOver: st.chargesKeptOver ?? new Set(),
       }),
     body: (st, model) => taskFormBody(st, model),
   },
@@ -248,7 +249,7 @@ export function createTaskEditor(deps) {
       confirmTagsReplace: false,
       badDates: new Set(),
       badNumber: false,
-      ...peopleState(deps.storage),
+      ...peopleState(deps.storage, ref.table === 'Tasks' ? base : null),
       moreOpen: moreOpen(),
       mode: w.mode,
       can: (f) => w.can(ref.table, f),
@@ -725,10 +726,11 @@ export function createTaskEditor(deps) {
         if (!(err instanceof EncodeError)) throw err;
         st.badDates.add(f);
       }
-      // Q8 A : les heures (valeur stockée) sont conservées ; l'ETP et l'écart sont recalculés
-      people.render();
+      // L'ETP fait foi : heures des charges recalculées sur la nouvelle période (bloc « Personnes »)
+      people.onDatesChanged();
     } else if (f === 'type') {
       st.draft = setMilestone(st.draft, t.checked, st.originalType);
+      people.onDatesChanged({ render: false });
       render('tf-type');
     } else if (f === 'priorite') {
       st.draft.priorite = t.value;
