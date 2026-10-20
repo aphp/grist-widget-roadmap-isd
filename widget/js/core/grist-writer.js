@@ -18,12 +18,15 @@
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
+import { estimationIdOfTable, isEstimationAph } from './estimation.js';
+import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
 
 /**
  * Colonnes modifiables par table et par opération. update : mise à jour d'une ligne existante (lots 2a, 2b, 2c) ;
- * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5), tags au lot 2e.
+ * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5). Tags (lot 2e, Q3 B) :
+ * affectés et retirés dans les fiches, jamais à la création ; aucune option de colonne n'est jamais modifiée.
  */
 export const WRITABLE = Object.freeze({
   Tasks: Object.freeze({
@@ -46,6 +49,7 @@ export const WRITABLE = Object.freeze({
       'charges',
       'Chantier',
       'projet',
+      'tags',
     ]),
     add: Object.freeze([
       'titre',
@@ -75,6 +79,7 @@ export const WRITABLE = Object.freeze({
       'Description',
       'Objectifs_resultats_attendus',
       'Criteres_de_succes',
+      'tags',
     ]),
     add: Object.freeze([
       'Nom_du_chantier',
@@ -88,10 +93,11 @@ export const WRITABLE = Object.freeze({
     ]),
   }),
   // Lot 2d : personnes de l'équipe ISD (Q14 A). Domaine seulement à la création (forcé à l'ISD) ; jamais de
-  // suppression d'une personne : « Supprimer » = actif à faux (Q9).
+  // suppression d'une personne : « Supprimer » = actif à faux (Q9). aph : identifiant APH, chiffres seulement
+  // (validAph) ; comme capaciteHebdo, jamais écrit tant que c'est une colonne formule (vide) de la Feuille.
   Team: Object.freeze({
-    update: Object.freeze(['nom', 'email', 'role', 'capaciteHebdo', 'actif', 'n_1']),
-    add: Object.freeze(['nom', 'email', 'role', 'Domaine', 'capaciteHebdo', 'actif', 'n_1']),
+    update: Object.freeze(['nom', 'email', 'aph', 'role', 'capaciteHebdo', 'actif', 'n_1']),
+    add: Object.freeze(['nom', 'email', 'aph', 'role', 'Domaine', 'capaciteHebdo', 'actif', 'n_1']),
   }),
   // Lot 2d : indisponibilités d'une personne ISD ; membre fixé à la création.
   Disponibilites: Object.freeze({
@@ -111,6 +117,13 @@ export const NO_REMOVE = Object.freeze(['Team']);
 
 /** Capacité hebdomadaire maximale d'une personne (h), au pas de 0,5 h ; 0 exclu (vide = 35 h par défaut). */
 export const CAPACITY_MAX = 60;
+
+/** Longueur maximale d'un APH (Team.aph) : de 1 à 10 chiffres, 7 le plus souvent. */
+export const APH_MAX_DIGITS = 10;
+/** Longueur habituelle d'un APH (avertissement seulement). */
+export const APH_USUAL_DIGITS = 7;
+/** APH accepté à l'écriture : texte de 1 à 10 chiffres, sans espace (le formulaire nettoie les bords). */
+export const validAph = (v) => typeof v === 'string' && /^[0-9]{1,10}$/.test(v);
 
 /** Colonnes obligatoires à la création (non vides). */
 export const REQUIRED_ON_ADD = Object.freeze({
@@ -141,6 +154,7 @@ export const EXPECTED_TYPES = Object.freeze({
   'Tasks.Chantier': 'Ref:Chantiers',
   'Tasks.projet': 'Ref:Projects',
   'Tasks.Cree_par': 'Text',
+  'Tasks.tags': 'ChoiceList',
   'Chantiers.Nom_du_chantier': 'Text',
   'Chantiers.Projets': 'RefList:Projects',
   'Chantiers.Statut': 'Choice',
@@ -151,8 +165,10 @@ export const EXPECTED_TYPES = Object.freeze({
   'Chantiers.Description': 'Text',
   'Chantiers.Objectifs_resultats_attendus': 'Text',
   'Chantiers.Criteres_de_succes': 'Text',
+  'Chantiers.tags': 'ChoiceList',
   'Team.nom': 'Text',
   'Team.email': 'Text',
+  'Team.aph': 'Text',
   'Team.role': 'Choice',
   'Team.Domaine': 'Choice',
   'Team.capaciteHebdo': 'Numeric',
@@ -273,10 +289,12 @@ function encodeCol(table, col, value) {
  * @param {Record<string,*>} changes valeurs du modèle, colonne → valeur
  * @param {Map<string,string>} [disabled] colonnes retirées pour la session
  * @param {{before?:object, refExists?:(table:string, id:number) => boolean, restoring?:string[],
- *          days?:number|null}} [ctx] days : jours de la période de la tâche après modification (borne 1 ETP)
+ *          days?:number|null, isEstimation?:(teamId:number) => boolean}} [ctx] days : jours de la période de la
+ *   tâche après modification (borne 1 ETP) ; isEstimation : personne estimation (Team.aph), exemptée de cette borne
  *   before : valeurs d'avant (les entrées de charges conservées telles quelles ne sont pas recontrôlées) ;
  *   refExists : existence d'une ligne (teamId des charges dans Team) ; restoring : colonnes remises à leur
- *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle).
+ *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle) ; current : ligne
+ *   lue par le writer lui-même (cellule de tags illisible, contrôlée même pour « Annuler »).
  * @returns {['UpdateRecord', string, number, Record<string,*>]}
  */
 export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) {
@@ -296,8 +314,21 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
         ctx.before?.[col],
         (n) => Boolean(ctx.refExists?.('Team', n)),
         ctx.days ?? null,
+        ctx.isEstimation ?? null,
       );
       if (problem) throw new WriteRefused('charges', problem);
+    }
+    // Cellule de tags illisible dans la ligne lue par le writer (current) ou d'après l'appelant (before) : remplacée
+    // seulement sur confirmation de CE contenu (replaceTags), jamais par « Annuler »
+    if (col === 'tags') {
+      const unreadable = [ctx.current?.tagsUnreadable, ctx.before?.tagsUnreadable].find((x) => typeof x === 'string');
+      if (unreadable !== undefined && ctx.replaceTags !== unreadable)
+        throw new WriteRefused('tags-illisible', key(table, col));
+    }
+    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées
+    if (col === 'tags' && !ctx.restoring?.includes(col)) {
+      const problem = tagsWriteProblem(changes[col], ctx.before?.[col] ?? []);
+      if (problem) throw new WriteRefused(problem === 'trop' ? 'tags-trop' : 'tags', problem);
     }
     fields[col] = encodeCol(table, col, changes[col]);
   }
@@ -441,6 +472,12 @@ export function decodeRow(tableData, table, id) {
   const out = {};
   for (const col of [...(WRITABLE[table]?.update ?? []), ...(READ_ALSO[table] ?? [])])
     out[col] = decodeValue(EXPECTED_TYPES[key(table, col)], tableData[col]?.[i]);
+  // Cellule de tags illisible (texte, ['E', …], éléments non textuels) : son contenu, pour ne jamais l'écraser en
+  // silence ; null si elle est lisible (toujours présente : un ancien signalement ne survit pas à une relecture)
+  if ('tags' in out) {
+    const cell = readTagsCell(tableData.tags?.[i]);
+    out.tagsUnreadable = cell.ok ? null : cell.raw;
+  }
   return out;
 }
 
@@ -455,7 +492,9 @@ export function planUndo(entry, fresh) {
   const changes = {};
   const skipped = [];
   for (const [col, v] of Object.entries(entry.after)) {
-    if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
+    // Cellule de tags devenue illisible (texte importé…) : jamais réécrite par une annulation
+    if (col === 'tags' && typeof fresh?.tagsUnreadable === 'string') skipped.push(col);
+    else if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
     else skipped.push(col);
   }
   return { changes, skipped };
@@ -592,6 +631,12 @@ function personProblem(it, after, touches, add, lookup, nameBad) {
   const choices = (col) => lookup.choices?.(`Team.${col}`) ?? null;
   if (touches('nom') && nameBad(after.nom)) return 'nom-personne';
   if (touches('email') && after.email && !isValidEmail(after.email)) return 'email';
+  // APH vide permis (non renseigné) ; sinon chiffres seulement, sans espace
+  if (touches('aph') && after.aph !== null && after.aph !== undefined && after.aph !== '' && !validAph(after.aph))
+    return 'aph';
+  // Personne estimation : se désigne dans la Feuille, jamais depuis le widget (ni poser l'APH, ni le retirer)
+  if (touches('aph') && (isEstimationAph(after.aph) || (!add && isEstimationAph(lookup.row('Team', it.id)?.aph))))
+    return 'aph-estimation';
   if (touches('role') && !(choices('role') ?? []).includes(after.role)) return 'role';
   if (touches('Domaine') && !(choices('Domaine') ?? []).includes(after.Domaine)) return 'domaine';
   // À la création, une capacité absente ou vide vaut 35 h par défaut
@@ -622,6 +667,7 @@ export function lookupFromTables(tables, base = null) {
   return {
     choices: (k) => base?.choices?.(k) ?? null,
     row: (t, id) => (tables[t] ? decodeRow(tables[t], t, id) : (base?.row(t, id) ?? null)),
+    estimationId: () => (tables.Team ? estimationIdOfTable(tables.Team) : (base?.estimationId?.() ?? null)),
     childIds: (id) => (tasks() ? ids((i) => col('parentTask')[i] === id) : (base?.childIds?.(id) ?? [])),
     chantierTasks: (id) => (tasks() ? ids((i) => col('Chantier')[i] === id) : (base?.chantierTasks?.(id) ?? [])),
   };
@@ -734,6 +780,12 @@ export function createWriter({
   const created = new Set(); // 'Table:id' créées dans la session (seules lignes supprimables, pour « Annuler »)
   const addRefused = new Set(); // tables où une règle d'accès refuse l'ajout
   const exists = refExists ?? (lookup ? (t, id) => Boolean(lookup.row(t, id)) : null);
+  // Personne estimation (titulaire UNIQUE de ESTIMATION_APH dans les données chargées, lookup.estimationId) : seule
+  // exemptée de la borne de 1 ETP ; sans lookup, sans titulaire ou avec plusieurs, personne ne l'est
+  const isEstimation = (n) => {
+    const id = lookup?.estimationId?.() ?? null;
+    return Number.isInteger(id) && n === id;
+  };
   let seq = 0;
   let blocked = null; // refus sur tout le document : la session passe en lecture
   let undoing = false;
@@ -892,8 +944,11 @@ export function createWriter({
    * @param {number} id
    * @param {object} changes valeurs du modèle des colonnes modifiées
    * @param {{before?:object, undoOf?:number, period?:{start:number|null, end:number|null},
-   *          also?:{table:string, id:number, changes:object, before?:object}[]}} [opts] valeurs d'avant
-   *   (pour « Annuler ») ; period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées
+   *          also?:{table:string, id:number, changes:object, before?:object}[], replaceTags?:string,
+   *          fresh?:object}} [opts] fresh : ligne relue par l'appelant juste avant cet envoi (decodeRow) ;
+   *   valeurs d'avant (pour « Annuler » ; before.tagsUnreadable : contenu d'une cellule de tags illisible) ;
+   *   period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées ; replaceTags :
+   *   contenu illisible dont l'utilisateur a confirmé le remplacement
    * @returns {Promise<{seq:number, table:string, id:number, before:object, after:object, actions:any[], sent:boolean}>}
    */
   async function update(table, id, changes, opts = {}) {
@@ -905,17 +960,46 @@ export function createWriter({
     const restoring = undone ? Object.keys(changes).filter((c) => changes[c] === undone.before[c]) : [];
     // Période de la tâche après modification (dates du lot, sinon celles des données) : borne de 1 ETP
     const ch = changes ?? {};
+    // APH de la personne estimation d'après la valeur relue juste avant l'envoi (before) : jamais retiré, même si
+    // les données chargées sont en retard (conflit « garder la mienne » après une désignation dans la Feuille)
+    const holderTouched = (t, c, b) => t === 'Team' && 'aph' in (c ?? {}) && isEstimationAph(b?.aph);
+    if (
+      holderTouched(table, ch, opts.before) ||
+      (opts.also ?? []).some((r) => holderTouched(r.table, r.changes, r.before))
+    )
+      throw new WriteRefused('aph-estimation');
     // Dates relues juste avant l'envoi si l'appelant les fournit, sinon celles des données chargées
     const period = 'charges' in ch ? (opts.period ?? periodOf?.(table, id) ?? {}) : {};
     const days = periodDays(
       'dateDebut' in ch ? ch.dateDebut : period.start,
       'dateEcheance' in ch ? ch.dateEcheance : period.end,
     );
+    // Tags : le writer contrôle lui-même la ligne, pour ne jamais écraser une cellule illisible, quel que soit
+    // l'appelant (« Annuler » compris). Envoi réel : la ligne que l'appelant vient de relire pour ce même envoi
+    // (opts.fresh, relecture complète de decodeRow) évite une seconde lecture ; sinon la table est relue ici.
+    // Mode essai : les données chargées.
+    let current = null;
+    if (changes && 'tags' in changes) {
+      const reread = opts.fresh && 'tagsUnreadable' in opts.fresh && 'tags' in opts.fresh ? opts.fresh : null;
+      if (mode !== 'on' || !readTable) current = reread ?? lookup?.row(table, id) ?? null;
+      else if (reread) current = reread;
+      else {
+        try {
+          current = decodeRow(await readFresh(table), table, id);
+        } catch (err) {
+          if (err instanceof WriteRefused) throw new WriteRefused('tags-relecture', key(table, 'tags'));
+          throw err;
+        }
+      }
+    }
     const action = buildUpdate(table, id, changes, disabled, {
+      current,
       before: opts.before,
       refExists: exists,
       restoring,
       days,
+      isEstimation,
+      replaceTags: opts.replaceTags,
     });
     const also = opts.also ?? [];
     const derived = also.map((r) => buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before }));
@@ -1140,7 +1224,12 @@ export function createWriter({
       }
       let undoEntry = null;
       if (Object.keys(changes).length)
-        undoEntry = await update(entry.table, entry.id, changes, { before: entry.after, undoOf: entry.seq, also });
+        undoEntry = await update(entry.table, entry.id, changes, {
+          before: entry.after,
+          undoOf: entry.seq,
+          also,
+          ...(mode === 'on' && fresh ? { fresh } : {}),
+        });
       entry.undone = true;
       return { entry, skipped, undoEntry, busy: false };
     } finally {
@@ -1167,5 +1256,13 @@ export function createWriter({
     },
     /** Retire une colonne pour la session (refus constaté ailleurs). */
     refuse: (table, col, reason = 'acl') => disabled.set(key(table, col), reason),
+    /**
+     * Métadonnées relues (à chaque relecture) : une colonne devenue formule, absente ou d'un autre type est retirée
+     * à son tour. Rien n'est jamais rétabli en cours de session ; métadonnées illisibles : rien ne change.
+     */
+    recheckColumns: (cols) => {
+      if (!cols) return;
+      for (const [k, r] of checkColumns(cols)) if (!disabled.has(k)) disabled.set(k, r);
+    },
   };
 }

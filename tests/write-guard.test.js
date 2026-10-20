@@ -132,6 +132,7 @@ const FROZEN = {
       'progression',
       'projet',
       'statut',
+      'tags',
       'titre',
       'type',
     ],
@@ -163,13 +164,14 @@ const FROZEN = {
       'Projets',
       'Responsable',
       'Statut',
+      'tags',
     ],
     add: ['Contributeurs', 'Debut', 'Description', 'Fin', 'Nom_du_chantier', 'Projets', 'Responsable', 'Statut'],
   },
   // Lot 2d : personnes ISD (Domaine seulement à la création, forcé à l'ISD) et indisponibilités
   Team: {
-    update: ['actif', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
-    add: ['Domaine', 'actif', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
+    update: ['actif', 'aph', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
+    add: ['Domaine', 'actif', 'aph', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
   },
   Disponibilites: {
     update: ['commentaire', 'dateDebut', 'dateFin', 'dispo', 'type'],
@@ -192,10 +194,14 @@ test('liste blanche figée : Tasks, Chantiers, Team et Disponibilites (lots 2a �
     [...new Set([...o.update, ...o.add])].map((c) => `${t}.${c}`),
   );
   assert.deepEqual(Object.keys(EXPECTED_TYPES).sort(), all.sort());
-  // Ni tags (2e), ni priorité des chantiers (Q5), ni colonnes hors formulaire
-  for (const c of ['tags', 'estimationH', 'tempsPasse', 'manualSort', 'subtasks', 'couleur'])
+  // Tags (2e) en mise à jour seulement ; ni priorité des chantiers (Q5), ni colonnes hors formulaire
+  assert.ok(WRITABLE.Tasks.update.includes('tags') && !WRITABLE.Tasks.add.includes('tags'));
+  assert.ok(WRITABLE.Chantiers.update.includes('tags') && !WRITABLE.Chantiers.add.includes('tags'));
+  assert.equal(EXPECTED_TYPES['Tasks.tags'], 'ChoiceList');
+  assert.equal(EXPECTED_TYPES['Chantiers.tags'], 'ChoiceList');
+  for (const c of ['estimationH', 'tempsPasse', 'manualSort', 'subtasks', 'couleur'])
     assert.ok(!WRITABLE.Tasks.update.includes(c) && !WRITABLE.Tasks.add.includes(c), c);
-  for (const c of ['Priorite', 'tags', 'Completion', 'Livrables', 'Perimetre', 'dependDe', 'manualSort'])
+  for (const c of ['Priorite', 'Completion', 'Livrables', 'Perimetre', 'dependDe', 'manualSort'])
     assert.ok(!WRITABLE.Chantiers.update.includes(c) && !WRITABLE.Chantiers.add.includes(c), c);
   // Team : ni avatar, couleur, indispos (hors formulaire), ni Domaine en mise à jour ; jamais de suppression (Q9)
   for (const c of ['avatar', 'couleur', 'indispos', 'manualSort'])

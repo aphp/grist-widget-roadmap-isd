@@ -101,6 +101,12 @@ input[type='radio']:focus ~ label::before,
   color: var(--badge-error-text);
   background-color: var(--badge-error-bg);
 }
+/* Personne estimation (Team.aph) : badge discret, plus petit que le texte qui l'accompagne */
+.est-badge {
+  vertical-align: middle;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
 .fr-badge--purple-glycine {
   color: var(--badge-purple-text);
   background-color: var(--badge-purple-bg);
@@ -283,6 +289,9 @@ input[type='radio']:focus ~ label::before,
   transition:
     transform var(--duration-base) ease-out,
     visibility 0s linear var(--duration-base);
+}
+.drawer__content {
+  display: contents;
 }
 .drawer[data-open='true'] {
   transform: none;

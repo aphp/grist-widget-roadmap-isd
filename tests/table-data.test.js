@@ -55,6 +55,7 @@ test('colonnes : catégorie, projet, chantier, tâche, sous-tâche, statut, date
     'etpOther',
     'categorie',
     'requester',
+    'tags',
     'sousTache',
   ]);
   // Par défaut : Catégorie, Demandeur et ETP par profil masqués (menu Colonnes)

@@ -1571,6 +1571,173 @@ for (const query of [
   );
 }
 
+/** Clavier dans la recherche des tags (Entrée, flèches, Échap, Retour arrière). */
+const tagKey = (key) =>
+  w(
+    `D.getElementById('tf-tags').dispatchEvent(new W.KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); return true;`,
+  );
+const tagChips = () =>
+  w(
+    `return [...D.querySelectorAll('[data-field="tags"] .tf-tagchip')].map((c) => [c.querySelector('.tf-chip__text').firstChild.textContent, c.classList.contains('tf-tagchip--undeclared')]);`,
+  );
+
+test(
+  'tags (2e) : tâche, ajout d’un tag existant au clavier et d’un nom nouveau non déclaré, puis retrait ; lots exacts',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    const id = await openForm();
+    assert.deepEqual(await tagChips(), []);
+    // Recherche sans accents ni casse : « ATEL » propose « atelier », Entrée l'ajoute
+    await w(`D.getElementById('tf-tags').focus(); return true;`);
+    await typeIn('#tf-tags', 'ATEL');
+    await until(`!D.getElementById('tf-tags-list').hidden`);
+    assert.equal(await w(`return D.getElementById('tf-tags').getAttribute('aria-expanded');`), 'true');
+    assert.match(await w(`return D.getElementById('tf-tags-opt-0').textContent;`), /atelier/);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    assert.equal(await w(`return D.activeElement.id;`), 'tf-tags');
+    // Nom nouveau : dernière option « Affecter le nouveau tag », atteinte aux flèches ; Échap ferme la liste seule
+    await typeIn('#tf-tags', '  Tag   neuf ');
+    await until(`D.querySelector('.tf-tagopt--create')`);
+    await tagKey('Escape');
+    await until(`D.getElementById('tf-tags-list').hidden`);
+    assert.equal(await w(`return Boolean(D.getElementById('task-form'));`), true);
+    await tagKey('ArrowDown');
+    await until(`!D.getElementById('tf-tags-list').hidden`);
+    await w(
+      `const n = D.querySelectorAll('.tf-tagopt').length; for (let i = 1; i < n; i++) D.getElementById('tf-tags').dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); return true;`,
+    );
+    assert.equal(
+      await w(`return D.getElementById(D.getElementById('tf-tags').getAttribute('aria-activedescendant')).className;`),
+      'tf-tagopt is-active tf-tagopt--create',
+    );
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 2`);
+    // Tags des tâches : aucun choix déclaré dans la Feuille, tous marqués « non déclaré »
+    assert.deepEqual(await tagChips(), [
+      ['atelier', true],
+      ['Tag neuf', true],
+    ]);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { tags: ['L', 'atelier', 'Tag neuf'] }]]);
+    // En lecture : pastilles dans la fiche ; puis retrait de « atelier » (bouton de la pastille)
+    await until(`D.querySelector('.drawer__body .tf-tagchip')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('task-form')`);
+    await clickOn('[data-remove-tag="0"]');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    // Retour arrière dans la recherche vide : retire le dernier tag ; Annuler les modifications le rend
+    await tagKey('Backspace');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 0`);
+    await typeIn('#tf-tags', 'Tag neuf');
+    await until(`D.querySelector('.tf-tagopt')`);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 2`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { tags: ['L', 'Tag neuf'] }]]);
+  },
+);
+
+test(
+  'tags (2e) : chantier, tag choisi à la souris et tag retiré ; choix déclaré et non déclaré distingués',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await w(`D.querySelector('.view [data-task]').click(); return true;`);
+    await until(`D.querySelector('.dt-crumbs [data-ref-table="Chantiers"]')`);
+    await clickOn('.dt-crumbs [data-ref-table="Chantiers"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('chantier-form')`);
+    const id = await w(`return Number(D.getElementById('chantier-form').dataset.chantierId);`);
+    // « Intégration de données » est un choix déclaré de Chantiers.tags
+    assert.deepEqual(await tagChips(), [['Intégration de données', false]]);
+    // Clic dans la recherche : liste des tags des chantiers (pas ceux des tâches)
+    await clickOn('#tf-tags');
+    await until(`!D.getElementById('tf-tags-list').hidden`);
+    const opts = await w(`return [...D.querySelectorAll('.tf-tagopt__name')].map((x) => x.textContent);`);
+    assert.deepEqual(opts, ['Projet pilote']);
+    await w(
+      `const o = D.querySelector('.tf-tagopt'); o.dispatchEvent(new W.MouseEvent('mousedown', { bubbles: true, cancelable: true })); o.click(); return true;`,
+    );
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 2`);
+    await clickOn('[data-remove-tag="0"]');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    assert.deepEqual(await tagChips(), [['Projet pilote', true]]);
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Chantiers', id, { tags: ['L', 'Projet pilote'] }]]);
+  },
+);
+
+test('tags (2e), mode essai : l’ajout est noté dans le journal, rien n’est envoyé', { skip: SKIP }, async () => {
+  await open('?edition=essai');
+  await openForm();
+  await w(`D.getElementById('tf-tags').focus(); return true;`);
+  await typeIn('#tf-tags', 'essai');
+  await until(`D.querySelector('.tf-tagopt--create')`);
+  await tagKey('Enter');
+  await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+  await clickOn('#btn-form-save');
+  await until(`!D.getElementById('task-form')`);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  assert.match(await w(`return D.getElementById('btn-edit-pill').textContent;`), /Mode essai · 1/);
+});
+
+test(
+  'tags (2e) : cellule illisible montrée et bloquée, remplacée seulement après confirmation ; annonce lue',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    const id = await w(`return Number(D.querySelector('.view [data-task]').dataset.task);`);
+    await w(
+      `await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { tags: 'texte libre' }]]); return true;`,
+    );
+    await sleep(800);
+    assert.equal(await openForm(), id);
+    assert.equal(await w(`return D.getElementById('tf-tags').disabled;`), true);
+    assert.match(await w(`return D.querySelector('.tf-tags__unreadable').textContent;`), /texte libre/);
+    await clickOn('#tf-tags-replace');
+    await until(`D.getElementById('tf-tags-replace-confirm')`);
+    await clickOn('#tf-tags-replace-confirm');
+    await until(`!D.getElementById('tf-tags').disabled`);
+    // Annonces : région persistante du panneau (#drawer-live), dans le dialogue mais hors du contenu redessiné ;
+    // le texte change sur le même nœud, resté connecté à chaque rendu
+    assert.equal(
+      await w(
+        `W.__live = D.getElementById('drawer-live'); return D.getElementById('app-detail').contains(W.__live) && !W.__live.closest('.drawer__content') && W.__live.getAttribute('aria-live');`,
+      ),
+      'polite',
+    );
+    await w(
+      `W.__connected = []; new W.MutationObserver(() => W.__connected.push(W.__live.isConnected)).observe(W.__live, { childList: true, characterData: true, subtree: true }); D.getElementById('tf-tags').focus(); return true;`,
+    );
+    await typeIn('#tf-tags', 'remplacé');
+    await until(`D.querySelector('.tf-tagopt--create')`);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    await until(`/« remplacé » ajouté/.test(W.__live.textContent)`);
+    await clickOn('[data-remove-tag="0"]');
+    await until(`/« remplacé » retiré/.test(W.__live.textContent)`);
+    await typeIn('#tf-tags', 'remplacé');
+    await until(`D.querySelector('.tf-tagopt')`);
+    await tagKey('Enter');
+    await until(`/« remplacé » ajouté/.test(W.__live.textContent)`);
+    assert.equal(await w(`return D.getElementById('drawer-live') === W.__live && W.__live.isConnected;`), true);
+    // Chaque changement de texte (vidé puis posé, trois messages) a eu lieu sur le nœud connecté
+    const seen = await w(`return W.__connected;`);
+    assert.ok(seen.length >= 3 && seen.every(Boolean), JSON.stringify(seen));
+    assert.equal(await w(`return D.getElementById('tf-tags-label').getAttribute('tabindex');`), '-1');
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 2`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { tags: ['L', 'remplacé'] }]]);
+  },
+);
+
 test('statistiques : charge par profil tracée sur 12 mois, légende et tableau de valeurs', { skip: SKIP }, async () => {
   await open('');
   await w(`D.getElementById('tab-stats').click(); return true;`);
@@ -1849,23 +2016,43 @@ test(
   },
 );
 
+/** Lectures complètes faites par le widget (la table Projects n'est lue que par fetchAll, jamais par fetchRow). */
+const fullReads = () => w(`return W.__reads.filter((t) => t === 'Projects').length;`);
+
+/**
+ * Attend la fin de tout ce qu'une écriture déclenche, sur l'état et non sur une durée : l'écriture n° n est notée,
+ * les deux relectures qui la suivent ont eu lieu (après l'écriture, puis onRecords du faux Grist, à 500 ms) et
+ * aucune n'est en cours. Une relecture tardive redessinerait la vue et fermerait un menu ouvert entre-temps.
+ */
+const writeSettled = (n, readsBefore) =>
+  until(
+    `W.__writes.length === ${n} && W.__reads.filter((t) => t === 'Projects').length >= ${readsBefore + 2} && !D.getElementById('btn-refresh')?.disabled`,
+  );
+
+/** Focalise la première entrée du menu ouvert qui n'est pas le statut actuel ; attend que le focus y soit. */
+async function focusOtherStatus() {
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  const value = await w(
+    `const b = [...D.querySelectorAll('#qs-menu [data-qs-value]')].find((x) => x.getAttribute('aria-checked') !== 'true'); b.focus(); return b.dataset.qsValue;`,
+  );
+  await until(`D.activeElement?.matches('#qs-menu [data-qs-value="${value}"]')`);
+  return value;
+}
+
 test('menu de statut (P-UX-6) : Entrée et Espace sur une entrée écrivent ce statut', { skip: SKIP }, async () => {
   const id = await openTableMenu(EDIT);
-  await w(
-    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
-  );
-  const first = await w(`return D.activeElement.dataset.qsValue;`);
+  const first = await focusOtherStatus();
+  let reads = await fullReads();
   await press('Enter');
-  await until(`W.__writes.length === 1 && D.activeElement?.dataset.qsFocus === '${id}'`);
+  await writeSettled(1, reads);
   assert.equal((await writes())[0][0][3].statut, first);
+  // Vue redessinée par les relectures : le focus est revenu au bouton de la ligne, qui rouvre le menu
+  await until(`D.activeElement?.dataset.qsFocus === '${id}' && !D.getElementById('qs-menu')`);
   await press('Enter');
-  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
-  await w(
-    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
-  );
-  const second = await w(`return D.activeElement.dataset.qsValue;`);
+  const second = await focusOtherStatus();
+  reads = await fullReads();
   await press(' ');
-  await until(`W.__writes.length === 2`);
+  await writeSettled(2, reads);
   assert.equal((await writes())[1][0][3].statut, second);
 });
 
@@ -1960,6 +2147,190 @@ test(
     // Toujours là après la relecture qui suit l'annulation
     await sleep(500);
     assert.equal(await w(`return D.activeElement?.id;`), `kc-${id}`);
+  },
+);
+
+test(
+  'tags (2e) : relecture impossible, « Enregistrer sans vérifier » n’envoie jamais les tags et le dit',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    const id = await openForm();
+    await w(`D.getElementById('tf-tags').focus(); return true;`);
+    await typeIn('#tf-tags', 'sans relecture');
+    await until(`D.querySelector('.tf-tagopt--create')`);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    // Tags seuls : pas de bouton « sans vérifier », message clair
+    await w(`W.__lectureEchoue = true; return true;`);
+    await clickOn('#btn-form-save');
+    await until(`D.getElementById('tf-nocheck-tags')`);
+    assert.match(await w(`return D.getElementById('tf-nocheck-tags').textContent;`), /jamais sans vérification/);
+    assert.equal(await w(`return Boolean(D.querySelector('[data-form="save-nocheck"]'));`), false);
+    // Avec un autre champ : le bouton n'enregistre que ce champ
+    await clickOn('[data-form="nocheck-cancel"]');
+    await typeIn('#tf-titre', 'Titre sans relecture');
+    await clickOn('#btn-form-save');
+    await until(`D.querySelector('[data-form="save-nocheck"]')`);
+    assert.match(await w(`return D.querySelector('[data-form="save-nocheck"]').textContent;`), /sans les tags/);
+    assert.match(await w(`return D.getElementById('tf-nocheck-tags').textContent;`), /ne seront pas enregistrés/);
+    await clickOn('[data-form="save-nocheck"]');
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { titre: 'Titre sans relecture' }]]);
+  },
+);
+
+// ---------- APH (Team.aph) et personne estimation ----------
+
+test(
+  'APH : colonne formule vide de la Feuille, en lecture dans la fiche (raison affichée), absente de la création',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    assert.equal(await w(`return D.querySelectorAll('.tperson__aph').length;`), 0);
+    await clickOn('#btn-person-add');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-nom')`);
+    assert.equal(await w(`return Boolean(D.getElementById('pf-aph'));`), false);
+    await clickOn('#pf-cancel');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').disabled;`), true);
+    assert.match(await w(`return D.getElementById('tf-aph-msgs').textContent;`), /Colonne vide/);
+    // Le reste de la fiche reste modifiable et s'enregistre sans toucher à l'APH
+    await typeIn('#tf-nom', 'Zoé DE modifiée');
+    await clickOn('#btn-form-save');
+    await until(`!D.getElementById('person-form') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [[['UpdateRecord', 'Team', 1, { nom: 'Zoé DE modifiée' }]]]);
+  },
+);
+
+test(
+  'APH : colonne de données, affiché dans la liste et la fiche, modifiable avec contrôle (chiffres seulement)',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
+    assert.equal(await w(`return D.querySelector('[data-aph="1"]').textContent.trim();`), 'APH 1000001');
+    // Personne estimation : badge « Estimation » ; aucune autre personne ne le porte
+    assert.match(await w(`return D.querySelector('[data-aph="19"]').textContent;`), /APH 9999999\s*Estimation/);
+    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 1);
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*1000001/);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').disabled;`), false);
+    await typeIn('#tf-aph', '12a4567');
+    assert.match(await w(`return D.getElementById('tf-aph-msgs').textContent;`), /APH invalide/);
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    await typeIn('#tf-aph', ' 1234568 ');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    await clickOn('#btn-form-save');
+    await until(`!D.getElementById('person-form') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [[['UpdateRecord', 'Team', 1, { aph: '1234568' }]]]);
+    await until(`/APH\\s*1234568/.test(D.getElementById('app-detail').textContent)`);
+    // Création : l'APH est proposé et envoyé nettoyé
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await clickOn('#btn-person-add');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-aph')`);
+    await typeIn('#pf-nom', 'Personne Aph');
+    await change('#pf-role', 'DA');
+    await typeIn('#pf-aph', ' 7000001 ');
+    await clickOn('#pf-submit');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 2`);
+    const [, [add]] = await writes();
+    assert.equal(add[0], 'AddRecord');
+    assert.equal(add[3].aph, '7000001');
+  },
+);
+
+test(
+  'estimation : 3 ETP acceptés pour la personne estimation (badge), refusés pour une autre personne',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
+    await w(`localStorage.removeItem('roadmap-isd.chargesUnit'); return true;`);
+    const id = await openForm();
+    if (await w(`return D.getElementById('tf-type').checked;`))
+      await w(`const c = D.getElementById('tf-type'); c.click(); return true;`);
+    await until(`D.getElementById('tf-dateDebut')`);
+    const setDate = (f, iso) =>
+      w(
+        `const t = D.getElementById('tf-${f}'); t.value = '${iso}'; t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
+      );
+    // 14 jours : 1 ETP = 70 h, 3 ETP = 210 h
+    await setDate('dateDebut', '2026-11-02');
+    await setDate('dateEcheance', '2026-11-15');
+    const pick = (who) =>
+      w(`const s = D.getElementById('tf-assignees');
+        const o = [...s.querySelectorAll('optgroup option')].find((x) => ${who}); s.value = o.value;
+        s.dispatchEvent(new W.Event('change', { bubbles: true })); return Number(o.value);`);
+    const est = await pick(`x.textContent.trim() === 'Estimation DE'`);
+    await until(`D.getElementById('tf-ch-${est}')`);
+    assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est}"] .est-badge'));`));
+    await type(`tf-ch-${est}`, '3');
+    assert.equal(await w(`return D.getElementById('tf-ch-${est}-msg').textContent.trim();`), '');
+    assert.equal(await w(`return D.getElementById('tf-ch-${est}-eq').textContent.trim();`), '= 210 h');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    // Au-delà de 50 ETP : refusé même pour elle
+    await type(`tf-ch-${est}`, '51');
+    assert.match(await w(`return D.getElementById('tf-ch-${est}-msg').textContent;`), /50 ETP maximum/);
+    await type(`tf-ch-${est}`, '3');
+    // Une autre personne : 1 ETP au plus, sans badge
+    const other = await pick(`x.textContent.trim() !== 'Estimation DE'`);
+    await until(`D.getElementById('tf-ch-${other}')`);
+    assert.equal(await w(`return Boolean(D.querySelector('[data-charge="${other}"] .est-badge'));`), false);
+    await type(`tf-ch-${other}`, '3');
+    assert.match(
+      await w(`return D.getElementById('tf-ch-${other}-msg').textContent;`),
+      /1 ETP maximum par personne \(soit 70 h sur la période\)/,
+    );
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    await type(`tf-ch-${other}`, '1');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`W.__writes.length === 1`);
+    const [[[name, table, rowId, cells]]] = await writes();
+    assert.deepEqual([name, table, rowId], ['UpdateRecord', 'Tasks', id]);
+    assert.deepEqual(JSON.parse(cells.charges), [
+      { teamId: est, heures: 210 },
+      { teamId: other, heures: 70 },
+    ]);
+  },
+);
+
+test(
+  'estimation : l’APH d’estimation ne se pose ni ne se retire depuis le widget (fiche en lecture, saisie refusée)',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
+    await clickOn('[data-person="19"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').readOnly;`), true);
+    assert.match(
+      await w(`return D.getElementById('tf-aph-help').textContent;`),
+      /La personne d’estimation se désigne directement dans la Feuille/,
+    );
+    await clickOn('#btn-form-cancel');
+    await until(`D.getElementById('btn-person-active')`);
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    await typeIn('#tf-aph', '9999999');
+    assert.match(
+      await w(`return D.getElementById('tf-aph-msgs').textContent;`),
+      /La personne d’estimation se désigne directement dans la Feuille/,
+    );
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
   },
 );
 

@@ -5,6 +5,7 @@
  */
 import { formatDateFr, isoOfDay } from './dates.js';
 import { ETP_SPLIT, taskEtp, taskEtpByRole, taskPaths, taskPeopleRows, taskPriority } from './kanban-data.js';
+import { declaredTags } from './tags-edit.js';
 import { displayRole } from './team-directory.js';
 import { label, statusLabel } from '../labels.js';
 
@@ -27,6 +28,7 @@ export const COLUMNS = Object.freeze([
   'etpOther',
   'categorie',
   'requester',
+  'tags',
   'sousTache',
 ]);
 
@@ -49,7 +51,7 @@ export const HIERARCHY_COLUMNS = Object.freeze(['categorie', 'projet', 'chantier
  * la fiche) et « Sous-tâche » (une sous-tâche est une ligne à part entière, marquée « ↳ »).
  */
 export const DISPLAY_COLUMNS = Object.freeze(COLUMNS.filter((c) => c !== 'tache' && c !== 'sousTache'));
-/** Colonnes visibles par défaut (Catégorie, Demandeur et ETP par profil : via le menu Colonnes). */
+/** Colonnes visibles par défaut (Catégorie, Demandeur, Tags et ETP par profil : via le menu Colonnes). */
 export const DEFAULT_COLUMNS = Object.freeze([
   'tache',
   'chantier',
@@ -108,6 +110,7 @@ function rowOf(model, node, task) {
   const path = [...ancestors(model, node).reverse(), node];
   const at = (kind) => path.find((n) => n.kind === kind);
   const people = taskPeopleRows(model, task).filter((r) => r.person);
+  const declared = declaredTags(model, 'Tasks');
   return {
     taskId: task.id,
     key: node.key,
@@ -141,6 +144,8 @@ function rowOf(model, node, task) {
     priority: taskPriority(model, task),
     milestone: task.type === 'jalon',
     requester: model.projects.get(task.projectId)?.demandeur ?? '',
+    tags: (task.tags ?? []).join(', '),
+    tagItems: (task.tags ?? []).map((value) => ({ value, declared: declared.includes(value) })),
   };
 }
 

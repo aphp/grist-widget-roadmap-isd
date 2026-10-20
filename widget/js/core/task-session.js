@@ -8,6 +8,7 @@ import { detectConflicts, mergeChargesChange } from './conflicts.js';
 import { DEFAULT_TIMEOUT_MS, WriteFailed, WriteRefused, withTimeout } from './grist-writer.js';
 import { chantierStatusChanges, reattachRows, taskLinksFromTable } from './chantier-form.js';
 import { moveRows } from './create-form.js';
+import { mergeTags, mergeTagsChange } from './tags-edit.js';
 import { diffDraft, statusChanges } from './task-form.js';
 
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
@@ -41,6 +42,9 @@ async function unknownOutcome(fetchRow, id, ms, changes) {
  *   chargesBase : avec un lot arbitré qui contient les charges, cellule de l'ouverture du formulaire : la ligne est
  *   relue et la saisie refusionnée personne par personne juste avant l'envoi (la saisie l'emporte sur une même
  *   personne, choix déjà fait ; les autres modifications faites entre-temps survivent).
+ *   tagsSeen : avec un lot arbitré qui contient les tags, cellule montrée dans la fenêtre de conflit : la ligne est
+ *   relue et la saisie refusionnée (mergeTags) juste avant l'envoi. tagsReplace : contenu d'une cellule de tags
+ *   illisible dont l'utilisateur a confirmé le remplacement (sinon le writer refuse d'écrire les tags).
  *   timeoutMs : délai maximal de la relecture (l'envoi a le sien, dans le writer).
  *   table : 'Tasks' (défaut) ou 'Chantiers' ; diff : différences du brouillon (diffDraft par défaut) ; also : lignes
  *   dérivées envoyées dans le même lot (tâches rattachées à un autre projet du chantier) ; readTable et reattachTo :
@@ -61,7 +65,10 @@ export async function runSave(snap) {
   if (!keys.length) return { kind: 'nothing' };
   let before = snap.before ?? pick(base, keys);
   let period; // dates de la ligne relue : borne de 1 ETP par personne (R4)
-  if (writer.mode === 'on' && snap.changes && snap.chargesBase !== undefined && 'charges' in changes) {
+  let source = base; // ligne d'après laquelle le lot est envoyé (cellule de tags illisible ou non)
+  const rechecksCharges = snap.chargesBase !== undefined && 'charges' in changes;
+  const rechecksTags = snap.tagsSeen !== undefined && 'tags' in changes;
+  if (writer.mode === 'on' && snap.changes && (rechecksCharges || rechecksTags)) {
     let fresh;
     try {
       fresh = await readRow(snap.fetchRow, taskId, ms);
@@ -69,29 +76,40 @@ export async function runSave(snap) {
       return { kind: 'reread-failed', error: String(err?.message ?? err) };
     }
     if (fresh === null) return { kind: 'missing' };
-    // Cellule que l'utilisateur a vue dans la fenêtre de conflit (ou à l'ouverture) et ce qu'il a choisi d'écrire
-    // par rapport à elle (sa saisie l'emporte sur une même personne : choix déjà fait)
-    const seen = snap.chargesSeen !== undefined ? snap.chargesSeen : snap.chargesBase;
-    const decided = mergeCharges(snap.chargesBase, changes.charges, seen);
-    let target;
-    if (!decided.ok) {
-      // Cellule illisible à l'ouverture ou dans la fenêtre (remplacement confirmé) : seulement si elle n'a pas
-      // changé depuis ; sinon nouvelle fenêtre, rien n'est envoyé
-      if (!sameCharges(seen, fresh.charges))
-        return { kind: 'conflict', cols: ['charges'], fresh, mine: { charges: changes.charges } };
-      target = changes.charges;
-    } else {
-      // Modifications faites depuis la fenêtre : refusionnées ; cellule devenue illisible (R1) ou même personne
-      // modifiée entre-temps (R2) : nouvelle fenêtre de conflit pour les charges, rien n'est envoyé
-      const m = mergeCharges(seen, decided.raw, fresh.charges);
-      if (!m.ok || m.conflicts.length)
-        return { kind: 'conflict', cols: ['charges'], fresh, mine: { charges: m.ok ? m.raw : decided.raw } };
-      target = m.raw;
+    source = fresh;
+    if (rechecksCharges) {
+      // Cellule que l'utilisateur a vue dans la fenêtre de conflit (ou à l'ouverture) et ce qu'il a choisi d'écrire
+      // par rapport à elle (sa saisie l'emporte sur une même personne : choix déjà fait)
+      const seen = snap.chargesSeen !== undefined ? snap.chargesSeen : snap.chargesBase;
+      const decided = mergeCharges(snap.chargesBase, changes.charges, seen);
+      let target;
+      if (!decided.ok) {
+        // Cellule illisible à l'ouverture ou dans la fenêtre (remplacement confirmé) : seulement si elle n'a pas
+        // changé depuis ; sinon nouvelle fenêtre, rien n'est envoyé
+        if (!sameCharges(seen, fresh.charges))
+          return { kind: 'conflict', cols: ['charges'], fresh, mine: { charges: changes.charges } };
+        target = changes.charges;
+      } else {
+        // Modifications faites depuis la fenêtre : refusionnées ; cellule devenue illisible (R1) ou même personne
+        // modifiée entre-temps (R2) : nouvelle fenêtre de conflit pour les charges, rien n'est envoyé
+        const m = mergeCharges(seen, decided.raw, fresh.charges);
+        if (!m.ok || m.conflicts.length)
+          return { kind: 'conflict', cols: ['charges'], fresh, mine: { charges: m.ok ? m.raw : decided.raw } };
+        target = m.raw;
+      }
+      changes = { ...changes, charges: target };
+      if (sameCharges(changes.charges, fresh.charges)) delete changes.charges;
+      else before = { ...before, charges: fresh.charges };
+      period = { start: fresh.dateDebut, end: fresh.dateEcheance };
     }
-    changes = { ...changes, charges: target };
-    if (sameCharges(changes.charges, fresh.charges)) delete changes.charges;
-    else before = { ...before, charges: fresh.charges };
-    period = { start: fresh.dateDebut, end: fresh.dateEcheance };
+    if (rechecksTags) {
+      // Tags : la saisie, déjà fusionnée sur la cellule vue dans la fenêtre, est refusionnée sur la cellule relue
+      // juste avant l'envoi (un tag ajouté ou retiré ailleurs pendant la fenêtre survit)
+      const tags = mergeTags(snap.tagsSeen, changes.tags, fresh.tags);
+      changes = { ...changes, tags };
+      if (JSON.stringify(tags) === JSON.stringify(fresh.tags ?? [])) delete changes.tags;
+      else before = { ...before, tags: fresh.tags };
+    }
     keys = Object.keys(changes);
     if (!keys.length) return { kind: 'nothing' };
     before = pick(before, keys);
@@ -104,9 +122,11 @@ export async function runSave(snap) {
       return { kind: 'reread-failed', error: String(err?.message ?? err) };
     }
     if (fresh === null) return { kind: 'missing' };
-    const merged = mergeChargesChange(base, fresh, changes);
-    const others = { ...changes };
+    // Tags modifiés aussi dans la Feuille : fusion en ensemble (ajouts et retraits de chacun), jamais de conflit
+    const merged = mergeChargesChange(base, fresh, mergeTagsChange(base, fresh, changes));
+    const others = { ...merged.changes };
     delete others.charges;
+    delete others.tags;
     const cols = detectConflicts(base, fresh, others);
     if (merged.conflict) cols.push('charges');
     if (cols.length)
@@ -116,7 +136,11 @@ export async function runSave(snap) {
     if (!keys.length) return { kind: 'nothing' };
     before = pick(fresh, keys);
     period = { start: fresh.dateDebut, end: fresh.dateEcheance };
+    source = fresh;
   }
+  // Cellule de tags illisible : jamais réécrite sans la confirmation de remplacement de ce contenu (writer)
+  if ('tags' in changes && typeof source?.tagsUnreadable === 'string')
+    before = { ...before, tagsUnreadable: source.tagsUnreadable };
   try {
     let also = snap.also?.length ? snap.also : undefined;
     // Projets d'un chantier modifiés : ses tâches (et leurs sous-tâches) à rattacher sont recalculées sur la table
@@ -131,7 +155,17 @@ export async function runSave(snap) {
       const plan = reattachRows(taskLinksFromTable(raw), taskId, changes.Projets, snap.reattachTo ?? null);
       also = plan.also.length ? plan.also : undefined;
     }
-    return { kind: 'saved', entry: await writer.update(table, taskId, changes, { before, period, also }) };
+    return {
+      kind: 'saved',
+      entry: await writer.update(table, taskId, changes, {
+        before,
+        period,
+        also,
+        replaceTags: snap.tagsReplace,
+        // Ligne relue pour cet envoi : le writer y contrôle la cellule de tags sans relire la table
+        ...(source !== base ? { fresh: source } : {}),
+      }),
+    };
   } catch (error) {
     if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
     if (error instanceof WriteFailed && error.kind === 'timeout')
@@ -146,16 +180,24 @@ export async function runSave(snap) {
  * charges partent avec chargesBase, pour être refusionnées sur la ligne relue au moment de l'envoi.
  * chargesSeen : cellule montrée dans la fenêtre ; une modification de la même personne faite après elle rouvre la
  * fenêtre au lieu d'être écrasée en silence.
- * @returns {{changes:object, before:object, chargesBase:string|null|undefined, chargesSeen:string|null|undefined}}
+ * tagsSeen : cellule de tags montrée dans la fenêtre (refusion sur la ligne relue à l'envoi).
+ * @returns {{changes:object, before:object, chargesBase:string|null|undefined, chargesSeen:string|null|undefined,
+ *   tagsSeen?:string[]}}
  */
 export function conflictBatch(oldBase, draft, fresh, choices, diff = diffDraft) {
   const changes = {};
   for (const [c, v] of Object.entries(diff(oldBase, draft))) if (choices[c] !== 'theirs') changes[c] = v;
+  // Tags : la saisie (ajouts, retraits) est refusionnée sur la cellule relue, jamais écrite par-dessus
+  if ('tags' in changes) {
+    changes.tags = mergeTags(oldBase.tags, changes.tags, fresh.tags);
+    if (JSON.stringify(changes.tags) === JSON.stringify(fresh.tags ?? [])) delete changes.tags;
+  }
   return {
     changes,
     before: pick(fresh, Object.keys(changes)),
     chargesBase: oldBase.charges,
     chargesSeen: fresh.charges,
+    ...('tags' in changes ? { tagsSeen: fresh.tags ?? [] } : {}),
   };
 }
 

@@ -498,3 +498,27 @@
   border-style: dashed;
   background: var(--color-surface);
 }
+
+/* Colonne « Tags » (en option) : non déclaré = gris en pointillés, comme dans les fiches */
+.tbl-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-1);
+  max-width: 16rem;
+}
+.tbl-tagchip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-accent-text);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tbl-tagchip--undeclared {
+  border-style: dashed;
+  border-color: var(--color-text-muted);
+  background: var(--color-surface-2);
+}

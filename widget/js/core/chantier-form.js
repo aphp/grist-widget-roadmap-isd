@@ -1,11 +1,12 @@
 /**
  * Formulaire d'un chantier (lot 2c) : brouillon, différences, statut rapide, validation, rattachement des tâches
  * quand un projet est retiré, demandeurs lus des projets (Q12 : pas de colonne propre), droit de modifier.
- * Fonctions pures, sans écriture (l'envoi est grist-writer.js). Priorité en lecture (Q5), tags au lot 2e.
+ * Fonctions pures, sans écriture (l'envoi est grist-writer.js). Priorité en lecture (Q5) ; tags affectés (lot 2e).
  *
  * Le brouillon contient les valeurs du modèle des colonnes modifiables : jours (Debut, Fin), identifiants
  * (Responsable), listes d'identifiants (Projets, Contributeurs) et textes.
  */
+import { mergeTags } from './tags-edit.js';
 import { sameValue } from './write-encode.js';
 
 /** Champs visibles par défaut, puis ceux de « Plus de champs ». */
@@ -17,6 +18,7 @@ export const CHANTIER_MAIN = Object.freeze([
   'Fin',
   'Responsable',
   'Contributeurs',
+  'tags',
 ]);
 export const CHANTIER_MORE = Object.freeze(['Description', 'Objectifs_resultats_attendus', 'Criteres_de_succes']);
 export const CHANTIER_FIELDS = Object.freeze([...CHANTIER_MAIN, ...CHANTIER_MORE]);
@@ -44,10 +46,17 @@ export function diffChantier(base, draft) {
   return out;
 }
 
-/** Nouvelle base (ligne relue) : les champs que l'utilisateur n'a pas touchés suivent la Feuille. */
+/**
+ * Nouvelle base (ligne relue) : les champs que l'utilisateur n'a pas touchés suivent la Feuille ; les tags saisis
+ * (ajouts, retraits) sont appliqués à la cellule relue.
+ */
 export function rebaseChantier(oldBase, draft, fresh) {
   const out = { ...draft };
-  for (const f of CHANTIER_FIELDS) if (f in fresh && sameValue(oldBase[f], draft[f])) out[f] = copy(fresh[f]);
+  for (const f of CHANTIER_FIELDS) {
+    if (!(f in fresh)) continue;
+    if (sameValue(oldBase[f], draft[f])) out[f] = copy(fresh[f]);
+    else if (f === 'tags') out.tags = mergeTags(oldBase.tags, draft.tags, fresh.tags);
+  }
   return out;
 }
 

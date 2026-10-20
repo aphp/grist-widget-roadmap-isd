@@ -14,6 +14,7 @@
 import { etpToHours, hoursToEtp } from './capacity.js';
 import { taskEtpByRole } from './kanban-data.js';
 import { EncodeError, parseNumberFr } from './write-encode.js';
+import { ESTIMATION_MAX_ETP } from './estimation.js';
 
 /** Pas de stockage des heures. */
 export const HOURS_STEP = 0.5;
@@ -23,6 +24,8 @@ export const MIN_HOURS = 0.25;
 export const MAX_ETP = 1;
 /** Sans période connue, borne de bon sens : 2 000 h par personne et par tâche. */
 export const MAX_HOURS = 2000;
+// Personne estimation (Team.aph, titulaire unique) : seule exemptée de la borne de 1 ETP, voir estimation.js
+export { ESTIMATION_APH, ESTIMATION_MAX_ETP, isEstimationAph, isEstimationPerson } from './estimation.js';
 
 /** Heures arrondies à 0,5 h près. */
 export const roundHours = (h) => Math.round(h / HOURS_STEP) * HOURS_STEP;
@@ -33,9 +36,12 @@ export function periodDays(start, end) {
   return end - start + 1;
 }
 
-/** Heures maximales d'une personne : 1 ETP sur la période (5 h par jour calendaire) ; 2 000 h sans dates. */
-export function maxHours(days) {
-  return days ? roundHours(etpToHours(MAX_ETP, days)) : MAX_HOURS;
+/**
+ * Heures maximales d'une personne : 1 ETP sur la période (5 h par jour calendaire) ; 2 000 h sans dates. La
+ * personne estimation (estimation vrai) : ESTIMATION_MAX_ETP sur la période, 2 000 h sans dates.
+ */
+export function maxHours(days, estimation = false) {
+  return days ? roundHours(etpToHours(estimation ? ESTIMATION_MAX_ETP : MAX_ETP, days)) : MAX_HOURS;
 }
 
 /** teamId d'une entrée (entier > 0, ou chaîne de chiffres), sinon null. Même règle que charges.js. */
@@ -332,15 +338,17 @@ export function mergeCharges(baseRaw, mineRaw, theirsRaw) {
 /**
  * Contrôle strict avant écriture (grist-writer.js) : tableau JSON ; toute entrée dont le TEXTE ne figure pas tel
  * quel dans la cellule d'avant (entrée nouvelle ou modifiée) est un objet encodé compact, avec un teamId entier
- * existant dans Team et des heures finies, ≥ 0, au pas de 0,5 h et d'au plus 1 ETP sur la période (maxHours).
- * Les entrées recopiées octet par octet (même invalides, même au-dessus de la borne) sont admises.
+ * existant dans Team et des heures finies, ≥ 0, au pas de 0,5 h et d'au plus 1 ETP sur la période (maxHours ;
+ * ESTIMATION_MAX_ETP pour la personne estimation). Les entrées recopiées octet par octet (même invalides, même
+ * au-dessus de la borne) sont admises.
  * @param {string} value cellule à écrire
  * @param {string|null|undefined} before cellule d'avant (relue)
  * @param {(id:number) => boolean} teamExists
  * @param {number|null} [days] jours calendaires de la période de la tâche (après la modification)
+ * @param {(id:number) => boolean} [isEstimation] la personne est-elle la personne estimation (Team.aph) ?
  * @returns {string|null} raison du refus, ou null
  */
-export function chargesWriteProblem(value, before, teamExists, days = null) {
+export function chargesWriteProblem(value, before, teamExists, days = null, isEstimation = null) {
   if (typeof value !== 'string') return 'texte JSON attendu';
   let data;
   try {
@@ -366,7 +374,10 @@ export function chargesWriteProblem(value, before, teamExists, days = null) {
     if (typeof e.heures !== 'number' || !Number.isFinite(e.heures) || e.heures < 0)
       return 'heures : nombre fini positif ou nul attendu';
     if (roundHours(e.heures) !== e.heures) return 'heures : pas de 0,5 h attendu';
-    if (e.heures > maxHours(days)) return `heures : au plus ${maxHours(days)} h (1 ETP sur la période)`;
+    const estimation = typeof isEstimation === 'function' && isEstimation(e.teamId) === true;
+    const max = maxHours(days, estimation);
+    if (e.heures > max)
+      return `heures : au plus ${max} h (${estimation ? ESTIMATION_MAX_ETP : MAX_ETP} ETP sur la période)`;
   }
   return null;
 }
@@ -384,9 +395,12 @@ export function inputValue(heures, unit, days) {
  * @param {number|null} days jours calendaires de la période
  * @param {number|null} [current] heures actuelles de la ligne : une saisie égale à la valeur affichée les
  *   conserve telles quelles (pas d'arrondi ni de dérive)
- * @returns {{heures:number}|{error:'nombre'|'negatif'|'dates'|'vide'|'decimale'|'petit'|'max', max?:number}}
+ * @param {{estimation?:boolean}} [opts] estimation : personne estimation (borne ESTIMATION_MAX_ETP, erreur
+ *   'maxEstimation' quand la période est connue)
+ * @returns {{heures:number}|{error:'nombre'|'negatif'|'dates'|'vide'|'decimale'|'petit'|'max'|'maxEstimation',
+ *   max?:number}}
  */
-export function hoursFromInput(text, unit, days, current = null) {
+export function hoursFromInput(text, unit, days, current = null, { estimation = false } = {}) {
   let n;
   try {
     n = parseNumberFr(text);
@@ -401,8 +415,8 @@ export function hoursFromInput(text, unit, days, current = null) {
   if (unit !== 'heures' && Math.abs(n * 10 - Math.round(n * 10)) > 1e-9) return { error: 'decimale' };
   const exact = unit === 'heures' ? n : etpToHours(n, days);
   if (n > 0 && exact < MIN_HOURS) return { error: 'petit' };
-  const max = maxHours(days);
-  if (exact > max + 1e-9) return { error: 'max', max };
+  const max = maxHours(days, estimation);
+  if (exact > max + 1e-9) return { error: estimation && days ? 'maxEstimation' : 'max', max };
   return { heures: roundHours(exact) };
 }
 

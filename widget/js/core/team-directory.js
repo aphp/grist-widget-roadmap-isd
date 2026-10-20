@@ -3,6 +3,7 @@
  * Fonctions pures.
  */
 import { hoursToEtp } from './capacity.js';
+import { isEstimationPerson } from './estimation.js';
 import { ISD_ROLES, inIsdTeam, isdDomainOf } from './model.js';
 import { normalize } from './text.js';
 
@@ -144,7 +145,7 @@ export function isdTeamSummary(model) {
  * @param {object} model
  * @param {{query?:string, role?:string|null, includeInactive?:boolean}} [opts]
  *   query : nom, adresse, rôle, équipe (sans accents ni casse) ; role : valeur de Team.role
- * @returns {{id:number, nom:string, email:string, emailValid:boolean, roleText:string, roleLabel:string,
+ * @returns {{id:number, nom:string, email:string, aph:string, estimation:boolean, emailValid:boolean, roleText:string, roleLabel:string,
  *   domaine:string, actif:boolean, isd:boolean, n1:{id:number, nom:string}|null, capaciteHebdo:number|null}[]}
  */
 export function filterUsers(model, { query = '', role = null, includeInactive = false } = {}) {
@@ -161,6 +162,8 @@ export function filterUsers(model, { query = '', role = null, includeInactive = 
         id: p.id,
         nom: p.nom,
         email: p.email ?? '',
+        aph: p.aph ?? '',
+        estimation: isEstimationPerson(model, p.id),
         emailValid: isValidEmail(p.email),
         roleText: p.roleText ?? '',
         roleLabel: roleShort(p.roleText),

@@ -9,6 +9,7 @@ import { chargeRows, mergeCharges, readChargesCell, sameCharges } from './charge
 import { chantierInScope } from './chantier-form.js';
 import { safeLink } from './detail-data.js';
 import { personInScope } from './person-form.js';
+import { mergeTags } from './tags-edit.js';
 import { pickerGroups } from './team-directory.js';
 import { sameValue } from './write-encode.js';
 
@@ -23,6 +24,7 @@ export const MAIN_FIELDS = Object.freeze([
   'Responsable',
   'assignees',
   'charges',
+  'tags',
 ]);
 export const MORE_FIELDS = Object.freeze([
   'description',
@@ -68,7 +70,8 @@ export function diffDraft(base, draft) {
 /**
  * Nouvelle base (ligne relue) : les champs que l'utilisateur n'a pas touchés suivent la Feuille, pour qu'un
  * nouvel essai n'écrase jamais la modification de quelqu'un d'autre ; les champs saisis sont conservés. Les
- * charges saisies sont fusionnées personne par personne avec la cellule relue, quand c'est possible sans conflit.
+ * charges saisies sont fusionnées personne par personne avec la cellule relue, quand c'est possible sans conflit ;
+ * les tags saisis (ajouts, retraits) sont appliqués à la cellule relue.
  */
 export function rebaseDraft(oldBase, draft, fresh) {
   const out = { ...draft };
@@ -78,7 +81,7 @@ export function rebaseDraft(oldBase, draft, fresh) {
     else if (f === 'charges') {
       const m = mergeCharges(oldBase.charges, draft.charges, fresh.charges);
       if (m.ok && !m.conflicts.length) out.charges = m.raw;
-    }
+    } else if (f === 'tags') out.tags = mergeTags(oldBase.tags, draft.tags, fresh.tags);
   }
   return out;
 }

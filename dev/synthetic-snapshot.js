@@ -25,11 +25,15 @@ function columnar(rows, cols) {
   return Object.fromEntries(['id', ...cols].map((c) => [c, rows.map((r) => (c in r ? r[c] : null))]));
 }
 
-/** Colonnes de chaque table : [colId, type, isFormula, choices?]. Formule vide pour Team.capaciteHebdo. */
+/**
+ * Colonnes de chaque table : [colId, type, isFormula, choices?]. Formule vide pour Team.capaciteHebdo et Team.aph
+ * (comme dans la Feuille) ; la variante { aph: true } fait de Team.aph une colonne de données.
+ */
 const SCHEMA = {
   Team: [
     ['nom', 'Text'],
     ['email', 'Text'],
+    ['aph', 'Text', 1],
     ['role', 'Choice', 0, ['Management', 'DS', 'DE', 'DA', 'PO Data']],
     ['actif', 'Bool'],
     ['Domaine', 'Choice', 0, [ISD, OTHER, 'Domaine voisin - VOI']],
@@ -125,11 +129,17 @@ const PEOPLE = [
   ['Yvon Voisin', '', 'Domaine voisin - VOI'],
 ];
 
+/** APH inventé de la personne estimation (même valeur que ESTIMATION_APH de widget/js/core/charges-edit.js). */
+const ESTIMATION_APH = '9999999';
+
 /**
  * @param {Date} [today] jour de référence (les dates sont placées autour de lui)
+ * @param {{aph?:boolean}} [opts] aph : Team.aph colonne de données (au lieu de la formule vide de la Feuille), avec
+ *   des APH inventés et une personne estimation « Estimation DE » (APH 9999999), ajoutée en dernier : les tâches
+ *   du jeu restent les mêmes
  * @returns {Record<string, object>} tables colonnaires, dont _grist_Tables et _grist_Tables_column
  */
-export function syntheticSnapshot(today = new Date()) {
+export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
   const random = rng(20261020);
   const pick = (arr) => arr[Math.floor(random() * arr.length)];
   const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) / 1000;
@@ -148,6 +158,7 @@ export function syntheticSnapshot(today = new Date()) {
     actif,
     Domaine,
     email: `${slug(nom)}@exemple.fr`,
+    aph: aph ? String(1000001 + i) : '',
     capaciteHebdo: 0,
     n_1: Domaine === ISD && role !== 'Management' ? 12 : 0,
   }));
@@ -206,7 +217,8 @@ export function syntheticSnapshot(today = new Date()) {
         Priorite: k === 0 ? 'P3' : '',
         Criteres_de_succes: 'Critère de succès fictif',
         Description: `Description du chantier ${k + 1}`,
-        tags: null,
+        // Tags : un choix déclaré de la colonne et un tag utilisé mais non déclaré (lot 2e)
+        tags: k === 0 ? ['L', 'Intégration de données'] : k === 1 && p.id % 2 ? ['L', 'Projet pilote'] : null,
       };
       chantiers.push(ch);
       // Première carte du Kanban (à faire, échéance la plus proche) : sans personne ni charge, que les tests
@@ -256,6 +268,8 @@ export function syntheticSnapshot(today = new Date()) {
           tempsPasse: 0,
           type: jalon ? 'jalon' : 'tache',
           progression: statut === 'done' ? 100 : (n % 4) * 25,
+          // Tags des tâches (colonne sans choix déclarés) : quelques valeurs utilisées
+          tags: n === 2 ? ['L', 'atelier'] : n === 5 ? ['L', 'qualité', 'atelier'] : null,
           Cree_par: 'createur.fictif',
         };
         tasks.push(parent);
@@ -315,6 +329,19 @@ export function syntheticSnapshot(today = new Date()) {
     Description: 'Chantier fictif sans tâche.',
     tags: null,
   });
+  // Variante APH : la personne estimation (DE de l'ISD), sans tâche ; les tests lui ajoutent une charge
+  if (aph)
+    team.push({
+      id: team.length + 1,
+      nom: 'Estimation DE',
+      role: 'DE',
+      actif: true,
+      Domaine: ISD,
+      email: '',
+      aph: ESTIMATION_APH,
+      capaciteHebdo: 0,
+      n_1: 12,
+    });
 
   const dispos = [
     { id: 1, membre: 1, dateDebut: day(7), dateFin: day(11), dispo: 0, type: 'Congés' },
@@ -350,7 +377,7 @@ export function syntheticSnapshot(today = new Date()) {
       parentId: ti + 1,
       colId,
       type,
-      isFormula,
+      isFormula: aph && t === 'Team' && colId === 'aph' ? 0 : isFormula,
       formula: '',
       widgetOptions: choices ? JSON.stringify({ choices }) : '',
     })),

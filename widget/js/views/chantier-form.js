@@ -1,7 +1,7 @@
 /**
  * Formulaire d'un chantier dans la fiche (lot 2c) : rendu seul (fragments h``), à partir de l'état tenu par
  * ui/task-editor.js. Liste courte (nom, statut, projets, dates, responsable, contributeurs), demandeur lu des
- * projets (Q12), priorité en lecture (Q5), tags en lecture (lot 2e) ; le reste sous « Plus de champs ».
+ * projets (Q12), priorité en lecture (Q5), tags affectés et retirés (lot 2e) ; le reste sous « Plus de champs ».
  */
 import {
   CHANTIER_NAME_MAX,
@@ -19,6 +19,7 @@ import { label } from '../labels.js';
 import { h } from '../ui/kit.js';
 import { addTaskButton, refList, section, statusMenu } from './detail.js';
 import { alertHtml, attrs, field, personChip, personGroups } from './task-form.js';
+import { tagsFieldHtml } from './tags-field.js';
 
 const untitled = (s) => s || label('common.untitled');
 const sel = (on) => raw(on ? 'selected' : '');
@@ -132,9 +133,9 @@ export function chantierFormBody(st, model) {
     ${span ? h`<p class="fr-hint-text tf-inherited">${label('form.field.span', { debut: formatDateFr(span.start), fin: formatDateFr(span.end) })}</p>` : ''}
     ${field(st, 'Responsable', responsableControl(st, model))}
     ${field(st, 'Contributeurs', contributeursControl(st, model), { legend: true })}
+    ${tagsFieldHtml(st, model, field, attrs)}
     <dl class="dt-fields tf-readonly">
       <div class="dt-field"><dt>${label('form.field.priorite')}</dt><dd>${priorityText(c?.priorite ?? '') || label('form.field.priorite.none')} <span class="dt-muted">${label('form.field.Priorite.read')}</span></dd></div>
-      <div class="dt-field"><dt>${label('form.field.tags')}</dt><dd>${label('form.field.tags.later')}</dd></div>
     </dl>
     <details class="tf-more" id="tf-more" ${raw(st.moreOpen ? 'open' : '')}>
       <summary class="tf-more__summary">${label('form.more')} <span class="tf-more__hint">(${label('form.more.hint.chantier')})</span></summary>

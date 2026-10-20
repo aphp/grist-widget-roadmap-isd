@@ -72,7 +72,7 @@ test('rôles proposés : choix existants de Team.role seulement, ordre de l’on
 test('brouillon et différences : capacité 0 = vide, nom et e-mail nettoyés, seules les colonnes modifiées', () => {
   const base = { nom: 'Alice DE', email: 'alice@exemple.fr', role: 'DE', capaciteHebdo: 0, n_1: 2, actif: true };
   const d = personDraftFrom(base);
-  assert.deepEqual(d, { nom: 'Alice DE', email: 'alice@exemple.fr', role: 'DE', capaciteHebdo: null, n_1: 2 });
+  assert.deepEqual(d, { nom: 'Alice DE', email: 'alice@exemple.fr', aph: '', role: 'DE', capaciteHebdo: null, n_1: 2 });
   assert.deepEqual(diffPerson(base, d), {});
   assert.deepEqual(diffPerson(base, { ...d, nom: ' Alice DE ' }), {});
   assert.deepEqual(diffPerson(base, { ...d, nom: 'Alice', capaciteHebdo: 28, n_1: null, email: ' a@b.fr ' }), {
@@ -287,7 +287,7 @@ test('rôle actuel hors des choix : gardé en fin de liste (fiche), absent à la
 });
 
 test('valeurs absentes : brouillons et différences sur des lignes incomplètes', () => {
-  assert.deepEqual(personDraftFrom({}), { nom: '', email: '', role: '', capaciteHebdo: null, n_1: null });
+  assert.deepEqual(personDraftFrom({}), { nom: '', email: '', aph: '', role: '', capaciteHebdo: null, n_1: null });
   // Champ absent du brouillon : jamais envoyé
   assert.deepEqual(diffPerson({ nom: 'A' }, { nom: 'B' }), { nom: 'B' });
   assert.deepEqual(diffPerson({}, { email: '', n_1: null }), {});

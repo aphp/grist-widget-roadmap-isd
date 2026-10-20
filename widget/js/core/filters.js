@@ -21,12 +21,16 @@ export const DEFAULT_FILTERS = Object.freeze({
   /** Périmètre : « all » (tout) ou « chantiers » (Mes chantiers) ; sans effet sans « Je suis… ». */
   scope: 'all',
   includeOutOfScope: false,
-  /** Filtres repliés sous « + Filtres » : responsable (projet, chantier ou tâche) et demandeur (projet). */
+  /**
+   * Filtres repliés sous « + Filtres » : responsable (projet, chantier ou tâche), demandeur (projet) et tag (de la
+   * tâche ou de son chantier).
+   */
   responsable: null,
   demandeur: '',
+  tag: '',
 });
 /** Filtres repliés sous « + Filtres » (comptés à part sur ce bouton). */
-export const EXTRA_FILTERS = Object.freeze(['responsable', 'demandeur']);
+export const EXTRA_FILTERS = Object.freeze(['responsable', 'demandeur', 'tag']);
 export const DEFAULT_PREFS = Object.freeze({
   me: null,
   /** Vrai une fois l'invite « Qui êtes-vous ? » traitée (personne choisie ou « Passer ») : elle ne revient plus. */
@@ -196,11 +200,12 @@ export function applyFilters(model, f, prefs) {
   const hidden = new Set(prefs.hiddenProjects);
   const taskIds = new Set();
   const target = targetOf(f, prefs);
-  const taskLevel = Boolean(f.person || f.profile || f.statuses.length || f.responsable);
+  const taskLevel = Boolean(f.person || f.profile || f.statuses.length || f.responsable || f.tag);
   const chantierOk = f.chantier ? chantierMatcher(model, f.chantier) : null;
 
-  const taskOk = (task, respHit, onlyMine) => {
+  const taskOk = (task, respHit, onlyMine, tagHit) => {
     if (f.responsable && !respHit) return false;
+    if (f.tag && !tagHit) return false;
     const who = involved(task);
     if (onlyMine && !who.has(me)) return false;
     if (f.person && !who.has(f.person)) return false;
@@ -215,17 +220,31 @@ export function applyFilters(model, f, prefs) {
     if (n.ref?.table === 'Projects') return model.projects.get(n.ref.id)?.responsable === f.responsable;
     return n.ref?.table === 'Chantiers' && model.chantiers.get(n.ref.id)?.responsable === f.responsable;
   };
+  // Tag : la tâche, une tâche parente ou son chantier porte ce tag (les deux listes de tags sont distinctes)
+  const hasTag = (n) => {
+    if (!f.tag) return false;
+    if (n.taskId) return Boolean(model.tasks.get(n.taskId)?.tags?.includes(f.tag));
+    return n.ref?.table === 'Chantiers' && Boolean(model.chantiers.get(n.ref.id)?.tags?.includes(f.tag));
+  };
   // Recherche : le nœud ou un de ses ancêtres contient le texte
   // Mes chantiers : sous « (sans chantier) », seules les tâches de la personne (onlyMine)
-  const prune = (n, ancestorHit, ancestorResp = false, ancestorMine = false, wholeProject = false) => {
+  const prune = (
+    n,
+    ancestorHit,
+    ancestorResp = false,
+    ancestorMine = false,
+    ancestorTag = false,
+    wholeProject = false,
+  ) => {
     const hit = ancestorHit || (q !== '' && normalize(n.title).includes(q));
     const resp = ancestorResp || isResp(n);
     const whole = wholeProject || (n.kind === 'projet' && projectMine(n));
     const onlyMine = ancestorMine || Boolean(me && !whole && isLooseChantier(n));
-    const kids = n.children.map((c) => prune(c, hit, resp, onlyMine, whole)).filter(Boolean);
+    const tagged = ancestorTag || hasTag(n);
+    const kids = n.children.map((c) => prune(c, hit, resp, onlyMine, tagged, whole)).filter(Boolean);
     let keep = kids.length > 0;
     if (n.taskId) {
-      const ok = taskOk(model.tasks.get(n.taskId), resp, onlyMine) && (q === '' || hit);
+      const ok = taskOk(model.tasks.get(n.taskId), resp, onlyMine, tagged) && (q === '' || hit);
       if (ok) taskIds.add(n.taskId);
       keep = keep || ok;
     } else if (!taskLevel && !onlyMine && (q === '' || hit)) {
@@ -303,7 +322,15 @@ function extraChoices(model, projetGroups) {
     for (const d of splitDemandeurs(model.projects.get(id)?.demandeur))
       if (!dem.has(normalize(d))) dem.set(normalize(d), d);
   const demandeurs = [...dem.values()].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
-  return { responsables, demandeurs };
+  return { responsables, demandeurs, tags: usedTags(model) };
+}
+
+/** Tags utilisés par les tâches et les chantiers (les deux listes réunies), dans l'ordre alphabétique. */
+export function usedTags(model) {
+  const all = new Set();
+  for (const t of model.tasks.values()) for (const v of t.tags ?? []) if (v) all.add(v);
+  for (const c of model.chantiers.values()) for (const v of c.tags ?? []) if (v) all.add(v);
+  return [...all].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base', numeric: true }));
 }
 
 /**
@@ -331,6 +358,7 @@ export function validFilters(model, f) {
     ch && (projetOk ? ch.parentKey === projet.key : !cat || model.nodes.get(ch.parentKey)?.parentKey === cat.key);
   const respOk = f.responsable === null || f.responsable === undefined || model.people.has(f.responsable);
   const demOk = !f.demandeur || [...model.projects.values()].some((p) => hasDemandeur(p, f.demandeur));
+  const tagOk = !f.tag || usedTags(model).includes(f.tag);
   const out = {
     ...f,
     categorie: cat ? f.categorie : '',
@@ -338,8 +366,14 @@ export function validFilters(model, f) {
     chantier: chOk ? f.chantier : '',
     ...(respOk ? {} : { responsable: null }),
     ...(demOk ? {} : { demandeur: '' }),
+    ...(tagOk ? {} : { tag: '' }),
   };
-  return out.categorie === f.categorie && out.projet === f.projet && out.chantier === f.chantier && respOk && demOk
+  return out.categorie === f.categorie &&
+    out.projet === f.projet &&
+    out.chantier === f.chantier &&
+    respOk &&
+    demOk &&
+    tagOk
     ? f
     : out;
 }
@@ -356,6 +390,7 @@ export function activeFilterChips(f, model) {
   if (f.responsable)
     chips.push({ field: 'responsable', label: model.people.get(f.responsable)?.nom ?? String(f.responsable) });
   if (f.demandeur) chips.push({ field: 'demandeur', label: f.demandeur });
+  if (f.tag) chips.push({ field: 'tag', label: f.tag });
   if (f.statuses.length) chips.push({ field: 'statuses', label: f.statuses.join(', ') });
   if (f.scope === 'chantiers') chips.push({ field: 'scope', label: 'Mes chantiers' });
   if (f.includeOutOfScope) chips.push({ field: 'includeOutOfScope', label: 'Hors périmètre ISD inclus' });
@@ -496,6 +531,7 @@ function sanitizePrefs(saved) {
       includeOutOfScope: f.includeOutOfScope === true,
       responsable: idOrNull(f.responsable),
       demandeur: textOr(f.demandeur, '').trim(),
+      tag: textOr(f.tag, ''),
     },
   };
 }

@@ -1,10 +1,27 @@
 # Changelog
 
 ## [Unreleased]
+
 - Status from the card and the row (editing on, task editable): "⋯" button on Kanban cards (keyboard: "S" or
   Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
   lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);
   scroll and focus kept, the card follows its new column.
+- Team: optional `Team.aph` column (APH id) read and shown in the Team tab rows and the person card. It can be edited
+  in the person form and on creation only once it is a data column in Grist; while it is the empty formula column of
+  the Feuille, the field stays read-only with its reason. Strict check in the writer: 1 to 10 digits, or empty.
+- Charges: the person whose APH is `9999999` (`ESTIMATION_APH`, used to estimate load in the roadmap) is the only
+  one exempt from the "1 FTE maximum per person" rule, in the form and in the writer; a sanity bound of 50 FTE over
+  the period (2,000 h without dates) still applies. An "Estimation" badge explains it next to that person. The
+  exemption needs exactly one Team row with that APH (strict comparison); with none or several, nobody is exempt.
+  The widget never sets that APH nor changes it away: the estimation person is chosen in the Feuille.
+- Writer: column metadata is re-checked on every reload; a column that turned back into a formula is no longer
+  written (columns are never re-enabled during a session).
+- Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs and an
+  "Estimation DE" person).
+- Tags: assign and remove existing tags on tasks and chantiers in their forms (searchable, keyboard-accessible chip
+  picker). A new name can be assigned without being declared in the sheet (column options are never changed) and is
+  marked "non déclaré". Tags shown in the detail panel, an optional "Tags" column in the Table and a "Tag" filter
+  under "+ Filtres". Strict writer checks and a set merge when the tags changed elsewhere meanwhile.
 - ISD scope uses the ISD team (ISD profile or ISD Domaine, Management ISD included): a project led by the
   Management ISD, or where it has a chantier or task role, is no longer "hors périmètre" (sponsor or key
   contributor still counts for ISD profiles only). The ISD Domaine must contain "ISD" in its name, with no fallback
