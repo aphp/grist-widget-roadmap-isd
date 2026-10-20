@@ -143,7 +143,7 @@ function timelineHtml(ctx, st, items, scale) {
     body = h`<div class="pf-empty"><p class="pf-empty__title">${label('portfolio.empty.kind')}</p><p>${label('portfolio.empty.kind.hint')}</p>
       <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-action="clear-filters">${label('empty.filters.action')}</button></div>`;
   else
-    body = h`<div class="pf-tl__scroll" tabindex="-1">
+    body = h`<div class="pf-tl__scroll" tabindex="-1" data-scroll-key="pf-timeline">
       <div class="pf-tl" style="--tl-min:${st.months * 64}px">
         ${scaleHeadHtml(scale, ctx.today)}
         <div class="pf-tl__body">
@@ -267,7 +267,7 @@ function loadHtml(ctx, st, startDay) {
       </ul>
       <p class="pf-count">${label('portfolio.load.unit')} ${label('portfolio.load.thresholds')}</p>
     </div>
-    <div class="pf-load__scroll" tabindex="0" role="region" aria-label="${label('portfolio.load.caption')}">
+    <div class="pf-load__scroll" data-scroll-key="pf-load" tabindex="0" role="region" aria-label="${label('portfolio.load.caption')}">
       <table class="pf-load">
         <caption class="fr-sr-only">${label('portfolio.load.caption')}</caption>
         <thead><tr>

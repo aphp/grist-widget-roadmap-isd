@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Fix: scroll positions jumped back to the top or left while other people edited the Feuille. Every `onRecords`
+  re-read redrew the whole view, which only restored the page and the Kanban/Table scroll (not the Gantt, Portfolio,
+  load plan, Stats or Synthesis areas), and focus restoration scrolled a focused card or row back into view. Now a
+  re-read triggered by `onRecords` redraws nothing when the data is unchanged (fingerprint of the read tables,
+  `core/reload-state.js`); a real change keeps the scroll of every `data-scroll-key` area, the page and the open
+  detail panel, and focus restoration only scrolls for the quick-status card. Dev: `grist.__simulateChange(action)`
+  changes the in-memory data before `onRecords`.
 - Status from the card and the row (editing on, task editable): "⋯" button on Kanban cards (keyboard: "S" or
   Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
   lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);

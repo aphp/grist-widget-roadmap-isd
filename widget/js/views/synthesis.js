@@ -94,10 +94,10 @@ export function render(el, ctx) {
         </div>
       </header>
       <p class="syn__notice" role="status" data-notice="md"></p>
-      <div class="syn__preview" role="region" tabindex="0" aria-label="${label('synthesis.preview')}">${raw(markdownToHtml(md))}</div>
+      <div class="syn__preview" data-scroll-key="syn-preview" role="region" tabindex="0" aria-label="${label('synthesis.preview')}">${raw(markdownToHtml(md))}</div>
       <details class="syn__source">
         <summary>${label('synthesis.source')}</summary>
-        <textarea class="fr-input syn__area" readonly rows="12" spellcheck="false" aria-label="${label('synthesis.source')}" data-area="md">${md}</textarea>
+        <textarea class="fr-input syn__area" data-scroll-key="syn-md" readonly rows="12" spellcheck="false" aria-label="${label('synthesis.source')}" data-area="md">${md}</textarea>
       </details>
     </section>
 
@@ -113,12 +113,12 @@ export function render(el, ctx) {
       </header>
       <p class="syn__notice" role="status" data-notice="gantt"></p>
       ${plan.omitted ? h`<p class="fr-badge fr-badge--warning fr-badge--no-icon syn__omitted">${label('synthesis.gantt.omitted', { n: plan.omitted })}</p>` : ''}
-      <div class="syn__gantt" role="group" aria-label="${label('synthesis.gantt.label')}" tabindex="0" data-gantt-body>${ganttBody()}</div>
+      <div class="syn__gantt" data-scroll-key="syn-gantt" role="group" aria-label="${label('synthesis.gantt.label')}" tabindex="0" data-gantt-body>${ganttBody()}</div>
       ${
         plan.count
           ? h`<details class="syn__source">
         <summary>${label('synthesis.source')}</summary>
-        <textarea class="fr-input syn__area" readonly rows="10" spellcheck="false" aria-label="${label('synthesis.source')}" data-area="gantt">${plan.text}</textarea>
+        <textarea class="fr-input syn__area" data-scroll-key="syn-gantt-src" readonly rows="10" spellcheck="false" aria-label="${label('synthesis.source')}" data-area="gantt">${plan.text}</textarea>
       </details>`
           : ''
       }

@@ -107,7 +107,7 @@ export function createDrawer(root, on) {
           </button>
         </div>
       </div>
-      <div class="drawer__body">${body ?? h`<p>${label('detail.pending')}</p>`}</div>
+      <div class="drawer__body" data-scroll-key="drawer">${body ?? h`<p>${label('detail.pending')}</p>`}</div>
       ${opts.foot ? h`<div class="drawer__foot">${opts.foot}</div>` : ''}
     `;
     root.dataset.mode = opts.mode ?? 'read';

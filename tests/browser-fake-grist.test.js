@@ -2729,3 +2729,138 @@ test(
     assert.equal(cells.dateEcheance, cfDay(2026, 11, 8));
   },
 );
+
+// ---------- Relectures (onRecords) : défilements gardés, aucun rendu sans donnée changée ----------
+
+/** Simule onRecords (avec ou sans donnée changée) et attend la fin de la relecture qui suit (anti-rebond compris). */
+async function remoteChange(actions) {
+  const n = await w(`return W.__reads.length;`);
+  await w(`W.grist.__simulateChange(${actions ? JSON.stringify(actions) : ''}); return true;`);
+  // 5 tables de la Feuille et 2 tables de métadonnées relues, puis le rendu
+  await until(`W.__reads.length >= ${n + 7} && !D.getElementById('btn-refresh')?.disabled`);
+  await sleep(200);
+}
+
+/** Défilement de chaque zone (sélecteur → {top, left}) et de la page. */
+async function scrolls(selectors) {
+  return w(`const out = { page: { top: W.scrollY, left: W.scrollX } };
+    for (const s of ${JSON.stringify(selectors)}) { const e = D.querySelector(s); out[s] = e ? { top: e.scrollTop, left: e.scrollLeft } : null; }
+    return out;`);
+}
+
+function assertSameScroll(actual, expected, what) {
+  for (const [k, v] of Object.entries(expected)) {
+    assert.ok(actual[k], `${what} : zone ${k} absente`);
+    assert.ok(Math.abs(actual[k].top - v.top) <= 2, `${what} : ${k} vertical ${actual[k].top} au lieu de ${v.top}`);
+    assert.ok(
+      Math.abs(actual[k].left - v.left) <= 2,
+      `${what} : ${k} horizontal ${actual[k].left} au lieu de ${v.left}`,
+    );
+  }
+}
+
+/** Marque le panneau de la vue : la marque disparaît au prochain rendu complet. */
+const markPanel = () => w(`D.getElementById('view-panel').dataset.probe = '1'; return true;`);
+const panelKept = () => w(`return D.getElementById('view-panel')?.dataset.probe === '1';`);
+
+/** Change le titre de la première tâche de la Feuille (modification faite ailleurs). */
+async function retitleFirstTask(titre) {
+  const id = await w(`return (await W.grist.docApi.fetchTable('Tasks')).id[0];`);
+  return remoteChange(['UpdateRecord', 'Tasks', id, { titre }]);
+}
+
+/**
+ * Scénario commun : zones défilées, trois relectures sans changement (aucun rendu, défilements gardés), puis une
+ * vraie modification (rendu complet, défilements gardés).
+ */
+async function checkScrollKept(selectors, what) {
+  const before = await scrolls(selectors);
+  await markPanel();
+  for (let i = 0; i < 3; i++) await remoteChange();
+  assert.equal(await panelKept(), true, `${what} : la vue est redessinée sans donnée changée`);
+  assertSameScroll(await scrolls(selectors), before, `${what}, relecture sans changement`);
+  await retitleFirstTask(`Titre changé ailleurs (${what})`);
+  assert.equal(await panelKept(), false, `${what} : une vraie modification doit redessiner la vue`);
+  assertSameScroll(await scrolls(selectors), before, `${what}, après une vraie modification`);
+}
+
+test(
+  'relecture (onRecords) : le Gantt garde son défilement vertical et horizontal, son niveau et sa période',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    // Cadre plus étroit (800 px, au-dessus de la liste chronologique) : la frise déborde en largeur
+    await send('Runtime.evaluate', { expression: `document.getElementById('w').style.width = '800px'` });
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.querySelector('.gantt__scroll')`);
+    await w(`D.getElementById('gantt-level-sous-tache').click(); return true;`);
+    await until(`D.getElementById('gantt-level-sous-tache')?.checked`);
+    const set = await w(`const b = D.querySelector('.gantt__scroll'); b.scrollTop = 180; b.scrollLeft = 260;
+      await new Promise((r) => W.requestAnimationFrame(() => W.requestAnimationFrame(r)));
+      return { top: b.scrollTop, left: b.scrollLeft };`);
+    assert.ok(set.top > 50 && set.left > 50, `Gantt trop petit pour défiler : ${JSON.stringify(set)}`);
+    const period = await w(`return D.querySelector('.gantt__period').textContent;`);
+    const rows = await w(`return D.querySelectorAll('.grow').length;`);
+    await checkScrollKept(['.gantt__scroll'], 'Gantt');
+    assert.equal(await w(`return D.getElementById('gantt-level-sous-tache').checked;`), true);
+    assert.equal(await w(`return D.querySelector('.gantt__period').textContent;`), period);
+    assert.equal(await w(`return D.querySelectorAll('.grow').length;`), rows);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test('relecture (onRecords) : le Tableau garde son défilement et sa page', { skip: SKIP }, async () => {
+  await open('');
+  await w(`D.getElementById('tab-table').click(); return true;`);
+  await until(`D.querySelector('.tbl__table .fr-table__wrapper')`);
+  const set =
+    await w(`const b = D.querySelector('.tbl__table .fr-table__wrapper'); b.scrollTop = 200; b.scrollLeft = 120;
+    await new Promise((r) => W.requestAnimationFrame(() => W.requestAnimationFrame(r)));
+    return { top: b.scrollTop, left: b.scrollLeft };`);
+  assert.ok(set.top > 50, `Tableau trop petit pour défiler : ${JSON.stringify(set)}`);
+  await checkScrollKept(['.tbl__table .fr-table__wrapper'], 'Tableau');
+});
+
+test(
+  'relecture (onRecords) : le Kanban garde le défilement du plateau et de la page, même avec une carte focalisée',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await until(`D.querySelector('.kanban__board')`);
+    // Carte de la première colonne focalisée, puis plateau défilé vers la droite et page vers le bas : la carte
+    // est hors champ, une relecture ne doit pas la ramener à l'écran
+    await w(`D.querySelector('.kanban__board [data-task]').focus(); return true;`);
+    const set = await w(`const b = D.querySelector('.kanban__board'); b.scrollLeft = b.scrollWidth;
+      W.scrollTo(0, 400);
+      await new Promise((r) => setTimeout(r, 300));
+      return { left: b.scrollLeft, page: W.scrollY };`);
+    assert.ok(set.left > 50, `plateau trop étroit pour défiler : ${JSON.stringify(set)}`);
+    await checkScrollKept(['.kanban__board'], 'Kanban');
+  },
+);
+
+test(
+  'relecture (onRecords) : un défilement fait pendant la relecture est gardé (pas de retour en arrière)',
+  { skip: SKIP },
+  async () => {
+    await open('?ecritures=lent');
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.querySelector('.gantt__scroll')`);
+    await w(`D.getElementById('gantt-level-sous-tache').click(); return true;`);
+    await until(`D.getElementById('gantt-level-sous-tache')?.checked`);
+    await w(`D.querySelector('.gantt__scroll').scrollTop = 60; return true;`);
+    const id = await w(`return (await W.grist.docApi.fetchTable('Tasks')).id[0];`);
+    const n = await w(`return W.__reads.length;`);
+    await w(
+      `W.grist.__simulateChange(['UpdateRecord', 'Tasks', ${id}, { titre: 'Pendant le défilement' }]); return true;`,
+    );
+    // L'utilisateur défile pendant l'anti-rebond (avant le rendu)
+    await sleep(250);
+    const mid = await w(`const b = D.querySelector('.gantt__scroll'); b.scrollTop = 240;
+      await new Promise((r) => W.requestAnimationFrame(r)); return b.scrollTop;`);
+    await until(`W.__reads.length >= ${n + 7} && !D.getElementById('btn-refresh')?.disabled`);
+    await sleep(200);
+    const after = await w(`return D.querySelector('.gantt__scroll').scrollTop;`);
+    assert.ok(Math.abs(after - mid) <= 2, `défilement ${after} au lieu de ${mid}`);
+  },
+);

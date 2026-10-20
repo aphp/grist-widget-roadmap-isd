@@ -87,7 +87,7 @@ function tableHtml(rows, totals, months) {
     </tr>`;
     return h`<tbody>${groupRow}${personRows}${totalRow}</tbody>`;
   });
-  return h`<div class="plan__scroll" tabindex="-1">
+  return h`<div class="plan__scroll" tabindex="-1" data-scroll-key="plan">
     <table class="plan__grid">
       <caption class="fr-sr-only">${label('plan.caption', { debut: monthLong(months[0]), fin: monthLong(months.at(-1)) })}. ${label('plan.keys')}</caption>
       <thead>${head}</thead>

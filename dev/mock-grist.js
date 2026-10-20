@@ -22,6 +22,7 @@
 //                     inactive (non exemptée). Sans cette option : formule vide.
 //   aph-entier      : comme aph-donnee, mais colonne Int (ce que Grist devine après une saisie de chiffres dans la
 //                     colonne vide) : APH en nombres, 0 = vide (la personne n° 2 du jeu synthétique).
+// grist.__simulateChange([action]) simule onRecords (modification faite ailleurs), avec ou sans donnée changée.
 // En cours de session, window.__lectureEchoue = true fait échouer toute lecture de table (relecture avant l'envoi).
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
 (function () {
@@ -230,6 +231,14 @@
       getAccessToken: async () => ({ token: 'jeton-dev', baseUrl, ttl: 300 }),
       applyUserActions,
     },
-    __simulateChange: () => recordsCb && recordsCb([]),
+    // Modification faite ailleurs (autre utilisateur) : sans argument, onRecords seul (aucune donnée changée) ;
+    // avec ['UpdateRecord', table, id, champs] (ou une liste de ces actions), la copie en mémoire change d'abord.
+    __simulateChange: async (actions) => {
+      if (actions) {
+        await load();
+        (Array.isArray(actions[0]) ? actions : [actions]).forEach(applyOne);
+      }
+      if (recordsCb) recordsCb([]);
+    },
   };
 })();

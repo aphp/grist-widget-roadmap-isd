@@ -261,7 +261,7 @@ export function render(el, ctx) {
           ${['left', 'right'].map((side) => h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary kanban__peek kanban__peek--${side}" data-peek="${side}" aria-controls="kanban-board" hidden>${icon(`arrow-${side}-s-line`)}<span class="kanban__peek-text"></span><span class="fr-sr-only kanban__peek-sr"></span></button>`)}
         </div>
         <div class="kanban__viewport">
-          <div class="kanban__board" id="kanban-board" role="group" aria-label="${label('kanban.label')}" aria-describedby="kanban-help">
+          <div class="kanban__board" id="kanban-board" data-scroll-key="kanban" role="group" aria-label="${label('kanban.label')}" aria-describedby="kanban-help">
             ${cols.map((c) => columnHtml(ctx, c, st, paths))}
           </div>
         </div>
@@ -447,6 +447,15 @@ export function render(el, ctx) {
   const off = new AbortController();
   listeners.set(el, off);
   window.addEventListener('scroll', layout, { passive: true, signal: off.signal });
+  // Défilement du plateau rendu après un rendu complet (main.js) : indices et en-têtes recalculés tout de suite
+  el.addEventListener(
+    'scroll-restored',
+    () => {
+      updatePeeks();
+      stickHeads();
+    },
+    { signal: off.signal },
+  );
   window.addEventListener('resize', layout, { passive: true, signal: off.signal });
   el.addEventListener('scroll', (e) => e.target.matches?.('.kanban__board') && layout(), {
     capture: true,

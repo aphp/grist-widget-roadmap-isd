@@ -277,7 +277,7 @@ export function render(el, ctx) {
         </div>`,
       )}
       <div class="fr-table fr-table--sm tbl__table" role="region" aria-label="${label('table.label')}" tabindex="-1">
-        <div class="fr-table__wrapper"><div class="fr-table__container"><div class="fr-table__content">
+        <div class="fr-table__wrapper" data-scroll-key="table"><div class="fr-table__container"><div class="fr-table__content">
           <table class="tbl__grid">
             <caption class="fr-sr-only">${label('table.caption')}</caption>
             <thead><tr>${cols.map((c) => headCell(c, st.sort))}</tr></thead>

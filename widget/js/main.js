@@ -17,6 +17,7 @@ import { applyToTables, createWriter, decodeRow } from './core/grist-writer.js';
 import { editAvailability } from './core/task-form.js';
 import { parisToday } from './core/write-encode.js';
 import { buildModel } from './core/model.js';
+import { captureScrolls, dataFingerprint, needsRender, restoreScrolls } from './core/reload-state.js';
 import { estimationIdsOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
 import { dayInZone, monthKey, monthsFrom } from './core/dates.js';
@@ -186,8 +187,12 @@ function openDetailFromDetail(ref) {
 function refreshDetail() {
   if (!chrome.isDetailOpen() || !detailCurrent) return;
   if (editor.isEditing()) return editor.notifyReload();
-  if (detailExists(state.model, detailCurrent)) showDetail(detailCurrent);
-  else {
+  if (detailExists(state.model, detailCurrent)) {
+    // Même fiche redessinée : son défilement est gardé
+    const scroll = captureScrolls(el.detail);
+    showDetail(detailCurrent);
+    restoreScrolls(el.detail, scroll);
+  } else {
     detailHistory.length = 0;
     detailCurrent = null;
     chrome.closeDetail();
@@ -328,16 +333,18 @@ function focusedSelector() {
 /**
  * Après un rendu : focus rendu au premier élément trouvé parmi les sélecteurs, seulement s'il est tombé sur
  * <body> (jamais pris à un autre élément) ; sinon au panneau de la vue. Le défilement restauré n'est pas déplacé,
- * sauf si l'élément est hors de l'écran (carte passée dans une colonne hors champ).
+ * sauf avec reveal si l'élément est hors de l'écran (carte passée dans une colonne hors champ après un statut).
+ * @param {{selectors:string[], reveal?:boolean}|null} targets
  */
-function restoreViewFocus(selectors) {
+function restoreViewFocus(targets) {
   const a = document.activeElement;
-  if (!selectors?.length || (a && a !== document.body)) return;
+  if (!targets?.selectors?.length || (a && a !== document.body)) return;
   const panel = $('view-panel');
-  for (const sel of selectors) {
+  for (const sel of targets.selectors) {
     const target = panel?.querySelector(sel);
     if (!target) continue;
     target.focus({ preventScroll: true });
+    if (!targets.reveal) return;
     const r = target.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
     // Hors de l'écran, ou hors de la partie visible du plateau du Kanban (défilement horizontal)
@@ -352,43 +359,31 @@ function restoreViewFocus(selectors) {
 
 /**
  * Élément à refocaliser après un rendu complet, par ordre de préférence : la tâche dont le statut vient de changer
- * (puis ses voisines) si le focus est encore sur elle ou est tombé sur <body> ; sinon l'élément de la vue que
- * l'utilisateur a focalisé depuis ; rien si le focus est hors de la vue (message « Annuler », en-tête).
+ * (puis ses voisines) si le focus est encore sur elle ou est tombé sur <body>, ramenée à l'écran si elle en est
+ * sortie (reveal) ; sinon l'élément de la vue que l'utilisateur a focalisé depuis, sans rien faire défiler (il a pu
+ * défiler loin de lui) ; rien si le focus est hors de la vue (message « Annuler », en-tête).
  */
 function focusTargets() {
   const a = document.activeElement;
   const inView = Boolean(a && $('view-panel')?.contains(a));
   const own = viewFocus && (!a || a === document.body || (inView && a.dataset.qsFocus === viewFocus.keys[0]));
-  if (own) return viewFocus.keys.map(qsSelector);
+  if (own) return { selectors: viewFocus.keys.map(qsSelector), reveal: true };
   const sel = focusedSelector();
-  return sel ? [sel] : null;
+  return sel ? { selectors: [sel], reveal: false } : null;
 }
 
-/** Défilements de la page et des zones qui défilent en largeur (plateau du Kanban, Tableau). */
-const SCROLLERS = ['.kanban__board', '.tbl__table .fr-table__wrapper', '.tbl__table .fr-table__container'];
+/** Défilements de la page et de chaque zone défilante de la vue (attribut data-scroll-key). */
 function captureScroll() {
-  const panel = $('view-panel');
-  return {
-    view: state.prefs.view,
-    x: window.scrollX,
-    y: window.scrollY,
-    inner: SCROLLERS.map((sel) => {
-      const e = panel?.querySelector(sel);
-      return e ? { left: e.scrollLeft, top: e.scrollTop } : null;
-    }),
-  };
+  return { view: state.prefs.view, x: window.scrollX, y: window.scrollY, inner: captureScrolls($('view-panel')) };
 }
 function restoreScroll(saved) {
   if (saved.view !== state.prefs.view) return;
-  const panel = $('view-panel');
-  SCROLLERS.forEach((sel, i) => {
-    const e = saved.inner[i] && panel?.querySelector(sel);
-    if (e) {
-      e.scrollLeft = saved.inner[i].left;
-      e.scrollTop = saved.inner[i].top;
-    }
-  });
-  window.scrollTo(saved.x, saved.y);
+  // Chaque zone rendue le signale (scroll-restored, qui remonte) : la vue recalcule tout de suite ce qui dépend
+  // du défilement (indices de colonnes du Kanban), avant que la page soit replacée ; sinon le navigateur
+  // compenserait plus tard ce changement de hauteur (ancrage du défilement) et la page bougerait
+  for (const e of restoreScrolls($('view-panel'), saved.inner))
+    e.dispatchEvent(new Event('scroll-restored', { bubbles: true }));
+  if (window.scrollX !== saved.x || window.scrollY !== saved.y) window.scrollTo(saved.x, saved.y);
 }
 
 /** Onglet Équipe (lot 2d) : « Ajouter une personne » et « Réactiver », selon l'édition et les droits. */
@@ -440,7 +435,7 @@ function renderView() {
   } catch (err) {
     panel.innerHTML = viewErrorHtml(err?.message ?? String(err));
   }
-  if (openKey) restoreViewFocus([qsSelector(openKey)]);
+  if (openKey) restoreViewFocus({ selectors: [qsSelector(openKey)], reveal: false });
 }
 
 function renderFiltersAndView() {
@@ -555,6 +550,8 @@ function onWritten(entry) {
   if (!entry || !state.raw) return;
   state.raw = { ...state.raw, tables: applyToTables(state.raw.tables, entry.applied ?? entry.actions) };
   state.model = buildModel(state.raw);
+  // Données affichées corrigées localement : la relecture suivante redessine toujours
+  shownFingerprint = null;
   renderAll();
   if (!editor.isEditing()) refreshDetail();
   // Mode essai : la correction locale vaut jusqu'à la prochaine relecture (rien n'a été envoyé)
@@ -879,14 +876,25 @@ el.main.addEventListener('click', (e) => {
 let gateway = null;
 let loading = false;
 let pending = false; // changement reçu pendant une lecture : relire à la fin
+let pendingForce = false;
+/** Empreinte des données lues puis affichées (null : rien d'affiché, ou correction locale après une écriture). */
+let shownFingerprint = null;
 
-async function reload() {
+/**
+ * Relit les données et redessine. Une relecture déclenchée par onRecords (ifChanged) ne redessine rien si les
+ * données lues sont identiques à celles affichées : défilements, dépliages et focus restent intacts pendant que
+ * d'autres personnes modifient la Feuille. Les autres relectures (écriture, « Actualiser ») redessinent toujours.
+ */
+async function reload({ ifChanged = false } = {}) {
   if (loading) {
     pending = true;
+    pendingForce ||= !ifChanged;
     return;
   }
+  const force = !ifChanged;
   loading = true;
   pending = false;
+  pendingForce = false;
   if (state.loaded) chrome.setRefreshing(true);
   else renderLoading();
   try {
@@ -895,15 +903,20 @@ async function reload() {
       renderScreen('access');
       return;
     }
-    state.raw = raw;
-    state.model = buildModel(raw);
-    state.problems = raw.problems;
+    const fingerprint = dataFingerprint(raw);
+    const render = !state.loaded || needsRender(shownFingerprint, fingerprint, force);
+    if (render) {
+      state.raw = raw;
+      state.model = buildModel(raw);
+      state.problems = raw.problems;
+    }
     const first = !editSetup;
     editSetup ??= setupEdit(raw.columns);
     await editSetup;
     // Colonnes relues à chaque relecture : une colonne redevenue formule (vide) n'est plus écrite
     if (!first) writer?.recheckColumns?.(raw.columns);
     if (!first) await recheckFlags();
+    if (!render) return;
     // Préférence ancienne ou ligne supprimée : un filtre qui ne désigne plus rien est retiré
     const f = validFilters(state.model, state.prefs.filters);
     if (f !== state.prefs.filters) {
@@ -913,12 +926,13 @@ async function reload() {
     state.loaded = true;
     renderAll();
     refreshDetail();
+    shownFingerprint = fingerprint;
   } catch (err) {
     renderScreen('error', { message: err?.message ?? String(err) });
   } finally {
     loading = false;
     chrome.setRefreshing(false);
-    if (pending) reload();
+    if (pending) reload({ ifChanged: !pendingForce });
     else if (viewFocus?.untilReload) viewFocus = null;
   }
 }
@@ -935,7 +949,7 @@ function boot() {
   }
   grist.ready({ requiredAccess: 'full', allowSelectBy: false });
   gateway = createGateway(grist);
-  gateway.onChange(reload);
+  gateway.onChange(() => reload({ ifChanged: true }));
   reload();
 }
 

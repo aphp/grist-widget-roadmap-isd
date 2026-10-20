@@ -372,7 +372,7 @@ export function render(el, ctx) {
                     <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-action="clear-filters">${label('empty.filters.action')}</button>
                   </div>`
               }</div>`
-            : h`<div class="gantt__scroll" tabindex="-1">
+            : h`<div class="gantt__scroll" tabindex="-1" data-scroll-key="gantt">
           <div class="gantt__grid" role="treegrid" aria-label="${label('gantt.label')}" aria-describedby="gantt-help" style="--timeline-min:${TIMELINE_MIN[st.scale]}px">
             ${headHtml(scale, ctx.today)}
             <div class="gantt__body" role="rowgroup">
