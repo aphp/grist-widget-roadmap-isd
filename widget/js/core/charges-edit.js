@@ -382,10 +382,22 @@ export function chargesWriteProblem(value, before, teamExists, days = null, isEs
   return null;
 }
 
-/** Valeur affichée dans la case de saisie, à une décimale (ETP au pas de 0,1 ; heures). */
+/** Décimales d'un ETP saisi : 2 entre 0 et 1 (0,25 ; 0,05), 1 à partir de 1 (1,5), après arrondi à 2 décimales. */
+export function etpDecimals(etp) {
+  const r = Math.abs(Math.round(etp * 100) / 100);
+  return r > 0 && r < 1 ? 2 : 1;
+}
+
+/** ETP arrondi à ses décimales (etpDecimals). */
+export function roundEtp(etp) {
+  const k = 10 ** etpDecimals(etp);
+  return Math.round(etp * k) / k;
+}
+
+/** Valeur affichée dans la case de saisie (heures à une décimale ; ETP selon etpDecimals). */
 export function inputValue(heures, unit, days) {
   if (unit === 'heures') return Math.round(heures * 10) / 10;
-  return days ? Math.round(hoursToEtp(heures, days) * 10) / 10 : null;
+  return days ? roundEtp(hoursToEtp(heures, days)) : null;
 }
 
 /**
@@ -412,7 +424,8 @@ export function hoursFromInput(text, unit, days, current = null, { estimation = 
   if (n < 0) return { error: 'negatif' };
   if (unit !== 'heures' && !days) return { error: 'dates' };
   if (current !== null && n === inputValue(current, unit, days)) return { heures: current };
-  if (unit !== 'heures' && Math.abs(n * 10 - Math.round(n * 10)) > 1e-9) return { error: 'decimale' };
+  const k = n < 1 ? 100 : 10;
+  if (unit !== 'heures' && Math.abs(n * k - Math.round(n * k)) > 1e-9) return { error: 'decimale' };
   const exact = unit === 'heures' ? n : etpToHours(n, days);
   if (n > 0 && exact < MIN_HOURS) return { error: 'petit' };
   const max = maxHours(days, estimation);

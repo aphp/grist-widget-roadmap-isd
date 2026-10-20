@@ -7,6 +7,7 @@
 import {
   chargeRows,
   chargesSummary,
+  etpDecimals,
   etpDelta,
   ESTIMATION_MAX_ETP,
   etpOf,
@@ -32,11 +33,11 @@ import { estimationBadge } from './team.js';
 import { tagsFieldHtml } from './tags-field.js';
 
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const etpInputFormat = new Intl.NumberFormat('fr-FR', {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-  useGrouping: false,
-});
+// ETP d'une case de saisie ou de son équivalent : 2 décimales sous 1, une au-delà (etpDecimals)
+const etpText = (v, useGrouping = true) => {
+  const d = etpDecimals(v);
+  return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping }).format(v);
+};
 const hoursFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1, useGrouping: false });
 const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const TRASH = raw(
@@ -280,7 +281,7 @@ function personLineHtml(st, model, l, ctx) {
     ? ''
     : etpMode
       ? ctx.days
-        ? etpInputFormat.format(inputValue(l.heures, 'etp', ctx.days))
+        ? etpText(inputValue(l.heures, 'etp', ctx.days), false)
         : ''
       : hoursFormat.format(l.heures);
   const typed = st.chargeInputs.get(id);
@@ -317,9 +318,7 @@ function personLineHtml(st, model, l, ctx) {
 /** Équivalent de la saisie dans l'autre unité (« = 70 h » en ETP, « = 1,0 ETP » en heures). */
 export function chargeEqText(st, heures, days) {
   if (st.chargesUnit === 'etp') return days ? label('form.charges.eqHours', { h: hoursFormat.format(heures) }) : '';
-  return days
-    ? label('form.charges.eqEtp', { valeur: etpFormat.format(etpOf(heures, days)) })
-    : label('form.charges.eqNone');
+  return days ? label('form.charges.eqEtp', { valeur: etpText(etpOf(heures, days)) }) : label('form.charges.eqNone');
 }
 
 /**

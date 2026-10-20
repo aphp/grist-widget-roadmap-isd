@@ -721,7 +721,7 @@ const FR = Object.freeze({
   'form.charges.error.vide': 'Personne non assignée : indiquez une charge (0 pour aucune), ou retirez-la.',
   'form.charges.error.nombre': 'Saisissez un nombre, par exemple 0,5.',
   'form.charges.error.negatif': 'La charge ne peut pas être négative.',
-  'form.charges.error.decimale': 'Une décimale au plus pour l’ETP, par exemple 0,3.',
+  'form.charges.error.decimale': 'ETP : deux décimales au plus sous 1 (0,25), une au-delà (1,5).',
   'form.charges.error.petit': 'Moins de 0,25 h : saisissez 0 pour aucune charge, ou au moins 0,5 h.',
   'form.charges.error.max': '1 ETP maximum par personne (soit {h} h sur la période).',
   'form.charges.error.maxNoDates': '{h} h maximum par personne tant que la tâche n’a pas de dates.',

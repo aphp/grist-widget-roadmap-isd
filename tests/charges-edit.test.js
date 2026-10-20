@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  etpDecimals,
+  roundEtp,
   ChargesError,
   addPerson,
   chargeRows,
@@ -393,12 +395,12 @@ test('M3 : au plus 1 ETP par personne sur la période (2 000 h sans dates)', () 
   );
 });
 
-test('M4 : ETP à une décimale ; ressaisir la valeur affichée ne change rien', () => {
-  // 10 h sur 14 jours = 0,142… ETP, affiché 0,1 ; ressaisir 0,1 garde 10 h (et non 7 h)
-  assert.equal(inputValue(10, 'etp', 14), 0.1);
-  assert.deepEqual(hoursFromInput('0,1', 'etp', 14, 10), { heures: 10 });
+test('M4 : ETP à deux décimales sous 1 ; ressaisir la valeur affichée ne change rien', () => {
+  // 10 h sur 14 jours = 0,142… ETP, affiché 0,14 ; ressaisir 0,14 garde 10 h (et non 9,8 h)
+  assert.equal(inputValue(10, 'etp', 14), 0.14);
+  assert.deepEqual(hoursFromInput('0,14', 'etp', 14, 10), { heures: 10 });
   assert.deepEqual(hoursFromInput('0,2', 'etp', 14, 10), { heures: 14 });
-  assert.deepEqual(hoursFromInput('0,15', 'etp', 14, 10), { error: 'decimale' });
+  assert.deepEqual(hoursFromInput('0,155', 'etp', 14, 10), { error: 'decimale' });
   assert.equal(inputValue(213.4, 'heures', 92), 213.4);
   assert.deepEqual(hoursFromInput('213,4', 'heures', 92, 213.4), { heures: 213.4 });
   assert.equal(inputValue(10, 'etp', null), null);
@@ -419,4 +421,21 @@ test('N2 : moins de 0,25 h refusé, 0 explicite accepté', () => {
   assert.deepEqual(hoursFromInput('0', 'heures', 5), { heures: 0 });
   assert.deepEqual(hoursFromInput('0', 'etp', 5), { heures: 0 });
   assert.deepEqual(hoursFromInput('0,25', 'heures', 5), { heures: 0.5 });
+});
+
+test('ETP : 2 décimales sous 1, une décimale à partir de 1', () => {
+  assert.equal(etpDecimals(0.25), 2);
+  assert.equal(etpDecimals(0.999), 1); // 1,00 → 1 décimale
+  assert.equal(etpDecimals(1.25), 1);
+  assert.equal(roundEtp(0.254), 0.25);
+  assert.equal(roundEtp(1.26), 1.3);
+  // 0,25 ETP sur 28 jours = 35 h ; 0,05 ETP sur 14 jours = 3,5 h
+  assert.deepEqual(hoursFromInput('0,25', 'etp', 28), { heures: 35 });
+  assert.deepEqual(hoursFromInput('0,05', 'etp', 14), { heures: 3.5 });
+  assert.deepEqual(hoursFromInput('0,255', 'etp', 28), { error: 'decimale' });
+  assert.deepEqual(hoursFromInput('1,25', 'etp', 28), { error: 'decimale' });
+  assert.deepEqual(hoursFromInput('1,2', 'etp', 28, null, { estimation: true }), { heures: 168 });
+  // valeur affichée ressaisie : heures gardées telles quelles (13 h sur 28 j = 0,0928… → affiché 0,09)
+  assert.equal(inputValue(13, 'etp', 28), 0.09);
+  assert.deepEqual(hoursFromInput('0,09', 'etp', 28, 13), { heures: 13 });
 });

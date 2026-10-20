@@ -2539,13 +2539,13 @@ test(
     await pickRadio('#cf-charges-unit-heures');
     await until(`D.getElementById('cf-ch-5').value === '35'`);
     await typeIn(`#cf-ch-${b}`, '12');
-    assert.equal(await w(`return D.getElementById('cf-ch-${b}-eq').textContent;`), '= 0,2 ETP');
+    assert.equal(await w(`return D.getElementById('cf-ch-${b}-eq').textContent;`), '= 0,17 ETP');
     assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 47 h/);
     // Dates changées dans la fenêtre : les équivalents ETP suivent (7 jours : 35 h = 1 ETP)
     await change('#cf-dateEcheance', '2026-11-08');
     await until(`D.getElementById('cf-ch-5-eq').textContent === '= 1,0 ETP'`);
     await change('#cf-dateEcheance', '2026-11-15');
-    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 0,5 ETP'`);
+    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 0,50 ETP'`);
     assert.equal(await w(`return W.__writes.length;`), 0);
     await clickOn('#cf-create');
     await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);

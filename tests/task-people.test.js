@@ -95,15 +95,15 @@ test('saisie d’une ligne : règles du 1 ETP, valeur affichée, charge vidée, 
   const draft = { assignees: [1], charges: null };
   // 1,0 ETP sur 14 jours = 70 h, ajoutée en fin de cellule
   assert.deepEqual(lineInput(draft, 1, '1', 'etp', days), { charges: '[{"teamId":1,"heures":70}]', heures: 70 });
-  // Au plus 1 ETP, ETP à une décimale, moins de 0,25 h refusé, sans dates en ETP
+  // Au plus 1 ETP, ETP à deux décimales sous 1 (une au-delà), moins de 0,25 h refusé, sans dates en ETP
   assert.equal(lineInput(draft, 1, '1,5', 'etp', days).error.error, 'max');
-  assert.equal(lineInput(draft, 1, '0,25', 'etp', days).error.error, 'decimale');
+  assert.equal(lineInput(draft, 1, '0,255', 'etp', days).error.error, 'decimale');
   assert.equal(lineInput(draft, 1, '0,1', 'heures', days).error.error, 'petit');
   assert.equal(lineInput(draft, 1, '0,5', 'etp', null).error.error, 'dates');
   assert.equal(lineInput(draft, 1, 'abc', 'heures', days).error.error, 'nombre');
-  // Valeur affichée ressaisie : heures inchangées, cellule identique (10 h s'affichent 0,1 ETP)
+  // Valeur affichée ressaisie : heures inchangées, cellule identique (10 h sur 14 jours s'affichent 0,14 ETP)
   const ten = { assignees: [1], charges: '[{"teamId":1,"heures":10}]' };
-  assert.deepEqual(lineInput(ten, 1, '0,1', 'etp', days), { charges: ten.charges, heures: 10 });
+  assert.deepEqual(lineInput(ten, 1, '0,14', 'etp', days), { charges: ten.charges, heures: 10 });
   // Charge vidée : assignée → entrée retirée (la ligne reste, charge vide) ; non assignée → erreur « vide »
   assert.deepEqual(lineInput(ten, 1, '  ', 'etp', days), { charges: '[]', heures: null });
   assert.deepEqual(lineInput(draft, 1, '', 'etp', days), { charges: null, heures: null });
