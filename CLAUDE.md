@@ -24,7 +24,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   jamais. `RemoveRecord` seulement pour annuler une création de la session (ligne relue identique, aucune
   référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
-  (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
+  (sous-tâches qui suivent, pas de cycle), dates ordonnées, dates de planification ≤ 31/12 de l'année suivante
+  (`date-max`, colonnes écrites seulement, « Annuler » exempt), périmètre ISD, relecture des lignes avant l'envoi,
   fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun).
   Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`, `Team.aph`) jamais écrites. Team : `nom`,
   `email`, `aph` (1 à 10 chiffres ou vide, `validAph` ; colonne Text ou Int, `ALSO_ACCEPTED_TYPES` : lue en texte par

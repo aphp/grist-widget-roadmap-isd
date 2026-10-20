@@ -5,11 +5,11 @@ Par défaut, **lecture seule** : le widget ne modifie jamais le document. La pha
 une tâche depuis sa fiche, dont le bloc « Personnes » (assignés et charges réunis ; charge facultative en ETP ou en
 heures, 1 ETP = 35 h par semaine sur les jours calendaires de la tâche, heures stockées à 0,5 h près ; si la
 période change, l'ETP de chaque personne est conservé et ses heures recalculées, avec l'écart « 70 h → 140 h (ETP
-conservé) » sous la ligne ; une charge qui dépasserait la borne sur la nouvelle période garde ses heures et est
-signalée), de modifier un
-chantier, de créer tâches, sous-tâches et chantiers (« Nouvelle tâche » et « Nouveau chantier » au bout de la ligne des
-onglets, « Ajouter une sous-tâche », « + Tâche ») et de changer une tâche
-de chantier (ses sous-tâches suivent). Onglet Équipe (lot 2d) : ajouter une personne à l'équipe ISD, modifier sa
+conservé) » sous la ligne ; une date vidée ramène chaque ligne aux heures de sa référence ; une charge qui
+dépasserait la borne sur la nouvelle période garde ses heures et est signalée), de modifier un chantier, de créer
+tâches, sous-tâches et chantiers (« Nouvelle tâche » et « Nouveau chantier » au bout de la ligne des onglets,
+« Ajouter une sous-tâche », « + Tâche ») et de changer une tâche de chantier (ses sous-tâches suivent). Aucune date
+de planification après le 31 décembre de l'année suivante. Onglet Équipe (lot 2d) : ajouter une personne à l'équipe ISD, modifier sa
 fiche (nom, e-mail, rôle parmi les rôles existants, capacité, N+1), la désactiver ou la réactiver, gérer ses
 indisponibilités ; seules les personnes de l'équipe ISD sont modifiables, aucun rôle n'est créé. Projets et
 catégories restent en lecture. Rien n'est supprimé, sauf l'annulation d'une création de la session (jamais une
