@@ -156,3 +156,8 @@ export function sameValue(a, b) {
   }
   return a === b;
 }
+
+/** Champs dont la valeur diffère entre deux brouillons (sameValue), dans l'ordre des clés de `after`. */
+export function changedFields(before, after) {
+  return Object.keys(after).filter((k) => !sameValue(before?.[k], after[k]));
+}

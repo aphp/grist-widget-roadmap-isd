@@ -16,6 +16,7 @@ import {
   validateUnav,
 } from '../core/person-form.js';
 import { conflictBatch, failureKind, runCreate, runSave, runSetActive } from '../core/task-session.js';
+import { personDialogRight, rightFailure } from '../core/write-rights.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { label } from '../labels.js';
 import { openDialog } from './dialog.js';
@@ -32,7 +33,8 @@ const FIRST = Object.freeze({
   add: 'pf-nom',
   'unav-add': 'pf-dateDebut',
   'unav-edit': 'pf-dateDebut',
-  off: 'pf-submit',
+  // Confirmation d'une action à conséquence : focus sur l'action sûre (« Annuler »), motif Alert Dialog de l'APG
+  off: 'pf-cancel',
 });
 const ORDER = Object.freeze(['nom', 'email', 'role', 'capaciteHebdo', 'n_1', 'dateDebut', 'dateFin', 'dispo', 'type']);
 const TEXT = new Set(['nom', 'email', 'type', 'commentaire']);
@@ -120,13 +122,7 @@ export function createPersonDialog(deps) {
     const w = writer();
     if (!w || dlg || !TITLES[kind]) return false;
     const t = table(kind);
-    const allowed =
-      kind === 'add' || kind === 'unav-add'
-        ? w.canAdd(t).ok
-        : kind === 'off'
-          ? w.can('Team', 'actif').ok
-          : w.can('Disponibilites', 'dateDebut').ok;
-    if (!allowed) return false;
+    if (!personDialogRight(w, kind).ok) return false;
     const m = model();
     st = {
       kind,
@@ -252,6 +248,14 @@ export function createPersonDialog(deps) {
       const first = ORDER.find((f) => st.validation.errors[f]);
       return render(first ? `pf-${first}` : undefined);
     }
+    // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
+    const allowed = personDialogRight(writer(), st.kind);
+    if (!allowed.ok) {
+      st.locked = true;
+      // Saisie toujours copiable si un échec précédent l'avait proposée
+      st.fail = { ...rightFailure(allowed.reason), copy: st.fail?.copy ?? '' };
+      return render('tf-alert');
+    }
     const cur = st;
     cur.busy = true;
     cur.fail = null;
@@ -290,7 +294,7 @@ export function createPersonDialog(deps) {
         fresh: result.fresh,
         names: result.cols.map((c) => fieldLabel(c, 'Disponibilites')).join(', '),
       };
-      return render('pf-alert');
+      return render('tf-alert');
     }
     cur.fail = failOf(result, fields);
     render('tf-alert');

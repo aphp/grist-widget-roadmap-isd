@@ -3,9 +3,10 @@
  * côté du contrôle qui l'ouvre (bouton ⋯ d'une carte, cellule Statut du Tableau, ligne de Mes tâches). Il n'est
  * jamais enfermé dans la carte ou la ligne (une carte est déjà un bouton, un groupe de Mes tâches coupe ce qui
  * déborde). Flèches, Début et Fin déplacent le focus sans rien écrire ; seul le choix (clic, Entrée, Espace)
- * appelle onPick. Échap ou Tab ferme le menu et rend le focus ; un clic ailleurs le ferme.
+ * appelle onPick, jamais une touche maintenue (auto-répétition). Sans statut actuel, le focus va sur le menu
+ * lui-même (position neutre). Échap ou Tab ferme le menu et rend le focus ; un clic ailleurs le ferme.
  */
-import { menuMove } from '../core/quick-status.js';
+import { isRepeatedChoice, menuMove, menuStartIndex } from '../core/quick-status.js';
 import { label, statusLabel } from '../labels.js';
 import { h } from './kit.js';
 
@@ -20,6 +21,7 @@ export function closeStatusPopover(restore = false) {
   c.off.abort();
   c.root.remove();
   c.anchor.setAttribute('aria-expanded', 'false');
+  c.anchor.removeAttribute('aria-controls');
   if (restore && c.returnFocus?.isConnected) c.returnFocus.focus();
   return true;
 }
@@ -56,6 +58,7 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
   root.className = 'qs-menu';
   root.id = ID;
   root.setAttribute('role', 'menu');
+  root.tabIndex = -1;
   root.setAttribute('aria-label', label('quickStatus.menu', { titre: title }));
   root.innerHTML = h`<p class="qs-menu__title" aria-hidden="true">${label('quickStatus.menu.title')}</p>
     ${items.map(
@@ -75,11 +78,17 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
     closeStatusPopover(true);
     onPick(value);
   };
+  // Menu du navigateur jamais par-dessus le nôtre (« contextmenu » d'une touche relâchée dans le menu)
+  root.addEventListener('contextmenu', (e) => e.preventDefault());
   root.addEventListener('click', (e) => {
     const b = e.target.closest('.qs-menu__item');
     if (b) pick(b);
   });
   root.addEventListener('keydown', (e) => {
+    if (isRepeatedChoice(e)) {
+      e.preventDefault(); // Entrée maintenue : le clic n'a pas lieu
+      return;
+    }
     const list = buttons();
     if (e.key === 'Escape' || e.key === 'Tab') {
       e.preventDefault();
@@ -101,7 +110,25 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
     { capture: true, signal: off.signal },
   );
   window.addEventListener('resize', () => closeStatusPopover(false), { signal: off.signal });
-  (buttons().find((b) => b.getAttribute('aria-checked') === 'true') ?? buttons()[0])?.focus();
+  const start = menuStartIndex(items);
+  (start >= 0 ? buttons()[start] : root).focus();
+}
+
+/**
+ * « contextmenu » sur une carte ou un bouton de statut (clic droit, Maj+F10, touche Menu) : le menu de statut
+ * s'ouvre à la place du menu du navigateur. Ces éléments n'existent qu'en édition : en lecture seule, le menu du
+ * navigateur reste intact. Un menu déjà ouvert sur ce contrôle (ouvert au clavier, « contextmenu » arrivant au
+ * relâchement sous Windows) n'est pas refermé.
+ * @param {MouseEvent} e
+ * @param {(control:Element) => HTMLElement|null} anchorOf bouton qui porte le menu pour l'élément visé
+ * @param {(anchor:HTMLElement, control:Element) => void} open ouverture du menu
+ */
+export function statusContextMenu(e, anchorOf, open) {
+  const t = e.target instanceof Element ? e.target.closest('[data-qs-open], [data-qs-focus]') : null;
+  const anchor = t ? anchorOf(t) : null;
+  if (!anchor) return;
+  e.preventDefault();
+  if (current?.anchor !== anchor) open(anchor, t);
 }
 
 /** Vrai si un menu de statut est ouvert. */

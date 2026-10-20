@@ -299,6 +299,8 @@ async function changeStatusFromView(taskId, status, focusEl) {
   const keys = list ? [...list.querySelectorAll('[data-qs-focus]')].map((x) => x.dataset.qsFocus) : [];
   const focus = { keys: focusOrder(keys, String(taskId)), reveal: taskId, untilReload: false };
   const kind = await withViewFocus(focus, () => editor.quickStatus({ table: 'Tasks', id: taskId }, status));
+  // Autre envoi en cours (statut rapide ou formulaire) : le choix n'est pas perdu en silence
+  if (kind === 'busy') toast.show(label('quickStatus.busy'), { tone: 'error' });
   lastQuick = kind === 'saved' ? { entry: writer?.lastUndoable() ?? null, keys: [String(taskId)], taskId } : lastQuick;
 }
 
@@ -323,18 +325,42 @@ function focusedSelector() {
 }
 
 /**
- * Après un rendu complet : focus rendu au premier élément trouvé parmi les sélecteurs, s'il a été perdu (jamais
- * pris à un autre élément) ; sinon au panneau de la vue.
+ * Après un rendu : focus rendu au premier élément trouvé parmi les sélecteurs, seulement s'il est tombé sur
+ * <body> (jamais pris à un autre élément) ; sinon au panneau de la vue. Le défilement restauré n'est pas déplacé,
+ * sauf si l'élément est hors de l'écran (carte passée dans une colonne hors champ).
  */
 function restoreViewFocus(selectors) {
   const a = document.activeElement;
-  if (!selectors?.length || (a && a !== document.body && a.isConnected)) return;
+  if (!selectors?.length || (a && a !== document.body)) return;
   const panel = $('view-panel');
   for (const sel of selectors) {
     const target = panel?.querySelector(sel);
-    if (target) return target.focus();
+    if (!target) continue;
+    target.focus({ preventScroll: true });
+    const r = target.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    // Hors de l'écran, ou hors de la partie visible du plateau du Kanban (défilement horizontal)
+    const board = target.closest('.kanban__board')?.getBoundingClientRect();
+    const outBoard = board && (r.left < board.left - 1 || r.right > board.right + 1);
+    if (outBoard || r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > vw)
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    return;
   }
-  panel?.focus();
+  panel?.focus({ preventScroll: true });
+}
+
+/**
+ * Élément à refocaliser après un rendu complet, par ordre de préférence : la tâche dont le statut vient de changer
+ * (puis ses voisines) si le focus est encore sur elle ou est tombé sur <body> ; sinon l'élément de la vue que
+ * l'utilisateur a focalisé depuis ; rien si le focus est hors de la vue (message « Annuler », en-tête).
+ */
+function focusTargets() {
+  const a = document.activeElement;
+  const inView = Boolean(a && $('view-panel')?.contains(a));
+  const own = viewFocus && (!a || a === document.body || (inView && a.dataset.qsFocus === viewFocus.keys[0]));
+  if (own) return viewFocus.keys.map(qsSelector);
+  const sel = focusedSelector();
+  return sel ? [sel] : null;
 }
 
 /** Défilements de la page et des zones qui défilent en largeur (plateau du Kanban, Tableau). */
@@ -379,6 +405,8 @@ function teamCtx() {
 
 // ---------- Rendu ----------
 function renderView() {
+  // Menu de statut ouvert pendant un rendu (relecture, onglet, filtre) : fermé, focus rendu à son déclencheur
+  const openKey = statusPopoverKey();
   closeStatusPopover(false);
   const m = state.model;
   const view = applyFilters(m, state.prefs.filters, state.prefs);
@@ -411,6 +439,7 @@ function renderView() {
   } catch (err) {
     panel.innerHTML = viewErrorHtml(err?.message ?? String(err));
   }
+  if (openKey) restoreViewFocus([qsSelector(openKey)]);
 }
 
 function renderFiltersAndView() {
@@ -440,19 +469,15 @@ function fillEditPanel() {
  */
 function renderAll() {
   const scroll = captureScroll();
-  const openKey = statusPopoverKey();
-  const focused = focusedSelector();
   if (viewFocus && viewFocus.expires < Date.now()) viewFocus = null;
+  const targets = focusTargets();
   el.app.removeAttribute('aria-busy');
   chrome.renderHeader(state.model, state.prefs, editInfo());
   fillEditPanel();
   chrome.renderAlerts(state.problems);
   renderFiltersAndView();
   restoreScroll(scroll);
-  // Changement de statut : la tâche puis ses voisines ; menu ouvert pendant une relecture : son contrôle ; sinon
-  // l'élément qui avait le focus
-  const wanted = viewFocus?.keys ?? (openKey ? [openKey] : null);
-  restoreViewFocus(wanted ? wanted.map(qsSelector) : focused ? [focused] : null);
+  restoreViewFocus(targets);
 }
 
 function renderScreen(kind, vars) {
@@ -541,14 +566,21 @@ async function undoLast() {
   const quick = lastQuick && lastQuick.entry === writer.lastUndoable() ? lastQuick : null;
   lastQuick = null;
   try {
-    const undo = () => writer.undoLast((table, id) => gateway.fetchRow(table, id));
+    // Rendu fait dans le même appel que l'annulation : le focus (le bouton du message vient de disparaître) et la
+    // tâche à garder visible sont encore connus à ce moment-là
+    const undo = async () => {
+      const res = await writer.undoLast((table, id) => gateway.fetchRow(table, id));
+      if (!res.busy && res.entry) {
+        if (res.undoEntry) onWritten(res.undoEntry);
+        else renderAll();
+      }
+      return res;
+    };
     const r = quick
       ? await withViewFocus({ keys: quick.keys, reveal: quick.taskId, untilReload: false }, undo)
       : await undo();
     if (r.busy) return; // annulation déjà en cours
     if (!r.entry) return toast.show(label('toast.nothing'));
-    if (r.undoEntry) onWritten(r.undoEntry);
-    else renderAll();
     const names = r.skipped.map((c) => label(`form.field.${c}`)).join(', ');
     if (r.entry.kind === 'add')
       return toast.show(label(r.undoEntry ? 'toast.undoneAdd' : `toast.undoAdd.${r.reason ?? 'modifiee'}`));
@@ -642,6 +674,8 @@ const personDialog = createPersonDialog({
 /** « Réactiver » (ligne de l'onglet Équipe ou fiche) : une seule colonne actif, ligne relue avant l'envoi. */
 async function setPersonActive(id, actif) {
   if (!writer || !state.model) return;
+  // Droit relu au moment d'agir (le bouton a pu être affiché avant un passage en lecture)
+  if (!teamCtx().canReactivate(id)) return renderAll();
   const nom = state.model.people.get(id)?.nom || label('common.untitled');
   const r = await runSetActive({
     writer,

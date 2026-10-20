@@ -168,6 +168,9 @@ test('integrityProblem Team : nom, e-mail, rôle et Domaine parmi les choix, cap
   assert.equal(upd({ n_1: 1 }), 'n1-soi');
   assert.equal(upd({ n_1: 999 }), 'reference');
   assert.equal(upd({ n_1: 6 }), null);
+  // N+1 Management d'un autre Domaine (hors équipe ISD) : toute personne existante de Team est admise
+  assert.equal(upd({ n_1: 7 }), null);
+  assert.equal(add({ n_1: 7 }), null);
   assert.equal(upd({ n_1: null }), null);
   assert.equal(upd({ actif: 'non' }), 'actif');
   assert.equal(upd({ actif: false }), null);

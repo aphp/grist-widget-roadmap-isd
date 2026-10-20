@@ -17,6 +17,7 @@ import {
   validateNewTask,
 } from '../core/create-form.js';
 import { failureKind, runCreate, runMove } from '../core/task-session.js';
+import { createDialogRight, rightFailure } from '../core/write-rights.js';
 import { EncodeError, dayFromInput } from '../core/write-encode.js';
 import { label } from '../labels.js';
 import { openDialog } from './dialog.js';
@@ -167,7 +168,7 @@ export function createCreateDialog(deps) {
     const w = writer();
     if (!w || dlg) return false;
     const table = kind === 'chantier' ? 'Chantiers' : 'Tasks';
-    if (kind === 'move' ? !w.can('Tasks', 'Chantier').ok : !w.canAdd(table).ok) return false;
+    if (!createDialogRight(w, kind, table).ok) return false;
     const m = model();
     st = {
       kind,
@@ -255,8 +256,16 @@ export function createCreateDialog(deps) {
       const first = ORDER.find((f) => st.validation.errors[f]);
       return render(first ? `cf-${first}` : undefined);
     }
-    const cur = st;
     const w = writer();
+    // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
+    const allowed = createDialogRight(w, st.kind, st.table, st.plan);
+    if (!allowed.ok) {
+      st.locked = true;
+      // Saisie toujours copiable si un échec précédent l'avait proposée
+      st.fail = { ...rightFailure(allowed.reason), copy: st.fail?.copy ?? '' };
+      return render('cf-alert');
+    }
+    const cur = st;
     cur.busy = true;
     cur.fail = null;
     render(st.kind === 'move' ? 'cf-submit' : andOpen ? 'cf-create-open' : 'cf-create');

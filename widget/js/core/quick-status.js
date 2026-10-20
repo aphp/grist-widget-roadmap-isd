@@ -33,6 +33,22 @@ export function statusMenuItems(statuses, current) {
 }
 
 /**
+ * Entrée focalisée à l'ouverture : le statut actuel ; aucune (-1) si la tâche n'a pas de statut connu du menu.
+ * Le focus va alors sur le menu lui-même, position neutre : Entrée n'y choisit rien.
+ */
+export function menuStartIndex(items) {
+  return items.findIndex((it) => it.current);
+}
+
+/**
+ * Faut-il ignorer cette touche dans le menu ? Entrée ou Espace répétées (touche maintenue) : jamais d'écriture
+ * par auto-répétition, seulement par un appui franc.
+ */
+export function isRepeatedChoice(e) {
+  return Boolean(e.repeat) && (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar');
+}
+
+/**
  * Focus dans le menu : flèches haut et bas (en boucle), Début, Fin. Aucune autre touche ne déplace le focus.
  * @param {number} count nombre d'entrées
  * @param {number} index entrée focalisée (-1 : aucune)

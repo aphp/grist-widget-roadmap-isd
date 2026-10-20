@@ -13,7 +13,7 @@
  */
 import { CAPACITY_MAX, NAME_MAX, validCapacity } from './grist-writer.js';
 import { ISD_ROLES } from './model.js';
-import { ROLE_ORDER, inIsdTeam, isValidEmail, isdDomain } from './team-directory.js';
+import { ROLE_ORDER, inIsdTeam, isValidEmail, isdDomain, pickerGroups } from './team-directory.js';
 import { sameValue } from './write-encode.js';
 
 export { CAPACITY_MAX };
@@ -169,16 +169,29 @@ export function newPersonFields(draft, { model, canAddField = () => true }) {
 }
 
 /**
- * Candidats N+1 : personnes actives de l'équipe ISD d'abord (par nom), puis les autres personnes actives ; la
- * personne elle-même est exclue. La valeur actuelle est gardée même si elle est inactive.
- * @returns {{isd:object[], others:object[]}}
+ * Candidats N+1 : d'abord le Management actif de tous les Domaines (un N+1 est le plus souvent un manager), puis
+ * l'équipe ISD des sélecteurs (pickerGroups : PO, DA, DS, DE ; son Management est déjà dans le premier groupe). La
+ * personne elle-même est exclue. La valeur actuelle hors de ces groupes (inactive, autre rôle, autre Domaine, ou
+ * ligne absente) est gardée dans `kept` pour rester affichée.
+ * @returns {{management:object[], isd:{role:string, people:object[]}[],
+ *   kept:{id:number, person:object|null, inactive:boolean}|null}}
  */
 export function n1Candidates(model, personId = null, current = null) {
-  const isd = isdDomainValue(model);
-  const list = [...model.people.values()]
-    .filter((p) => p.id !== personId && (p.actif || p.id === current))
+  const notSelf = (p) => p.id !== personId;
+  const management = [...model.people.values()]
+    .filter((p) => notSelf(p) && p.actif && p.roleText === 'Management')
     .sort((a, b) => collator.compare(a.nom, b.nom));
-  return { isd: list.filter((p) => inIsdTeam(p, isd)), others: list.filter((p) => !inIsdTeam(p, isd)) };
+  const isd = pickerGroups(model)
+    .filter((g) => g.role !== 'Management')
+    .map((g) => ({ role: g.role, people: g.people.filter(notSelf) }))
+    .filter((g) => g.people.length);
+  const listed = new Set([...management, ...isd.flatMap((g) => g.people)].map((p) => p.id));
+  let kept = null;
+  if (current !== null && current !== personId && !listed.has(current)) {
+    const person = model.people.get(current) ?? null;
+    kept = { id: current, person, inactive: Boolean(person && !person.actif) };
+  }
+  return { management, isd, kept };
 }
 
 // ---------- Indisponibilités ----------

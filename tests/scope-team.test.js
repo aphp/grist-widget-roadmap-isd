@@ -78,11 +78,12 @@ test('« Mes chantiers » : chantier vide dont je suis contributeur, projets don
   const model = withEmptyProjects();
   model.projects.get(10).contributeursCles.push(5);
   const eve = applyFilters(model, { ...DEFAULT_FILTERS, scope: 'chantiers' }, { ...DEFAULT_PREFS, me: 5 });
-  assert.deepEqual([...eve.taskIds].sort(), [1000, 1001, 1002, 1500]); // « (sans chantier) » compris
+  // Projet 10 entier (« (sans chantier) » compris), plus les chantiers où elle a une tâche
+  assert.deepEqual([...eve.taskIds].sort(), [1000, 1001, 1002, 1500, 2001, 2010]);
 });
 
-test('vues centrées sur les tâches : un filtre de tâche (Mes tâches, Personne, Statut) retire les éléments vides', () => {
-  assert.equal(projectsOf(run({ scope: 'tasks' }, { me: 6 }).tree).includes(50), false);
+test('filtres de tâche (Personne, Profil, Statut) : les éléments sans tâche sont retirés', () => {
+  assert.equal(projectsOf(run({ profile: 'DE' }).tree).includes(50), false);
   assert.equal(projectsOf(run({ person: 6 }).tree).includes(50), false);
   assert.equal(projectsOf(run({ statuses: ['todo'] }).tree).includes(50), false);
 });

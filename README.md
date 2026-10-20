@@ -31,17 +31,18 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   contributrice clé, est responsable ou contributrice d'un de ses chantiers, ou est assignée, responsable ou chargée
   sur une de ses tâches. Les autres projets sont masqués par défaut, ainsi que leurs chantiers et tâches.
 - **« Hors périmètre ISD aussi »** : affiche aussi les projets hors périmètre. Sans la case, un projet hors périmètre
-  reste visible quand la personne ciblée (« Je suis… » avec « Mes tâches » ou « Mes chantiers », ou le filtre
-  Personne) y est impliquée.
-- **Périmètre « Tout / Mes tâches / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint
-  rien ; « Mes tâches » garde les tâches où je suis assigné, responsable ou chargé ; « Mes chantiers » garde les
-  chantiers dont je suis responsable ou contributeur et tous les chantiers des projets dont je suis responsable,
-  sponsor ou contributeur clé, avec toutes leurs tâches.
+  reste visible quand la personne ciblée (« Je suis… » avec « Mes chantiers », ou le filtre Personne) y est
+  impliquée.
+- **Périmètre « Tout / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint rien ;
+  « Mes chantiers » garde les chantiers dont je suis responsable ou contributeur, ou qui portent une tâche non
+  terminée où je suis assigné, responsable ou chargé, et tous les chantiers des projets dont je suis responsable,
+  sponsor ou contributeur clé, avec toutes leurs tâches ; sous « (sans chantier) », seulement mes tâches (toutes
+  si le projet est à moi). Mes tâches personnelles sont dans l'onglet « Mes tâches ».
 - **Catégorie, Projet, Chantier** : limitent l'arbre à cet élément (listes en cascade, projets du périmètre). Ils
   s'appliquent aussi aux projets et chantiers sans tâche.
 - **Personne, Profil, Statut** (et Responsable sous « + Filtres ») : filtres de tâche. Personne : la personne est
   assignée, responsable ou chargée ; Profil : une personne de ce profil l'est ; Statut : statut de la tâche. Dès
-  qu'un de ces filtres, ou « Mes tâches », est actif, seuls restent les projets et chantiers qui ont une tâche
+  qu'un de ces filtres est actif, seuls restent les projets et chantiers qui ont une tâche
   retenue.
 - **Éléments sans tâche** : un projet ou un chantier sans tâche apparaît dans le Gantt, avec la mention « Aucune
   tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), et dans le Portfolio (onglets Projets

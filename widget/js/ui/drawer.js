@@ -1,6 +1,7 @@
 /**
  * Panneau détail (à droite), modal (aria-modal="true" à l'ouverture) : le reste de la page est couvert d'un voile
- * qui capte les clics ; focus sur « Fermer » à l'ouverture, Tab boucle dans le panneau et tout focus qui en sort
+ * qui capte les clics ; focus sur « Fermer » à l'ouverture, Tab boucle dans le panneau (et le message « … Annuler »,
+ * [data-focus-cycle]) et tout focus qui en sort
  * (repeinture de la vue, raccourci) y est ramené ; fermeture par « Fermer », Échap ou clic sur le voile, focus rendu
  * à l'élément d'origine. Les liens internes ([data-ref-table]) et « Retour » sont confiés à main.js.
  *
@@ -11,7 +12,37 @@
 import { label } from '../labels.js';
 import { h } from './kit.js';
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), ' +
+  'textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
+/** Élément atteignable au Tab : affiché, ni dans un bloc masqué, ni inerte, ni désactivé par son fieldset. */
+const tabbable = (x) =>
+  x.getClientRects().length > 0 && !x.closest('[hidden], [inert], fieldset[disabled]') && x.tabIndex >= 0;
+
+/** Même groupe de boutons radio (même nom, même formulaire) : un seul arrêt au Tab. */
+const sameRadioGroup = (a, b) =>
+  a instanceof HTMLInputElement &&
+  b instanceof HTMLInputElement &&
+  a.type === 'radio' &&
+  b.type === 'radio' &&
+  a.name !== '' &&
+  a.name === b.name &&
+  a.form === b.form;
+
+/**
+ * Arrêts du Tab d'une zone, dans l'ordre du document : pour un groupe radio, le bouton coché, sinon le premier
+ * (Tab) ou le dernier (Maj+Tab) du groupe, comme le navigateur.
+ */
+function tabStops(zone, back) {
+  const all = [...zone.querySelectorAll(FOCUSABLE)].filter(tabbable);
+  return all.filter((x) => {
+    if (!(x instanceof HTMLInputElement) || x.type !== 'radio' || !x.name) return true;
+    const group = all.filter((y) => sameRadioGroup(x, y));
+    const checked = group.find((y) => y.checked);
+    return checked ? x === checked : x === (back ? group.at(-1) : group[0]);
+  });
+}
 
 /**
  * @param {HTMLElement} root l'élément <aside role="dialog">
@@ -83,6 +114,7 @@ export function createDrawer(root, on) {
     if (!wasOpen) {
       backdrop.hidden = false;
       document.addEventListener('focusin', guardFocus, true);
+      attachTrap();
     }
     root.dataset.open = 'true';
     root.setAttribute('aria-modal', 'true');
@@ -100,6 +132,7 @@ export function createDrawer(root, on) {
     root.setAttribute('aria-modal', 'false');
     backdrop.hidden = true;
     document.removeEventListener('focusin', guardFocus, true);
+    detachTrap();
     lastInside = null;
     // La vue a pu être redessinée (relecture des données) : on retrouve l'élément d'origine par son id
     const target = opener?.isConnected ? opener : openerId ? document.getElementById(openerId) : null;
@@ -118,22 +151,42 @@ export function createDrawer(root, on) {
     const link = e.target.closest('[data-ref-table]');
     if (link) on.onDetailRef?.({ table: link.dataset.refTable, id: Number(link.dataset.refId) });
   });
-  // Piège du focus : Tab et Maj+Tab bouclent dans le panneau tant qu'il est ouvert
-  root.addEventListener('keydown', (e) => {
+  /**
+   * Piège du focus : Tab et Maj+Tab bouclent dans le panneau tant qu'il est ouvert, en passant aussi par les zones
+   * [data-focus-cycle] hors du panneau (message « … Annuler » : son bouton reste atteignable au clavier). Le
+   * navigateur garde l'ordre natif (champs désactivés sautés, un seul arrêt par groupe de boutons radio) ; le piège
+   * n'agit qu'en sortie d'une zone : après son dernier arrêt, ou avant son premier. Une fenêtre <dialog> ouverte
+   * depuis la fiche garde son propre piège.
+   */
+  function trapTab(e) {
     if (e.key !== 'Tab' || root.dataset.open !== 'true') return;
-    const items = [...root.querySelectorAll(FOCUSABLE)].filter(
-      (x) => x.offsetParent !== null || x === document.activeElement,
-    );
-    if (!items.length) return;
-    const first = items[0];
-    const last = items.at(-1);
-    if (e.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
+    const active = document.activeElement;
+    if (active?.closest?.('dialog[open]')) return;
+    const back = e.shiftKey;
+    const zones = [
+      root,
+      ...[...document.querySelectorAll('[data-focus-cycle]')].filter((z) => !root.contains(z)),
+    ].filter((z) => tabStops(z, back).length);
+    if (!zones.length) return;
+    const at = zones.findIndex((z) => z.contains(active));
+    if (at !== -1) {
+      const before = (x) => x.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING;
+      const others = tabStops(zones[at], back).filter((x) => x !== active && !sameRadioGroup(x, active));
+      // Un arrêt reste dans cette zone dans le sens de la touche : le navigateur s'en charge
+      if (others.some((x) => (back ? before(x) : !before(x)))) return;
     }
-  });
+    e.preventDefault();
+    const n = zones.length;
+    const target = at === -1 ? (back ? zones[n - 1] : zones[0]) : zones[(at + (back ? -1 : 1) + n) % n];
+    const stops = tabStops(target, back);
+    (back ? stops.at(-1) : stops[0]).focus();
+  }
+
+  function attachTrap() {
+    document.addEventListener('keydown', trapTab, true);
+  }
+  function detachTrap() {
+    document.removeEventListener('keydown', trapTab, true);
+  }
   return { open, close, isOpen: () => root.dataset.open === 'true', root };
 }

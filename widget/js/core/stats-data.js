@@ -1,6 +1,7 @@
 /** Statistiques : qualité des données et agrégations sur les tâches visibles. Fonctions pures (spec §4.4). */
-import { monthKey, monthsFrom } from './dates.js';
-import { priorityText, taskPeople, taskPriority } from './kanban-data.js';
+import { monthKey, monthRange, monthsFrom } from './dates.js';
+import { hoursToEtp, spreadHours } from './capacity.js';
+import { ETP_SPLIT, etpRoleKey, priorityText, taskPeople, taskPriority } from './kanban-data.js';
 import { breadcrumb, detailLevel } from './detail-data.js';
 import { label, statusLabel } from '../labels.js';
 
@@ -146,11 +147,7 @@ export const TIMELINE_MONTHS = 12;
  * @returns {{month:string, started:number, closed:number}[]}
  */
 export function timeline(model, taskIds, today, months = TIMELINE_MONTHS) {
-  const cur = monthKey(today);
-  const y = Number(cur.slice(0, 4));
-  const mo = Number(cur.slice(5)) - (months - 1);
-  const first = `${y + Math.floor((mo - 1) / 12)}-${String(((((mo - 1) % 12) + 12) % 12) + 1).padStart(2, '0')}`;
-  const window = monthsFrom(first, months);
+  const window = monthsFrom(shiftMonth(monthKey(today), -(months - 1)), months);
   const inWindow = new Set(window);
   const started = new Map();
   const closed = new Map();
@@ -166,6 +163,58 @@ export function timeline(model, taskIds, today, months = TIMELINE_MONTHS) {
   }
   if (!started.size && !closed.size) return [];
   return window.map((month) => ({ month, started: started.get(month) ?? 0, closed: closed.get(month) ?? 0 }));
+}
+
+/** Mois 'YYYY-MM' décalé de n mois (n négatif = vers le passé). */
+export function shiftMonth(ym, n) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+}
+
+/** Fenêtre de la charge par profil : 3 mois passés, le mois courant et 8 mois à venir (12 mois). */
+export const ROLE_WINDOW = Object.freeze({ before: 3, after: 8 });
+
+/**
+ * Charge par profil et par mois, en ETP moyen du mois : les heures de chaque charge (Tasks.charges) sont
+ * réparties uniformément sur les jours calendaires de la tâche (spreadHours), cumulées par profil
+ * (etpRoleKey : PO, DA, DS, DE, Mgmt = Management de l'équipe ISD, Autre), puis converties avec
+ * 1 ETP = 35 h par semaine calendaire du mois (hoursToEtp). Tâches sans dates valides ignorées ; vide sans
+ * aucune charge dans la fenêtre.
+ * @param {number} today jour courant
+ * @returns {{month:string, total:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, Autre:number}[]}
+ */
+export function roleLoad(model, taskIds, today, { before, after } = ROLE_WINDOW) {
+  const window = monthsFrom(shiftMonth(monthKey(today), -before), before + 1 + after);
+  const hours = new Map(window.map((m) => [m, Object.fromEntries(ETP_SPLIT.map((k) => [k, 0]))]));
+  let any = false;
+  for (const id of known(model, taskIds)) {
+    const t = model.tasks.get(id);
+    for (const c of t.charges) {
+      const spread = spreadHours(c.heures, t.start, t.end);
+      if (!spread) continue;
+      const key = etpRoleKey(model.people.get(c.personId), model);
+      for (const [m, h] of spread) {
+        if (!hours.has(m) || !(h > 0)) continue;
+        hours.get(m)[key] += h;
+        any = true;
+      }
+    }
+  }
+  if (!any) return [];
+  return window.map((month) => {
+    const { n } = monthRange(month);
+    const row = { month, total: 0 };
+    for (const k of ETP_SPLIT) {
+      row[k] = hoursToEtp(hours.get(month)[k], n);
+      row.total += row[k];
+    }
+    return row;
+  });
+}
+
+/** Profils à tracer : PO, DA, DS, DE et Mgmt toujours ; « Autre » seulement s'il a une charge dans la fenêtre. */
+export function roleSeries(rows) {
+  return ETP_SPLIT.filter((k) => k !== 'Autre' || rows.some((r) => r.Autre > 0));
 }
 
 export const DELAY_BUCKETS = Object.freeze(['early', 'onTime', 'w1', 'w4', 'more']);
@@ -231,11 +280,11 @@ export function barPercent(value, max) {
   return Math.min(100, Math.max(1, (value / max) * 100));
 }
 
-/** Ordre d'affichage de toutes les anomalies de « Données à compléter ». */
+/** Ordre d'affichage de toutes les anomalies de « Contrôle qualité des données ». */
 export const QUALITY_KINDS = Object.freeze([...ISSUE_KINDS, ...EXTRA_KINDS, CHANTIER_KIND, PROJECT_KIND]);
 
 /**
- * Toutes les lignes de « Données à compléter », y compris celles sans élément (affichées « ✓ »), dans l'ordre
+ * Toutes les lignes de « Contrôle qualité des données », y compris celles sans élément (affichées « ✓ »), dans l'ordre
  * de QUALITY_KINDS.
  * @param {ReturnType<typeof dataQuality>} rows résultat de dataQuality
  */
@@ -244,4 +293,13 @@ export function qualityRows(rows) {
   return QUALITY_KINDS.map(
     (kind) => by.get(kind) ?? { kind, label: label(`stats.issue.${kind}`), taskIds: [], items: [] },
   );
+}
+
+/**
+ * Nombre total d'anomalies (somme des éléments de chaque catégorie ; un élément présent dans deux catégories
+ * compte deux fois, comme dans les compteurs des catégories).
+ * @param {{items:unknown[]}[]} rows
+ */
+export function qualityTotal(rows) {
+  return rows.reduce((s, r) => s + r.items.length, 0);
 }

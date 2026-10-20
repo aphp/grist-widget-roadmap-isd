@@ -31,6 +31,7 @@ import { displayRole } from '../core/team-directory.js';
 import { isStatusShortcut, limitToReveal } from '../core/quick-status.js';
 import { h, icon, keepFocus, roleFullText, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
+import { statusContextMenu } from '../ui/status-popover.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 
 export const id = 'kanban';
@@ -453,5 +454,20 @@ export function render(el, ctx) {
     signal: off.signal,
   });
   el.addEventListener('focusin', (e) => e.target.classList?.remove('kcard--tipoff'), { signal: off.signal });
+  // Clic droit (ou Maj+F10 relâché) sur une carte modifiable ou son ⋯ : menu de statut, la carte en est le retour
+  el.addEventListener(
+    'contextmenu',
+    (e) =>
+      statusContextMenu(
+        e,
+        (t) => (ctx.quickStatus ? t.closest('.kcard-item')?.querySelector('[data-qs-open]') : null),
+        (q) => {
+          const card = q.parentElement.querySelector('.kcard');
+          if (card) focusItem(card, false);
+          ctx.quickStatus.open(q, Number(q.dataset.qsOpen), card ?? q);
+        },
+      ),
+    { signal: off.signal },
+  );
   paint();
 }

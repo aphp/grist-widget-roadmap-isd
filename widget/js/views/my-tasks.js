@@ -14,6 +14,7 @@ import { raw } from '../core/sanitize.js';
 import { label, statusLabel } from '../labels.js';
 import { viewHeading } from '../ui/heading.js';
 import { h, ICONS, statusBadge } from '../ui/kit.js';
+import { statusContextMenu } from '../ui/status-popover.js';
 
 export const id = 'mytasks';
 
@@ -211,6 +212,13 @@ export function render(el, ctx) {
   });
   el.innerHTML = myTasksHtml(ctx.model, opts());
 
+  // Clic droit sur le bouton de statut : menu de statut à la place du menu du navigateur
+  el.oncontextmenu = (e) =>
+    statusContextMenu(
+      e,
+      (t) => (ctx.quickStatus && t.matches('[data-qs-open]') ? t : null),
+      (b) => ctx.quickStatus.open(b, Number(b.dataset.qsOpen)),
+    );
   el.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || !el.contains(b)) return;

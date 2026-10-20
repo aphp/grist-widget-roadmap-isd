@@ -27,6 +27,7 @@ import {
   validatePerson,
   validateUnav,
 } from '../widget/js/core/person-form.js';
+import { n1Control } from '../widget/js/views/person-form.js';
 
 const ISD = 'Ingénierie et sciences des données - ISD';
 const raw = feuille();
@@ -147,17 +148,45 @@ test('création : rôle obligatoire (ISD ou Management), nom en double signalé,
   );
 });
 
-test('candidats N+1 : actifs de l’équipe ISD puis autres, la personne exclue, valeur actuelle gardée', () => {
-  const c = n1Candidates(m, 1, 3);
+test('candidats N+1 : Management de tous les Domaines d’abord, puis équipe ISD par profil, personne exclue', () => {
+  const c = n1Candidates(m, 1, null);
+  // Management actif de l'ISD (6) et d'un autre Domaine (7), par nom
   assert.deepEqual(
-    c.isd.map((p) => p.id),
-    [2, 3, 5, 6],
+    c.management.map((p) => p.id),
+    [6, 7],
   );
+  // Équipe ISD (pickerGroups) sans son Management, déjà en tête ; Alice (1) exclue, Carl (3) inactif absent
   assert.deepEqual(
-    c.others.map((p) => p.id),
-    [4, 7],
+    c.isd.map((g) => [g.role, g.people.map((p) => p.id)]),
+    [
+      ['PO', [2]],
+      ['DA', [5]],
+    ],
   );
-  assert.ok(!n1Candidates(m, 1).isd.some((p) => p.id === 3)); // inactif non proposé
+  assert.equal(c.kept, null);
+  // Personne hors ISD sans rôle Management : jamais proposée
+  assert.ok(![...c.management, ...c.isd.flatMap((g) => g.people)].some((p) => p.id === 4));
+  // Un manager n'est pas proposé comme son propre N+1
+  assert.deepEqual(
+    n1Candidates(m, 6).management.map((p) => p.id),
+    [7],
+  );
+});
+
+test('candidats N+1 : la valeur actuelle hors des groupes reste affichée', () => {
+  assert.deepEqual(n1Candidates(m, 1, 3).kept, { id: 3, person: m.people.get(3), inactive: true });
+  assert.deepEqual(n1Candidates(m, 1, 4).kept, { id: 4, person: m.people.get(4), inactive: false });
+  assert.deepEqual(n1Candidates(m, 1, 999).kept, { id: 999, person: null, inactive: false });
+  // Valeur déjà proposée, ou la personne elle-même : rien de plus
+  assert.equal(n1Candidates(m, 1, 7).kept, null);
+  assert.equal(n1Candidates(m, 1, 5).kept, null);
+  assert.equal(n1Candidates(m, 1, 1).kept, null);
+});
+
+test('N+1 Management d’un autre Domaine : accepté par la validation du formulaire', () => {
+  const draft = { ...personDraftFrom({ nom: 'Alice DE', role: 'DE' }), n_1: 7 };
+  assert.deepEqual(validatePerson(draft, { model: m, personId: 1, domaine: ISD }).errors, {});
+  assert.deepEqual(diffPerson({ nom: 'Alice DE', role: 'DE', n_1: 2 }, draft), { n_1: 7 });
 });
 
 test('indisponibilités : brouillon (pourcentage ancien ramené à 0-1), différences, validation, création', () => {
@@ -191,4 +220,89 @@ test('indisponibilités : brouillon (pourcentage ancien ramené à 0-1), différ
     dispo: 0.5,
     commentaire: 'ok',
   });
+});
+
+test('menu N+1 : Management en tête, puis équipe ISD par profil ; valeur actuelle hors liste gardée', () => {
+  const out = (n_1) =>
+    n1Control({ prefix: 'tf', draft: { n_1 }, can: () => ({ ok: true }), validation: { errors: {} } }, m, 1).toString();
+  const groups = (s) => [...s.matchAll(/<optgroup label="([^"]+)"/g)].map((x) => x[1]);
+  const s = out(7);
+  assert.deepEqual(groups(s), ['Management (tous Domaines)', 'ISD — PO', 'ISD — DA']);
+  assert.match(s, /<option value="7" selected>Gus BNDMR<\/option>/);
+  assert.ok(s.indexOf('Fanny Manager') < s.indexOf('Bob PO'));
+  assert.doesNotMatch(s, /Dora/);
+  assert.match(out(4), /<option value="4" selected>Dora \(hors ISD\) \(hors liste\)<\/option>/);
+  assert.match(out(3), /<option value="3" selected>Carl DS \(inactif\)<\/option>/);
+  assert.match(out(999), /<option value="999" selected>n° 999 \(hors liste\)<\/option>/);
+  assert.match(out(null), /<option value="" selected>Aucun<\/option>/);
+});
+
+test('sans Domaine ISD dans la Feuille : aucune création possible, périmètre par profil seulement', () => {
+  const r = feuille();
+  r.tables.Team = { id: [], nom: [], role: [], actif: [], capaciteHebdo: [], email: [], n_1: [], Domaine: [] };
+  r.choices['Team.Domaine'] = ['BNDMR'];
+  delete r.choices['Team.role'];
+  const empty = buildModel(r);
+  assert.equal(isdDomainValue(empty), null);
+  assert.ok(!teamValuesInScope(empty, { role: 'Management', Domaine: 'BNDMR' }, { add: true }));
+  assert.ok(!teamValuesInScope(empty, { role: 'Management', Domaine: null }));
+  assert.ok(teamValuesInScope(empty, { role: 'DS', Domaine: null }));
+  assert.ok(!personInScope(empty, { role: '', domaine: null }));
+  assert.equal(
+    newPersonFields({ nom: ' N ', role: 'DS', capaciteHebdo: null, n_1: null }, { model: empty }).Domaine,
+    null,
+  );
+  // Sans liste de choix lue : rôles du modèle (portés par les personnes), ici aucun
+  assert.deepEqual(roleOptions(empty), []);
+  assert.deepEqual(roleOptions({ roles: ['DS', 'Autre'] }), ['DS', 'Autre']);
+  assert.deepEqual(roleOptions({}), []);
+  // Validation sans liste de choix : tout rôle saisi est refusé (jamais de nouveau choix)
+  assert.equal(
+    validatePerson({ ...newPersonDraft(), nom: 'N', role: 'DS' }, { model: empty }).errors.role.key,
+    'person.error.role',
+  );
+  assert.deepEqual(n1Candidates(empty), { management: [], isd: [], kept: null });
+});
+
+test('rôle actuel hors des choix : gardé en fin de liste (fiche), absent à la création ; refusé à l’envoi', () => {
+  assert.deepEqual(roleOptions(m, 'Ancien rôle'), ['DE', 'DA', 'DS', 'PO Data', 'Management', 'Ancien rôle']);
+  // Création : un choix de la Feuille hors profils ISD et Management n'est pas proposé
+  const extra = { choices: { 'Team.role': ['Externe', 'DS', 'Management'] } };
+  assert.deepEqual(roleOptions(extra), ['DS', 'Management', 'Externe']);
+  assert.deepEqual(roleOptions(extra, '', { add: true }), ['DS', 'Management']);
+  assert.deepEqual(roleOptions(m, 'DS'), ['DE', 'DA', 'DS', 'PO Data', 'Management']);
+  const draft = { ...personDraftFrom({ nom: 'Alice DE', role: 'Ancien rôle' }) };
+  assert.equal(validatePerson(draft, { model: m, personId: 1, domaine: ISD }).errors.role.key, 'person.error.role');
+  // Rôle parmi les choix mais hors périmètre (Management d'un autre Domaine) : refusé sur la fiche
+  assert.equal(
+    validatePerson({ ...draft, role: 'Management' }, { model: m, personId: 7, domaine: 'BNDMR' }).errors.role.key,
+    'person.error.scope',
+  );
+  // Rôle vide sur la fiche : pas d'erreur de choix, mais hors périmètre hors Domaine ISD
+  assert.equal(
+    validatePerson({ ...draft, role: '' }, { model: m, personId: 4, domaine: 'BNDMR' }).errors.role.key,
+    'person.error.scope',
+  );
+  assert.equal(validatePerson({ ...draft, role: '' }, { model: m, personId: 6, domaine: ISD }).errors.role, undefined);
+});
+
+test('valeurs absentes : brouillons et différences sur des lignes incomplètes', () => {
+  assert.deepEqual(personDraftFrom({}), { nom: '', email: '', role: '', capaciteHebdo: null, n_1: null });
+  // Champ absent du brouillon : jamais envoyé
+  assert.deepEqual(diffPerson({ nom: 'A' }, { nom: 'B' }), { nom: 'B' });
+  assert.deepEqual(diffPerson({}, { email: '', n_1: null }), {});
+  const v = validatePerson({ capaciteHebdo: null, n_1: null }, { model: m, personId: 1, domaine: ISD });
+  assert.equal(v.errors.nom.key, 'person.error.nameEmpty');
+  assert.equal(v.errors.email, undefined);
+  assert.equal(unavDraftFrom({ dispo: 'x' }).dispo, 0);
+  assert.equal(unavDraftFrom({ dispo: 0.25 }).dispo, 0.25);
+  assert.deepEqual(validateUnav({ dateDebut: 1, dateFin: 2, dispo: 1 }).errors, {});
+  assert.deepEqual(newUnavFields({ dateDebut: 1, dateFin: 2, dispo: 1, type: ' Congés ' }, 3), {
+    membre: 3,
+    dateDebut: 1,
+    dateFin: 2,
+    dispo: 1,
+    type: 'Congés',
+  });
+  assert.deepEqual(newPersonFields({ role: 'DS', capaciteHebdo: null, n_1: null }, { model: m }).nom, '');
 });
