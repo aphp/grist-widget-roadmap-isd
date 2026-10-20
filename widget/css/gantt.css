@@ -167,6 +167,64 @@
   font-weight: var(--font-weight-bold);
   color: var(--color-title);
 }
+/* Poignée de la colonne des noms (bord droit de l'en-tête « Élément ») */
+.gantt__resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  z-index: 6;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.gantt__resizer::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-border-strong);
+}
+.gantt__resizer:hover::after,
+.gantt__resizer.is-dragging::after {
+  background: var(--color-focus);
+}
+.gantt__resizer:focus {
+  outline: none;
+}
+.gantt__resizer:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.gantt__resizer:focus-visible::after {
+  background: var(--color-focus);
+}
+.gantt__width {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.gantt__width .fr-label {
+  margin: 0;
+}
+.gantt__width-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+}
+.gantt__width-range {
+  width: 160px;
+  accent-color: var(--color-focus);
+}
+.gantt__width-value {
+  min-width: 4.5em;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
 .gantt__scale {
   position: relative;
   height: 48px;
@@ -619,7 +677,7 @@
 
 @media (max-width: 1279px) {
   .gantt {
-    --gantt-label: 260px;
+    --gantt-label: 256px;
   }
   .gantt__grid {
     min-width: calc(var(--gantt-label) + var(--timeline-min, 900px) * 0.7);

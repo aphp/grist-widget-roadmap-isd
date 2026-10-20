@@ -60,6 +60,56 @@ export function ganttRows(tree, expandedKeys) {
 export const GANTT_LEVELS = Object.freeze(['projet', 'chantier', 'tache', 'sous-tache']);
 /** Niveau d'ouverture par défaut ; « custom » = dépliage choisi ligne par ligne (mémorisé à part). */
 export const DEFAULT_LEVEL = 'chantier';
+
+/**
+ * Largeur de la colonne des noms (px), réglable à la poignée et au curseur « Largeur des noms » : bornes, pas au
+ * clavier (Maj : grand pas), part maximale de la largeur de la vue. Sans réglage, largeur par défaut de la
+ * largeur d'écran (identique au CSS : 320 px, 256 px sous 1280 px).
+ */
+export const LABEL_WIDTH = Object.freeze({ min: 160, step: 16, bigStep: 64, maxShare: 0.6, wide: 320, medium: 256 });
+/** Borne absolue (px) d'une largeur enregistrée, quel que soit l'écran. */
+const LABEL_WIDTH_CAP = 4000;
+
+/** Largeur par défaut de la colonne des noms pour une fenêtre de cette largeur. */
+export function defaultLabelWidth(windowWidth) {
+  return windowWidth > 0 && windowWidth < 1280 ? LABEL_WIDTH.medium : LABEL_WIDTH.wide;
+}
+
+/** Largeur posée sur la grille des pas (minimum + n × pas), comme le curseur de type range. */
+const onStep = (w) => LABEL_WIDTH.min + Math.round((w - LABEL_WIDTH.min) / LABEL_WIDTH.step) * LABEL_WIDTH.step;
+
+/**
+ * Largeur maximale de la colonne des noms : 60 % de la vue, ramenée au pas inférieur (jamais sous le minimum ;
+ * vue inconnue : borne absolue).
+ */
+export function labelWidthMax(viewWidth) {
+  const cap = viewWidth > 0 ? viewWidth * LABEL_WIDTH.maxShare : LABEL_WIDTH_CAP;
+  return LABEL_WIDTH.min + Math.max(0, Math.floor((cap - LABEL_WIDTH.min) / LABEL_WIDTH.step)) * LABEL_WIDTH.step;
+}
+
+/** Largeur bornée et posée sur le pas (px) ; une valeur illisible donne fallback (par défaut 320 px). */
+export function clampLabelWidth(width, viewWidth, fallback = LABEL_WIDTH.wide) {
+  const w = Number.isFinite(width) ? width : fallback;
+  return Math.min(labelWidthMax(viewWidth), Math.max(LABEL_WIDTH.min, onStep(w)));
+}
+
+/**
+ * Largeur après une touche sur la poignée : ←/↓ et →/↑ d'un pas (Maj : grand pas), Début / Fin aux bornes ;
+ * null pour une autre touche.
+ */
+export function labelWidthAfterKey(width, key, shift, viewWidth) {
+  const step = shift ? LABEL_WIDTH.bigStep : LABEL_WIDTH.step;
+  if (key === 'ArrowLeft' || key === 'ArrowDown') return clampLabelWidth(width - step, viewWidth);
+  if (key === 'ArrowRight' || key === 'ArrowUp') return clampLabelWidth(width + step, viewWidth);
+  if (key === 'Home') return LABEL_WIDTH.min;
+  if (key === 'End') return labelWidthMax(viewWidth);
+  return null;
+}
+
+/** Préférence enregistrée : entier entre le minimum et la borne absolue, sinon null (largeur par défaut). */
+export function sanitizeLabelWidth(value) {
+  return Number.isFinite(value) && value >= LABEL_WIDTH.min && value <= LABEL_WIDTH_CAP ? Math.round(value) : null;
+}
 const KIND_RANK = Object.freeze({ categorie: 0, projet: 1, chantier: 2, tache: 3, 'sous-tache': 4 });
 const LEVEL_RANK = Object.freeze({ projet: 1, chantier: 2, tache: 3, 'sous-tache': Infinity });
 

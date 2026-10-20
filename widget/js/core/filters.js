@@ -1,7 +1,7 @@
 /** Filtres (toutes vues) et préférences locales (navigateur). Voir spec §4.3 et §5. */
 import { GROUPS, PROFILE_KEYS, SORTS, profileKey } from './kanban-data.js';
 import { COLUMNS, DEFAULT_COLUMNS, ROLE_ETP_COLUMNS } from './table-data.js';
-import { COLOR_BY, DEFAULT_LEVEL, GANTT_LEVELS, MAX_EXPANDED, SCALES } from './gantt-data.js';
+import { COLOR_BY, DEFAULT_LEVEL, GANTT_LEVELS, MAX_EXPANDED, SCALES, sanitizeLabelWidth } from './gantt-data.js';
 import { PORTFOLIO_MONTHS, PORTFOLIO_TABS } from './portfolio-data.js';
 import { dayOfIso, isoOfDay } from './dates.js';
 import { normalize } from './text.js';
@@ -57,6 +57,8 @@ export const DEFAULT_PREFS = Object.freeze({
   ganttLevel: DEFAULT_LEVEL,
   /** Clés des nœuds dépliés, lues seulement si ganttLevel = « custom ». */
   ganttExpanded: null,
+  /** Largeur de la colonne des noms du Gantt (px) ; null = largeur par défaut (préférences d'avant : absente). */
+  ganttLabelWidth: null,
   portfolioTab: 'projets',
   /** Début des frises (AAAA-MM-JJ) ; null = premier jour du mois courant. */
   portfolioStart: null,
@@ -513,6 +515,7 @@ function sanitizePrefs(saved) {
     ganttLevel:
       GANTT_LEVELS.includes(s.ganttLevel) || s.ganttLevel === 'custom' ? s.ganttLevel : DEFAULT_PREFS.ganttLevel,
     ganttExpanded: sanitizeExpanded(s.ganttExpanded),
+    ganttLabelWidth: sanitizeLabelWidth(s.ganttLabelWidth),
     portfolioTab: PORTFOLIO_TABS.includes(tab) ? tab : DEFAULT_PREFS.portfolioTab,
     portfolioStart: isoDateOrNull(s.portfolioStart),
     portfolioMonths: PORTFOLIO_MONTHS.includes(s.portfolioMonths) ? s.portfolioMonths : DEFAULT_PREFS.portfolioMonths,

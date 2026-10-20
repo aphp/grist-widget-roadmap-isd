@@ -2864,3 +2864,125 @@ test(
     assert.ok(Math.abs(after - mid) <= 2, `défilement ${after} au lieu de ${mid}`);
   },
 );
+
+// ---------- Gantt : largeur de la colonne des noms (poignée et curseur « Largeur des noms ») ----------
+
+/** Largeur de la colonne des noms : cellule affichée, poignée, curseur et préférence enregistrée. */
+async function labelWidth() {
+  return w(`const h = D.getElementById('gantt-resizer'); const r = D.getElementById('gantt-width');
+    return {
+      cell: Math.round(D.querySelector('.grow__label').getBoundingClientRect().width),
+      now: Number(h.getAttribute('aria-valuenow')),
+      text: h.getAttribute('aria-valuetext'),
+      slider: Number(r.value),
+      sliderText: r.getAttribute('aria-valuetext'),
+      output: D.getElementById('gantt-width-value').textContent,
+      pref: JSON.parse(W.localStorage.getItem('roadmap-isd:prefs') || '{}').ganttLabelWidth ?? null,
+    };`);
+}
+
+function assertWidth(actual, px, pref, what) {
+  assert.ok(Math.abs(actual.cell - px) <= 1, `${what} : colonne de ${actual.cell} px au lieu de ${px}`);
+  assert.deepEqual(
+    [actual.now, actual.text, actual.slider, actual.sliderText, actual.output, actual.pref],
+    [px, `${px} px`, px, `${px} px`, `${px} px`, pref],
+    what,
+  );
+}
+
+test(
+  'Gantt : la colonne des noms s’élargit à la poignée, au clavier et au curseur, et la largeur est gardée',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.getElementById('gantt-resizer') && D.querySelector('.grow__label')`);
+    assertWidth(await labelWidth(), 320, null, 'largeur par défaut');
+    const sep = await w(`const h = D.getElementById('gantt-resizer');
+      return { role: h.getAttribute('role'), o: h.getAttribute('aria-orientation'), min: h.getAttribute('aria-valuemin'),
+        max: Number(h.getAttribute('aria-valuemax')), tab: h.tabIndex, label: D.querySelector('label[for="gantt-width"]').textContent };`);
+    assert.deepEqual(
+      [sep.role, sep.o, sep.min, sep.tab, sep.label],
+      ['separator', 'vertical', '160', 0, 'Largeur des noms'],
+    );
+    assert.ok(sep.max >= 592, `maximum ${sep.max}`);
+    // Les noms gardent leur nom complet en infobulle
+    assert.equal(
+      await w(`const t = D.querySelector('.grow__title'); return t.getAttribute('title') === t.textContent;`),
+      true,
+    );
+
+    // Glisser la poignée de 96 px vers la droite (vrais événements de pointeur)
+    const at = await w(`const r = D.getElementById('gantt-resizer').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    for (const dx of [30, 60, 96])
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + dx, y: at.y, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + 96,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    assertWidth(await labelWidth(), 416, 416, 'après le glisser');
+
+    // Une modification faite ailleurs (rendu complet) garde la largeur
+    await retitleFirstTask('Titre changé ailleurs (largeur)');
+    assertWidth(await labelWidth(), 416, 416, 'après une relecture');
+
+    // Clavier : → +16 px, Maj+← −64 px
+    await w(`D.getElementById('gantt-resizer').focus(); return true;`);
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'ArrowRight',
+      code: 'ArrowRight',
+      windowsVirtualKeyCode: 39,
+    });
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'ArrowRight',
+      code: 'ArrowRight',
+      windowsVirtualKeyCode: 39,
+    });
+    assertWidth(await labelWidth(), 432, 432, 'flèche droite');
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'ArrowLeft',
+      code: 'ArrowLeft',
+      windowsVirtualKeyCode: 37,
+      modifiers: 8,
+    });
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'ArrowLeft',
+      code: 'ArrowLeft',
+      windowsVirtualKeyCode: 37,
+      modifiers: 8,
+    });
+    assertWidth(await labelWidth(), 368, 368, 'Maj+flèche gauche');
+
+    // Curseur « Largeur des noms » : la poignée suit, même préférence
+    await w(`const r = D.getElementById('gantt-width'); r.value = '256';
+      r.dispatchEvent(new W.Event('input', { bubbles: true })); r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+    assertWidth(await labelWidth(), 256, 256, 'curseur');
+
+    // Largeur gardée après un rechargement de la page
+    const host = `${BASE}/dev/host.html?donnees=synthetiques`;
+    await send('Page.navigate', { url: host });
+    await loaded(host);
+    await until(`D.getElementById('gantt-resizer') && D.querySelector('.grow__label')`);
+    assertWidth(await labelWidth(), 256, 256, 'après rechargement');
+
+    // Double-clic : largeur par défaut, préférence effacée
+    const at2 = await w(`const r = D.getElementById('gantt-resizer').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    for (const clickCount of [1, 2]) {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at2.x, y: at2.y, button: 'left', clickCount });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at2.x, y: at2.y, button: 'left', clickCount });
+    }
+    assertWidth(await labelWidth(), 320, null, 'double-clic');
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);

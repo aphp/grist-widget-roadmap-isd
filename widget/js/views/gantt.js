@@ -11,15 +11,20 @@ import {
   PHASES,
   SCALES,
   STATUS_COLORS,
+  LABEL_WIDTH,
   barGeometry,
   chronoItems,
+  clampLabelWidth,
   colorKey,
+  defaultLabelWidth,
   expandableKeys,
   ganttRows,
   levelExpanded,
   isEmptyContainer,
   isLate,
   isMilestone,
+  labelWidthAfterKey,
+  labelWidthMax,
   nodeBar,
   pctOf,
   pdfFilenameOfDay,
@@ -147,8 +152,8 @@ function rowHtml(ctx, r, i, scale, colorBy, focusIndex) {
     ? h`<span class="grow__toggle fr-icon-arrow-${r.expanded ? 'down' : 'right'}-s-line" data-toggle="${i}" data-expanded="${r.expanded}" title="${label(r.expanded ? 'gantt.collapse' : 'gantt.expand', { titre: title })}" aria-hidden="true"></span>`
     : h`<span class="grow__toggle grow__toggle--leaf" aria-hidden="true"></span>`;
   const name = n.ref
-    ? h`<span class="grow__title" data-open="${i}" data-i="${i}">${title}</span>`
-    : h`<span class="grow__title grow__title--static" data-i="${i}">${title}</span>`;
+    ? h`<span class="grow__title" data-open="${i}" data-i="${i}" title="${title}">${title}</span>`
+    : h`<span class="grow__title grow__title--static" data-i="${i}" title="${title}">${title}</span>`;
   const empty = isEmptyContainer(n) ? h`<span class="grow__empty">${label('gantt.noTasks')}</span>` : '';
   return h`<div class="grow grow--${n.kind}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}" aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy)}">
     <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${name}${empty}</div>
@@ -217,10 +222,29 @@ function pdfLegend(colorBy) {
   ];
 }
 
-function headHtml(scale, today) {
+/** Attributs de valeur de la poignée et du curseur de largeur (les deux restent synchrones). */
+const widthText = (w) => label('gantt.width.value', { n: w });
+
+/** Poignée de la colonne des noms (séparateur focalisable : flèches, Maj, Début / Fin ; double-clic : défaut). */
+function resizerHtml(width) {
+  return h`<div class="gantt__resizer" id="gantt-resizer" role="separator" aria-orientation="vertical" tabindex="0" aria-label="${label('gantt.resizer')}" aria-valuemin="${width.min}" aria-valuemax="${width.max}" aria-valuenow="${width.value}" aria-valuetext="${widthText(width.value)}" title="${label('gantt.resizer.title')}" data-resizer></div>`;
+}
+
+/** Curseur « Largeur des noms » de la barre d'outils (mêmes bornes et même pas que la poignée). */
+function widthSliderHtml(width) {
+  return h`<div class="gantt__width">
+    <label class="fr-label gantt__legend-title" for="gantt-width">${label('gantt.width')}</label>
+    <div class="gantt__width-row">
+      <input type="range" id="gantt-width" class="gantt__width-range" min="${width.min}" max="${width.max}" step="${LABEL_WIDTH.step}" value="${width.value}" aria-valuetext="${widthText(width.value)}" data-label-width />
+      <output class="gantt__width-value" id="gantt-width-value" for="gantt-width" aria-hidden="true">${widthText(width.value)}</output>
+    </div>
+  </div>`;
+}
+
+function headHtml(scale, today, width) {
   const showToday = today >= scale.start && today <= scale.end;
   return h`<div class="gantt__head" role="row">
-    <div class="gantt__corner" role="columnheader">${label('gantt.element')}</div>
+    <div class="gantt__corner" role="columnheader">${label('gantt.element')}${resizerHtml(width)}</div>
     <div class="gantt__scale" role="columnheader" aria-label="${label('gantt.period', { debut: formatDateFr(scale.start), fin: formatDateFr(scale.end) })}">
       <div class="gantt__groups">${scale.groups.map((g) => h`<span class="gantt__group" style="left:${pct(pctOf(scale, g.start))};width:${pct(((g.end - g.start + 1) / scale.days) * 100)}">${g.label}</span>`)}</div>
       <div class="gantt__cols">${scale.columns.map((c) => h`<span class="gantt__col${today >= c.start && today <= c.end ? ' is-current' : ''}" style="left:${pct(pctOf(scale, c.start))};width:${pct(((c.end - c.start + 1) / scale.days) * 100)}" title="${c.title}">${c.label}</span>`)}</div>
@@ -267,6 +291,8 @@ export function render(el, ctx) {
             : levelExpanded(tree, DEFAULT_LEVEL)
           : levelExpanded(tree, level),
     ),
+    /** Largeur choisie pour la colonne des noms (px) ; null = largeur par défaut de l'écran. */
+    labelWidth: Number.isFinite(saved.ganttLabelWidth) ? saved.ganttLabelWidth : null,
     /** Ligne qui porte le focus itinérant (seul arrêt de tabulation de l'arbre). */
     focusKey: null,
     notice: '',
@@ -282,6 +308,45 @@ export function render(el, ctx) {
     const valid = new Set(expandableKeys(ctx.model.tree));
     ctx.setPrefs?.({ ganttLevel: 'custom', ganttExpanded: prunedExpanded(st.expanded, valid) });
   };
+
+  /** Largeur affichée de la colonne des noms et ses bornes, pour la largeur actuelle de la vue. */
+  function widthInfo(wanted = st.labelWidth) {
+    const viewWidth = el.clientWidth;
+    const fallback = defaultLabelWidth(typeof window !== 'undefined' ? window.innerWidth : 0);
+    return {
+      min: LABEL_WIDTH.min,
+      max: labelWidthMax(viewWidth),
+      value: clampLabelWidth(wanted ?? fallback, viewWidth, fallback),
+    };
+  }
+
+  /**
+   * Largeur posée sans redessiner (glisser, curseur, clavier) : variable CSS de la vue, poignée et curseur
+   * synchrones ; enregistrée dans les préférences si persist (null = retour à la largeur par défaut).
+   */
+  function applyWidth(wanted, persist) {
+    const width = widthInfo(wanted);
+    el.querySelector('.gantt')?.style.setProperty('--gantt-label', `${width.value}px`);
+    const handle = el.querySelector('[data-resizer]');
+    if (handle) {
+      handle.setAttribute('aria-valuemax', String(width.max));
+      handle.setAttribute('aria-valuenow', String(width.value));
+      handle.setAttribute('aria-valuetext', widthText(width.value));
+    }
+    const range = el.querySelector('[data-label-width]');
+    if (range) {
+      range.max = String(width.max);
+      range.value = String(width.value);
+      range.setAttribute('aria-valuetext', widthText(width.value));
+    }
+    const out = el.querySelector('#gantt-width-value');
+    if (out) out.textContent = widthText(width.value);
+    if (persist) {
+      st.labelWidth = wanted === null ? null : width.value;
+      ctx.setPrefs?.({ ganttLabelWidth: st.labelWidth });
+    }
+    return width.value;
+  }
 
   function paint() {
     const box = el.querySelector('.gantt__scroll');
@@ -304,9 +369,10 @@ export function render(el, ctx) {
         ? label('gantt.rows.one')
         : label('gantt.rows', { n: n.toLocaleString('fr-FR') });
     const shownLevel = searching ? null : st.level;
+    const width = widthInfo();
     keepFocus(
       el,
-      h`<div class="gantt">
+      h`<div class="gantt" style="--gantt-label:${width.value}px">
         ${viewHeading(
           label('heading.gantt.title'),
           label('heading.gantt.sub'),
@@ -341,6 +407,7 @@ export function render(el, ctx) {
               )}
             </div>
           </fieldset>
+          ${isList ? '' : widthSliderHtml(width)}
           ${
             isList
               ? ''
@@ -374,7 +441,7 @@ export function render(el, ctx) {
               }</div>`
             : h`<div class="gantt__scroll" tabindex="-1" data-scroll-key="gantt">
           <div class="gantt__grid" role="treegrid" aria-label="${label('gantt.label')}" aria-describedby="gantt-help" style="--timeline-min:${TIMELINE_MIN[st.scale]}px">
-            ${headHtml(scale, ctx.today)}
+            ${headHtml(scale, ctx.today, width)}
             <div class="gantt__body" role="rowgroup">
               ${linesHtml(scale, ctx.today)}
               ${
@@ -500,6 +567,9 @@ export function render(el, ctx) {
     host.setAttribute('aria-hidden', 'true');
     const copy = live.cloneNode(true);
     copy.style.width = `${live.offsetWidth}px`;
+    // Même largeur de colonne des noms qu'à l'écran ; la poignée n'est pas imprimée
+    host.style.setProperty('--gantt-label', `${widthInfo().value}px`);
+    for (const n of copy.querySelectorAll('[data-resizer]')) n.remove();
     for (const n of copy.querySelectorAll('[id]')) n.removeAttribute('id');
     for (const b of copy.querySelectorAll('.grow__toggle[data-expanded]')) {
       b.className = 'grow__toggle';
@@ -574,7 +644,12 @@ export function render(el, ctx) {
     }
   };
 
+  el.oninput = (e) => {
+    if (e.target.matches('[data-label-width]')) applyWidth(Number(e.target.value), false);
+  };
+
   el.onchange = (e) => {
+    if (e.target.matches('[data-label-width]')) return void applyWidth(Number(e.target.value), true);
     if (e.target.matches('[data-scale]') && SCALES.includes(e.target.value)) {
       const inWindow = ctx.today >= scale.start && ctx.today <= scale.end;
       st.scale = e.target.value;
@@ -597,6 +672,14 @@ export function render(el, ctx) {
    * (ou déplier un regroupement sans fiche).
    */
   el.onkeydown = (e) => {
+    if (e.target.matches?.('[data-resizer]')) {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const next = labelWidthAfterKey(widthInfo().value, e.key, e.shiftKey, el.clientWidth);
+      if (next === null) return;
+      e.preventDefault();
+      applyWidth(next, true);
+      return;
+    }
     const row = e.target.closest?.('[data-row]');
     if (!row || e.altKey || e.ctrlKey || e.metaKey) return;
     const i = Number(row.dataset.row);
@@ -628,6 +711,35 @@ export function render(el, ctx) {
         for (let j = i - 1; j >= 0; j--) if (rows[j].depth < r.depth) return void focusRow(j);
       }
     }
+  };
+
+  // ---------- Poignée de la colonne des noms : glisser (souris, stylet, doigt), double-clic = largeur par défaut ----------
+  el.onpointerdown = (e) => {
+    const handle = e.target.closest?.('[data-resizer]');
+    if (!handle || e.button !== 0) return;
+    e.preventDefault();
+    handle.focus({ preventScroll: true });
+    const startX = e.clientX;
+    const startW = widthInfo().value;
+    let last = startW;
+    handle.setPointerCapture?.(e.pointerId);
+    handle.classList.add('is-dragging');
+    const move = (m) => {
+      last = applyWidth(startW + (m.clientX - startX), false);
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      handle.classList.remove('is-dragging');
+      if (last !== startW) applyWidth(last, true);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  };
+  el.ondblclick = (e) => {
+    if (e.target.closest?.('[data-resizer]')) applyWidth(null, true);
   };
 
   // Passage liste ↔ arbre quand la largeur franchit 768 px (écouteur retiré au rendu suivant)

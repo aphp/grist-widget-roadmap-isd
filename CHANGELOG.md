@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Gantt: resizable name column. Drag handle on the right edge of the "Élément" header (`role="separator"`, arrows
+  ±16 px, Shift ±64 px, Home/End, double-click resets the default width) and a "Largeur des noms" range slider in
+  the controls bar, kept in sync. Width between 160 px and 60 % of the view, saved in the `ganttLabelWidth` pref
+  (absent or invalid: default width), kept across re-renders and used by the PDF export. Full name in the title
+  of each row name. Medium-screen default width is now 256 px (on the 16 px step).
 - Fix: scroll positions jumped back to the top or left while other people edited the Feuille. Every `onRecords`
   re-read redrew the whole view, which only restored the page and the Kanban/Table scroll (not the Gantt, Portfolio,
   load plan, Stats or Synthesis areas), and focus restoration scrolled a focused card or row back into view. Now a
