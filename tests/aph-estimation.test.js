@@ -19,6 +19,7 @@ import {
   maxHours,
 } from '../widget/js/core/charges-edit.js';
 import {
+  lookupFromTables,
   EXPECTED_TYPES,
   READ_ALSO,
   WRITABLE,
@@ -396,4 +397,33 @@ test('colonnes relues : une colonne redevenue formule vide est retirée à la re
   writer.recheckColumns(META);
   assert.deepEqual(writer.can('Team', 'aph'), { ok: false, reason: 'vide' });
   assert.equal(g.batches.length, 0);
+});
+
+test('estimation : données chargées en retard, l’APH relu avant l’envoi (before) protège quand même le titulaire', async () => {
+  // L'admin désigne Eve (5) dans la Feuille ; le widget n'a pas encore relu (lookup sur les anciennes données)
+  const r = raw();
+  r.tables.Team.aph = r.tables.Team.id.map((id) => (id === 5 ? '1234567' : ''));
+  const g = createFakeGrist(r.tables);
+  const stale = structuredClone(g.data);
+  g.data.Team.aph[g.data.Team.id.indexOf(5)] = ESTIMATION_APH;
+  const lookup = { ...lookupFromTables(stale), choices: (k) => CHOICES[k] ?? null };
+  const writer = createWriter({
+    docApi: g.docApi,
+    mode: 'on',
+    columns: META,
+    lookup,
+    readTable: async (t) => structuredClone(g.data[t]),
+  });
+  // Conflit « garder la mienne » : before = ligne relue juste avant l'envoi
+  const before = { aph: ESTIMATION_APH };
+  assert.equal(await reason(writer.update('Team', 5, { aph: '1234568' }, { before })), 'aph-estimation');
+  assert.equal(await reason(writer.update('Team', 5, { aph: '' }, { before })), 'aph-estimation');
+  // Ligne dérivée (also) : même règle
+  const also = [{ table: 'Team', id: 5, changes: { aph: '1234568' }, before }];
+  assert.equal(await reason(writer.update('Team', 2, { nom: 'Bob' }, { also })), 'aph-estimation');
+  assert.equal(g.batches.length, 0);
+  assert.equal(g.data.Team.aph[g.data.Team.id.indexOf(5)], ESTIMATION_APH);
+  // Le reste de sa fiche reste modifiable
+  await writer.update('Team', 5, { nom: 'Eve DA bis' }, { before: { nom: 'Eve DA' } });
+  assert.equal(g.batches.length, 1);
 });

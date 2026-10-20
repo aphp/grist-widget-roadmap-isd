@@ -930,6 +930,14 @@ export function createWriter({
     const restoring = undone ? Object.keys(changes).filter((c) => changes[c] === undone.before[c]) : [];
     // Période de la tâche après modification (dates du lot, sinon celles des données) : borne de 1 ETP
     const ch = changes ?? {};
+    // APH de la personne estimation d'après la valeur relue juste avant l'envoi (before) : jamais retiré, même si
+    // les données chargées sont en retard (conflit « garder la mienne » après une désignation dans la Feuille)
+    const holderTouched = (t, c, b) => t === 'Team' && 'aph' in (c ?? {}) && isEstimationAph(b?.aph);
+    if (
+      holderTouched(table, ch, opts.before) ||
+      (opts.also ?? []).some((r) => holderTouched(r.table, r.changes, r.before))
+    )
+      throw new WriteRefused('aph-estimation');
     // Dates relues juste avant l'envoi si l'appelant les fournit, sinon celles des données chargées
     const period = 'charges' in ch ? (opts.period ?? periodOf?.(table, id) ?? {}) : {};
     const days = periodDays(
