@@ -1470,3 +1470,123 @@ for (const query of [
     },
   );
 }
+
+/** Vraie frappe clavier (CDP) dans l'élément focalisé : active les boutons comme un utilisateur ; repeat = touche maintenue. */
+async function press(k, { repeat = false } = {}) {
+  const codes = { Enter: 13, ' ': 32, ArrowDown: 40 };
+  const text = k === 'Enter' ? '\r' : k === ' ' ? ' ' : undefined;
+  const base = { key: k, code: k === ' ' ? 'Space' : k, windowsVirtualKeyCode: codes[k] ?? 0, autoRepeat: repeat };
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text });
+  if (!repeat) await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+  await sleep(50);
+}
+
+async function openTableMenu(query, index = 2) {
+  await open(query);
+  await w(`D.getElementById('tab-table').click(); return true;`);
+  await until(`D.querySelector('#view-panel[data-view="table"] .tbl-qs')`);
+  const id = await w(`const b = D.querySelectorAll('.tbl-qs')[${index}]; b.focus(); return Number(b.dataset.qsOpen);`);
+  await press('Enter');
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  return id;
+}
+
+test(
+  'menu de statut (P-UX-6) : choisir le statut actuel n’écrit rien ; Entrée maintenue n’écrit rien',
+  { skip: SKIP },
+  async () => {
+    const id = await openTableMenu(EDIT);
+    // Ouvert par Entrée : la répétition de la touche arrive dans le menu, sur le statut actuel, sans rien choisir
+    assert.equal(await w(`return D.activeElement.getAttribute('aria-checked');`), 'true');
+    await press('Enter', { repeat: true });
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    await press('ArrowDown');
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // Statut actuel choisi franchement : menu fermé, rien n'est écrit, focus rendu au bouton
+    await w(`D.querySelector('#qs-menu [aria-checked="true"]').focus(); return true;`);
+    await press('Enter');
+    await until(`!D.getElementById('qs-menu') && D.activeElement?.dataset.qsOpen === '${id}'`);
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // aria-controls retiré avec le menu
+    assert.equal(await w(`return D.activeElement.hasAttribute('aria-controls');`), false);
+    assert.equal(await w(`return D.activeElement.getAttribute('aria-expanded');`), 'false');
+  },
+);
+
+test('menu de statut (P-UX-6) : Entrée et Espace sur une entrée écrivent ce statut', { skip: SKIP }, async () => {
+  const id = await openTableMenu(EDIT);
+  await w(
+    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
+  );
+  const first = await w(`return D.activeElement.dataset.qsValue;`);
+  await press('Enter');
+  await until(`W.__writes.length === 1 && D.activeElement?.dataset.qsFocus === '${id}'`);
+  assert.equal((await writes())[0][0][3].statut, first);
+  await press('Enter');
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  await w(
+    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
+  );
+  const second = await w(`return D.activeElement.dataset.qsValue;`);
+  await press(' ');
+  await until(`W.__writes.length === 2`);
+  assert.equal((await writes())[1][0][3].statut, second);
+});
+
+test(
+  'menu de statut (P-UX-6) : tâche sans statut, focus neutre sur le menu, Entrée n’y choisit rien',
+  { skip: SKIP },
+  async () => {
+    await open(`${EDIT},statut-vide`);
+    await until(`D.querySelector('#kc-1[data-qs-focus]')`);
+    await w(`D.getElementById('kc-1').focus(); return true;`);
+    await key('s');
+    await until(`D.getElementById('qs-menu')`);
+    assert.equal(await w(`return D.activeElement.id;`), 'qs-menu');
+    assert.equal(await w(`return D.querySelectorAll('#qs-menu [aria-checked="true"]').length;`), 0);
+    await press('Enter');
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // Flèche : première entrée, choisie seulement par un appui franc
+    await press('ArrowDown');
+    assert.equal(await w(`return D.activeElement.dataset.qsValue;`), 'todo');
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await press('Enter');
+    await until(`W.__writes.length === 1 && D.activeElement?.id === 'kc-1'`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', 1, { statut: 'todo' }]]);
+  },
+);
+
+test(
+  'statut depuis la carte (P-UX-6) : menu contextuel du navigateur bloqué ; choix pendant un envoi signalé',
+  { skip: SKIP },
+  async () => {
+    await open(`${EDIT},lent`);
+    const blocked = await w(`const c = D.querySelector('.kcard[data-qs-focus]');
+    const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true }); c.dispatchEvent(e);
+    const q = D.querySelector('[data-qs-open]');
+    const e2 = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true }); q.dispatchEvent(e2);
+    return [e.defaultPrevented, e2.defaultPrevented];`);
+    assert.deepEqual(blocked, [true, true]);
+    const [a, b] = await w(
+      `const c = [...D.querySelectorAll('.kcol[data-col="status:todo"] .kcard[data-qs-focus]')]; return [Number(c[0].dataset.task), Number(c[1].dataset.task)];`,
+    );
+    await w(`D.querySelector('[data-qs-open="${a}"]').click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('review');
+    await until(`W.__writes.length === 1`);
+    // Premier envoi encore en cours (1,5 s) : le second choix est refusé avec un message, rien n'est envoyé
+    await w(`D.querySelector('[data-qs-open="${b}"]').click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('review');
+    await until(`/en cours d’envoi/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+    await sleep(2000);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);

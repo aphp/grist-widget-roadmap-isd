@@ -6,9 +6,11 @@ import { dayOfIso } from '../widget/js/core/dates.js';
 import {
   canQuickStatus,
   focusOrder,
+  isRepeatedChoice,
   isStatusShortcut,
   limitToReveal,
   menuMove,
+  menuStartIndex,
   statusMenuItems,
 } from '../widget/js/core/quick-status.js';
 import { myTasksHtml } from '../widget/js/views/my-tasks.js';
@@ -126,4 +128,20 @@ test('Mes tâches : en lecture seule, aucun contrôle ; en édition, un bouton-m
   // La ligne reste le bouton qui ouvre la fiche ; le statut n'y est plus répété
   assert.equal([...out.matchAll(/data-task="/g)].length, ids.length);
   assert.equal([...out.matchAll(/class="mt__status"/g)].length, ids.length - 1);
+});
+
+test('menuStartIndex : statut actuel focalisé ; sans statut coché, position neutre (-1)', () => {
+  assert.equal(menuStartIndex(statusMenuItems(['todo', 'review'], 'review')), 1);
+  assert.equal(menuStartIndex(statusMenuItems(['todo', 'review'], '')), -1);
+  assert.equal(menuStartIndex(statusMenuItems(['todo', 'review'], null)), -1);
+  assert.equal(menuStartIndex([]), -1);
+});
+
+test('isRepeatedChoice : Entrée ou Espace maintenues ignorées ; appui franc et autres touches laissés', () => {
+  assert.equal(isRepeatedChoice({ key: 'Enter', repeat: true }), true);
+  assert.equal(isRepeatedChoice({ key: ' ', repeat: true }), true);
+  assert.equal(isRepeatedChoice({ key: 'Spacebar', repeat: true }), true);
+  assert.equal(isRepeatedChoice({ key: 'Enter', repeat: false }), false);
+  assert.equal(isRepeatedChoice({ key: 'Enter' }), false);
+  assert.equal(isRepeatedChoice({ key: 'ArrowDown', repeat: true }), false);
 });
