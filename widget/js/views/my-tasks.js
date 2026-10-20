@@ -4,11 +4,14 @@
  * son projet, ses dates et l'ETP de la personne. Une ligne ouvre la fiche. Sans « Je suis… », un état vide invite
  * à choisir. Vue légère : 20 lignes par groupe, puis « Afficher plus ». Les filtres globaux ne s'appliquent pas
  * (seuls les projets masqués des Préférences sont écartés).
+ * Statut depuis la ligne (P-UX-6) : en édition, le statut d'une tâche modifiable devient un bouton-menu, à droite
+ * de la ligne (la ligne elle-même reste le bouton qui ouvre la fiche). Une tâche passée à « Terminé » quitte la
+ * liste : le focus va alors à la ligne voisine.
  */
 import { formatDayShort, weekStart } from '../core/dates.js';
 import { groupByPeriod, myTasks, PAGE_SIZE, visibleCount, weekLoad } from '../core/my-tasks.js';
 import { raw } from '../core/sanitize.js';
-import { label } from '../labels.js';
+import { label, statusLabel } from '../labels.js';
 import { viewHeading } from '../ui/heading.js';
 import { h, ICONS, statusBadge } from '../ui/kit.js';
 
@@ -50,11 +53,16 @@ function etpOf(t) {
   return label('mytasks.etp.none');
 }
 
-/** Une ligne : un seul bouton (titre, lieu, statut, dates, ETP) qui ouvre la fiche. */
-function rowHtml(t, today) {
+/**
+ * Une ligne : un bouton (titre, lieu, statut, dates, ETP) qui ouvre la fiche ; en édition (qs), le statut est un
+ * second bouton, à côté, qui ouvre le menu de statut.
+ */
+function rowHtml(t, today, qs) {
   const place = [t.chantier ?? label('mytasks.noChantier'), t.projet ?? label('mytasks.noProjet')].join(' · ');
   const roles = t.roles.map((r) => label(`mytasks.role.${r}`)).join(', ');
-  return h`<li class="mt__item">
+  const edit = Boolean(qs?.can(t.id));
+  const title = t.title || label('common.untitled');
+  return h`<li class="mt__item${edit ? ' mt__item--qs' : ''}">
     <button type="button" class="mt__row" data-task="${t.id}">
       <span class="mt__main">
         <span class="mt__title">${t.title || label('common.untitled')}</span>
@@ -62,7 +70,7 @@ function rowHtml(t, today) {
           ${place}${t.parent ? h`<span class="mt__parent"> · ${label('mytasks.subtask', { parent: t.parent })}</span>` : ''}
         </span>
       </span>
-      <span class="mt__status">${statusBadge(t.status)}</span>
+      ${edit ? '' : h`<span class="mt__status">${statusBadge(t.status)}</span>`}
       <span class="mt__dates">
         <span>${datesOf(t, today)}</span>
         ${t.lateDays > 0 ? h`<span class="mt__late">${label('mytasks.lateBy', { n: frN(t.lateDays) })}</span>` : ''}
@@ -72,10 +80,15 @@ function rowHtml(t, today) {
         <span class="mt__roles">${roles}</span>
       </span>
     </button>
+    ${
+      edit
+        ? h`<button type="button" class="mt__qs" data-qs-open="${t.id}" data-qs-focus="${t.id}" aria-haspopup="menu" aria-expanded="false" aria-label="${label('quickStatus.button', { statut: statusLabel(t.status), titre: title })}">${statusBadge(t.status)}<span class="mt__qs-caret" aria-hidden="true">▾</span></button>`
+        : ''
+    }
   </li>`;
 }
 
-function groupHtml(g, today, clicks) {
+function groupHtml(g, today, clicks, qs) {
   const total = g.items.length;
   const shown = visibleCount(total, clicks);
   const titleId = `mt-g-${g.period}`;
@@ -87,7 +100,7 @@ function groupHtml(g, today, clicks) {
       ${g.period === 'late' ? '' : h`<span class="mt__range">${rangeOf(g.period, today)}</span>`}
     </h3>
     <ul class="list mt__list" role="list">
-      ${g.items.slice(0, shown).map((t) => rowHtml(t, today))}
+      ${g.items.slice(0, shown).map((t) => rowHtml(t, today, qs))}
     </ul>
     ${
       rest > 0
@@ -135,9 +148,10 @@ function emptyHtml(kind, nom) {
 /**
  * Contenu de la vue (fragment sûr).
  * @param {object} model
- * @param {{me:number|null, today:number, hiddenProjects?:number[], clicks?:Record<string, number>}} opts
+ * @param {{me:number|null, today:number, hiddenProjects?:number[], clicks?:Record<string, number>,
+ *   qs?:{can(id:number):boolean}|null}} opts qs : statut depuis la ligne (édition ouverte), sinon lecture seule
  */
-export function myTasksHtml(model, { me, today, hiddenProjects = [], clicks = {} }) {
+export function myTasksHtml(model, { me, today, hiddenProjects = [], clicks = {}, qs = null }) {
   const person = me === null ? null : model.people.get(me);
   if (!person) return h`<section class="mt">${viewHeading(label('mytasks.title'))}${emptyHtml('me')}</section>`;
   const nom = person.nom || label('common.untitled');
@@ -174,7 +188,7 @@ export function myTasksHtml(model, { me, today, hiddenProjects = [], clicks = {}
       </nav>
       ${loadHtml(weekLoad(model, me, today))}
     </div>
-    ${groups.filter((g) => g.items.length).map((g) => groupHtml(g, today, clicks[g.period] ?? 0))}
+    ${groups.filter((g) => g.items.length).map((g) => groupHtml(g, today, clicks[g.period] ?? 0, qs))}
   </section>`;
 }
 
@@ -188,13 +202,20 @@ export function render(el, ctx) {
     memory.person = me;
     memory.clicks = {};
   }
-  const opts = () => ({ me, today: ctx.today, hiddenProjects: ctx.prefs.hiddenProjects, clicks: memory.clicks });
+  const opts = () => ({
+    me,
+    today: ctx.today,
+    hiddenProjects: ctx.prefs.hiddenProjects,
+    clicks: memory.clicks,
+    qs: ctx.quickStatus,
+  });
   el.innerHTML = myTasksHtml(ctx.model, opts());
 
   el.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || !el.contains(b)) return;
-    if (b.dataset.task) ctx.openDetail({ table: 'Tasks', id: Number(b.dataset.task) });
+    if (b.dataset.qsOpen) ctx.quickStatus?.open(b, Number(b.dataset.qsOpen));
+    else if (b.dataset.task) ctx.openDetail({ table: 'Tasks', id: Number(b.dataset.task) });
     else if (b.dataset.more) {
       const period = b.dataset.more;
       const before = el.querySelectorAll(`.mt__group--${period} .mt__row`).length;

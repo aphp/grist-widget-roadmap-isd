@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Status from the card and the row (editing on, task editable): "⋯" button on Kanban cards (keyboard: "S" or
+  Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
+  lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);
+  scroll and focus kept, the card follows its new column.
 - Tags: assign and remove existing tags on tasks and chantiers in their forms (searchable, keyboard-accessible chip
   picker). A new name can be assigned without being declared in the sheet (column options are never changed) and is
   marked "non déclaré". Tags shown in the detail panel, an optional "Tags" column in the Table and a "Tag" filter

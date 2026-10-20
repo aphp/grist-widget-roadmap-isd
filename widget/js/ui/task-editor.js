@@ -513,12 +513,16 @@ export function createTaskEditor(deps) {
     await save(batch);
   }
 
-  /** Statut rapide (fiche en lecture ou formulaire) : choisi dans un menu, enregistré tout de suite. */
+  /**
+   * Statut rapide (fiche en lecture ou formulaire, carte ou ligne d'une vue : P-UX-6) : choisi dans un menu,
+   * enregistré tout de suite. Le formulaire ouvert ne suit que s'il porte sur la même ligne.
+   * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'unknown', 'busy', échec…)
+   */
   async function quickStatus(ref, status) {
     const w = writer();
-    if (!w || quickBusy || st?.busy) return;
+    if (!w || quickBusy || st?.busy) return 'busy';
     quickBusy = true;
-    const cur = st;
+    const cur = st && st.ref.table === ref.table && st.ref.id === ref.id ? st : null;
     const result = await runQuickStatus({
       table: ref.table,
       taskId: ref.id,
@@ -530,7 +534,7 @@ export function createTaskEditor(deps) {
       timeoutMs: deps.timeoutMs?.(),
     });
     quickBusy = false;
-    if (result.kind === 'nothing') return;
+    if (result.kind === 'nothing') return 'nothing';
     if (result.kind === 'saved') {
       const ch = result.entry.after;
       if (cur && st === cur) {
@@ -543,7 +547,7 @@ export function createTaskEditor(deps) {
       }
       announce(result.entry, 'toast.status', { statut: statusLabel(status) });
       if (cur && st === cur) render('btn-status-menu');
-      return;
+      return 'saved';
     }
     if (result.kind === 'unknown') {
       deps.onUnknown?.();
@@ -556,15 +560,19 @@ export function createTaskEditor(deps) {
         }
         render('btn-status-menu');
       }
-      return;
+      return 'unknown';
     }
-    const kind = result.kind === 'failed' ? failureKind(result.error) : result.kind;
-    if (sessionReadOnly(kind)) return;
+    const kind =
+      result.kind === 'failed' ? failureKind(result.error) : result.kind === 'reread-failed' ? 'reread' : result.kind;
+    if (sessionReadOnly(kind)) return kind;
     const text = kind.startsWith('refused:')
       ? label('form.fail.refused', { raison: refusedText(kind.slice(8)) })
-      : label(`form.fail.${['acl', 'missing', 'reread'].includes(kind) ? kind : 'other'}`);
+      : kind === 'reread'
+        ? label('quickStatus.fail.reread')
+        : label(`form.fail.${['acl', 'missing'].includes(kind) ? kind : 'other'}`);
     deps.toast.show(text, { tone: 'error' });
     if (cur && st === cur) render('btn-status-menu');
+    return kind;
   }
 
   /** Après une relecture des données : le formulaire n'est pas redessiné, un bandeau signale un changement. */
@@ -965,6 +973,7 @@ export function createTaskEditor(deps) {
 
   return {
     open,
+    quickStatus,
     refreshFromModel,
     requestLeave,
     notifyReload,

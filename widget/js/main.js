@@ -37,6 +37,8 @@ import * as team from './views/team.js';
 import { detailContent, detailExists, detailTitle } from './views/detail.js';
 import { editPanelHtml } from './ui/edit-panel.js';
 import { createTaskEditor } from './ui/task-editor.js';
+import { closeStatusPopover, openStatusPopover, statusPopoverKey } from './ui/status-popover.js';
+import { canQuickStatus, focusOrder, statusMenuItems } from './core/quick-status.js';
 import { createCreateDialog } from './ui/create-dialog.js';
 import { prefillFromFilters } from './core/create-form.js';
 import { createToast } from './ui/toast.js';
@@ -226,7 +228,134 @@ function buildCtx(view) {
     months: monthsFrom(monthKey(today), 24),
     today,
     team: teamCtx(),
+    quickStatus: quickStatusCtx(),
+    reveal: viewFocus?.reveal ?? null,
   };
+}
+
+// ---------- Statut depuis la carte et la ligne (P-UX-6) ----------
+/**
+ * Élément à refocaliser après un changement de statut fait depuis une vue : clés data-qs-focus par ordre de
+ * préférence (la tâche, puis ses voisines), tâche à garder visible malgré la pagination. Gardé jusqu'à la fin de
+ * la relecture qui suit un envoi réel (deux rendus), puis oublié.
+ */
+let viewFocus = null;
+/** Dernier changement de statut fait depuis une vue : « Annuler » y ramène le focus. */
+let lastQuick = null;
+
+/** Contrôle de statut des vues : null en lecture seule (rien n'est affiché), sinon droit par tâche et ouverture. */
+function quickStatusCtx() {
+  const m = state.model;
+  if (!m || !writer || writer.mode === 'off' || !editState.canEdit) return null;
+  return { can: (id) => canQuickStatus(m, id, editState, writer), open: openQuickStatus };
+}
+
+/**
+ * Ouvre le menu de statut d'une tâche depuis une vue.
+ * @param {HTMLElement} anchor contrôle visible (bouton ⋯, cellule, statut de la ligne)
+ * @param {number} taskId
+ * @param {HTMLElement} [focusEl] élément focalisé à la fermeture et après le changement (data-qs-focus)
+ */
+function openQuickStatus(anchor, taskId, focusEl = anchor) {
+  const m = state.model;
+  const t = m?.tasks.get(taskId);
+  if (!t || !canQuickStatus(m, taskId, editState, writer)) return;
+  openStatusPopover({
+    anchor,
+    returnFocus: focusEl,
+    title: t.title || label('common.untitled'),
+    items: statusMenuItems(m.statuses?.tasks ?? [], t.status),
+    onPick: (status) => changeStatusFromView(taskId, status, focusEl),
+  });
+}
+
+/** Garde un élément à refocaliser pendant une écriture (et la relecture qui la suit). */
+async function withViewFocus(focus, run) {
+  const prev = viewFocus;
+  focus.expires = Date.now() + 30000; // garde-fou : jamais retenu au-delà d'une relecture lente
+  viewFocus = focus;
+  let out;
+  try {
+    out = await run();
+  } finally {
+    if (viewFocus === focus) {
+      if (out === 'busy') viewFocus = prev;
+      else if (loading) focus.untilReload = true;
+      else viewFocus = null;
+    }
+  }
+  return out;
+}
+
+/** Changement choisi dans le menu : statut rapide de la fiche (relecture, clôture, refus, mode essai). */
+async function changeStatusFromView(taskId, status, focusEl) {
+  const list = focusEl.closest('ul, tbody');
+  const keys = list ? [...list.querySelectorAll('[data-qs-focus]')].map((x) => x.dataset.qsFocus) : [];
+  const focus = { keys: focusOrder(keys, String(taskId)), reveal: taskId, untilReload: false };
+  const kind = await withViewFocus(focus, () => editor.quickStatus({ table: 'Tasks', id: taskId }, status));
+  lastQuick = kind === 'saved' ? { entry: writer?.lastUndoable() ?? null, keys: [String(taskId)], taskId } : lastQuick;
+}
+
+const qsSelector = (k) => `[data-qs-focus="${CSS.escape(k)}"]`;
+
+/**
+ * Sélecteur stable de l'élément focalisé dans la vue (carte, bouton de statut, titre d'une ligne…), pour le
+ * retrouver après un rendu complet ; null si le focus n'est pas dans la vue.
+ */
+function focusedSelector() {
+  const a = document.activeElement;
+  if (!a || !$('view-panel')?.contains(a)) return null;
+  if (a.dataset.qsFocus) return qsSelector(a.dataset.qsFocus);
+  if (a.id) return `#${CSS.escape(a.id)}`;
+  for (const [k, attr] of [
+    ['qsOpen', 'data-qs-open'],
+    ['task', 'data-task'],
+    ['open', 'data-open'],
+  ])
+    if (a.dataset[k]) return `[${attr}="${CSS.escape(a.dataset[k])}"]`;
+  return null;
+}
+
+/**
+ * Après un rendu complet : focus rendu au premier élément trouvé parmi les sélecteurs, s'il a été perdu (jamais
+ * pris à un autre élément) ; sinon au panneau de la vue.
+ */
+function restoreViewFocus(selectors) {
+  const a = document.activeElement;
+  if (!selectors?.length || (a && a !== document.body && a.isConnected)) return;
+  const panel = $('view-panel');
+  for (const sel of selectors) {
+    const target = panel?.querySelector(sel);
+    if (target) return target.focus();
+  }
+  panel?.focus();
+}
+
+/** Défilements de la page et des zones qui défilent en largeur (plateau du Kanban, Tableau). */
+const SCROLLERS = ['.kanban__board', '.tbl__table .fr-table__wrapper', '.tbl__table .fr-table__container'];
+function captureScroll() {
+  const panel = $('view-panel');
+  return {
+    view: state.prefs.view,
+    x: window.scrollX,
+    y: window.scrollY,
+    inner: SCROLLERS.map((sel) => {
+      const e = panel?.querySelector(sel);
+      return e ? { left: e.scrollLeft, top: e.scrollTop } : null;
+    }),
+  };
+}
+function restoreScroll(saved) {
+  if (saved.view !== state.prefs.view) return;
+  const panel = $('view-panel');
+  SCROLLERS.forEach((sel, i) => {
+    const e = saved.inner[i] && panel?.querySelector(sel);
+    if (e) {
+      e.scrollLeft = saved.inner[i].left;
+      e.scrollTop = saved.inner[i].top;
+    }
+  });
+  window.scrollTo(saved.x, saved.y);
 }
 
 /** Onglet Équipe (lot 2d) : « Ajouter une personne » et « Réactiver », selon l'édition et les droits. */
@@ -244,6 +373,7 @@ function teamCtx() {
 
 // ---------- Rendu ----------
 function renderView() {
+  closeStatusPopover(false);
   const m = state.model;
   const view = applyFilters(m, state.prefs.filters, state.prefs);
   // Onglet Équipe : annuaire hors filtres (barre de filtres, étiquettes et recherche globale masquées en CSS)
@@ -297,12 +427,25 @@ function fillEditPanel() {
     ).toString();
 }
 
+/**
+ * Tout redessiner (après une écriture, une annulation ou une relecture) : la page garde son défilement, et le
+ * focus revient à l'élément retenu (changement de statut depuis une vue) ou au contrôle dont le menu était ouvert.
+ */
 function renderAll() {
+  const scroll = captureScroll();
+  const openKey = statusPopoverKey();
+  const focused = focusedSelector();
+  if (viewFocus && viewFocus.expires < Date.now()) viewFocus = null;
   el.app.removeAttribute('aria-busy');
   chrome.renderHeader(state.model, state.prefs, editInfo());
   fillEditPanel();
   chrome.renderAlerts(state.problems);
   renderFiltersAndView();
+  restoreScroll(scroll);
+  // Changement de statut : la tâche puis ses voisines ; menu ouvert pendant une relecture : son contrôle ; sinon
+  // l'élément qui avait le focus
+  const wanted = viewFocus?.keys ?? (openKey ? [openKey] : null);
+  restoreViewFocus(wanted ? wanted.map(qsSelector) : focused ? [focused] : null);
 }
 
 function renderScreen(kind, vars) {
@@ -387,8 +530,14 @@ function onWritten(entry) {
 
 async function undoLast() {
   if (!writer) return;
+  // « Annuler » d'un changement de statut fait depuis une vue : le focus revient à sa carte ou à sa ligne
+  const quick = lastQuick && lastQuick.entry === writer.lastUndoable() ? lastQuick : null;
+  lastQuick = null;
   try {
-    const r = await writer.undoLast((table, id) => gateway.fetchRow(table, id));
+    const undo = () => writer.undoLast((table, id) => gateway.fetchRow(table, id));
+    const r = quick
+      ? await withViewFocus({ keys: quick.keys, reveal: quick.taskId, untilReload: false }, undo)
+      : await undo();
     if (r.busy) return; // annulation déjà en cours
     if (!r.entry) return toast.show(label('toast.nothing'));
     if (r.undoEntry) onWritten(r.undoEntry);
@@ -738,6 +887,7 @@ async function reload() {
     loading = false;
     chrome.setRefreshing(false);
     if (pending) reload();
+    else if (viewFocus?.untilReload) viewFocus = null;
   }
 }
 

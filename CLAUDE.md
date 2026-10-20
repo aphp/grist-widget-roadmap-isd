@@ -54,8 +54,10 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   widget dans le document de test), `check_writes.py save|check|diff` (contrôle avant/après un scénario).
 
 ## État et suite
-- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD, tags
-  affectés et retirés (lot 2e, `core/tags-edit.js`).
+- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD, statut
+  depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
+  `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte), tags affectés et
+  retirés (lot 2e, `core/tags-edit.js`).
 - **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
   Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
   (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
@@ -68,7 +70,7 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   prévient que les tags remplacent toute la liste.
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
-- Lots suivants : statut depuis la carte, glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
+- Lots suivants : glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
   d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité, demandeur par chantier. Pas de création de
   rôle. `Team.capaciteHebdo` reste en lecture (colonne jamais remplie dans la Feuille).
