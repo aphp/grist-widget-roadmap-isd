@@ -3087,3 +3087,193 @@ test(
     );
   },
 );
+
+// ---------- Suppression depuis la fiche : tâche avec ses sous-tâches, chantier vide ; « Annuler » au même numéro ----------
+
+/** Ouvre la fiche puis le formulaire d'une tâche du Kanban (par son identifiant). */
+async function openTaskForm(id) {
+  await until(`D.querySelector('.view [data-task="${id}"]')`);
+  await clickOn(`.view [data-task="${id}"]`);
+  await until(`D.getElementById('btn-edit-open')`);
+  await clickOn('#btn-edit-open');
+  await until(`D.getElementById('task-form') && D.getElementById('btn-form-delete')`);
+}
+
+/** Ouvre la fiche puis le formulaire d'un chantier (fil d'Ariane de la fiche d'une tâche du Kanban). */
+async function openChantierForm(taskId) {
+  await until(`D.querySelector('.view [data-task="${taskId}"]')`);
+  await clickOn(`.view [data-task="${taskId}"]`);
+  await until(`D.querySelector('.dt-crumbs [data-ref-table="Chantiers"]')`);
+  await clickOn('.dt-crumbs [data-ref-table="Chantiers"]');
+  await until(`D.getElementById('btn-edit-open')`);
+  await clickOn('#btn-edit-open');
+  await until(`D.getElementById('chantier-form')`);
+}
+
+/** Ouvre le formulaire d'un chantier par son identifiant (fiche ouverte depuis la vue, faute de carte). */
+async function openChantierFormById(id) {
+  await w(`D.getElementById('tab-gantt').click(); return true;`);
+  const row = `[...D.querySelectorAll('#view-panel[data-view="gantt"] .grow--chantier')].find((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`;
+  await until(row);
+  await w(`const t = ${row}.querySelector('[data-open]'); t.click(); return true;`);
+  await until(`D.getElementById('btn-edit-open')`);
+  await clickOn('#btn-edit-open');
+  await until(`D.getElementById('chantier-form') && D.getElementById('btn-form-delete')`);
+  assert.equal(
+    await w(`return D.getElementById('detail-title').textContent.includes('Chantier sans tâche');`),
+    true,
+    id,
+  );
+}
+
+test(
+  'suppression : tâche et ses 2 sous-tâches dans un lot, disparues de la vue ; « Annuler » les recrée aux mêmes numéros',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openTaskForm(2);
+    // Bouton tertiaire à gauche du pied, jamais le bouton principal
+    assert.equal(await w(`return D.querySelector('.tf-foot').firstElementChild.id;`), 'btn-form-delete');
+    assert.match(await w(`return D.getElementById('btn-form-delete').className;`), /fr-btn--tertiary/);
+    await clickOn('#btn-form-delete');
+    await until(`D.querySelector('dialog.cdlg[open] #del-confirm')`);
+    assert.match(
+      await w(`return D.getElementById('cdlg-title').textContent;`),
+      /Supprimer la tâche « Tâche 002 · Modélisation » \?/,
+    );
+    assert.equal(await w(`return D.querySelectorAll('#del-list li').length;`), 2);
+    assert.match(await w(`return D.getElementById('del-hint').textContent;`), /Vous pourrez annuler juste après/);
+    // « Annuler » a le focus par défaut
+    assert.equal(await w(`return D.activeElement.id;`), 'del-cancel');
+    await clickOn('#del-confirm');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [
+      [
+        ['RemoveRecord', 'Tasks', 2],
+        ['RemoveRecord', 'Tasks', 3],
+        ['RemoveRecord', 'Tasks', 4],
+      ],
+    ]);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await until(`!D.querySelector('.view [data-task="2"]')`);
+    assert.match(
+      await w(`return D.querySelector('.toast__text').textContent;`),
+      /Tâche supprimée \(et ses 2 sous-tâches\)\./,
+    );
+    // Focus rendu à la vue, sur une carte voisine (pas au corps de la page)
+    assert.equal(await w(`return D.getElementById('view-panel').contains(D.activeElement);`), true);
+    assert.match(await w(`return D.activeElement.dataset.task ?? '';`), /^\d+$/);
+    // Journal de l'en-tête à jour
+    await w(`D.getElementById('btn-edit-pill').click(); return true;`);
+    await until(`!D.getElementById('edit-panel').hidden`);
+    assert.match(
+      await w(`return D.querySelector('.edit-panel__list').textContent;`),
+      /suppression de « Tâche 002 · Modélisation » et de ses 2 sous-tâches/,
+    );
+    await w(`D.getElementById('btn-edit-pill').click(); return true;`);
+    // « Annuler » : les trois lignes recréées à leur numéro, la tâche revient
+    await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+    await until(`W.__writes.length === 2`);
+    const restore = (await writes())[1];
+    assert.deepEqual(
+      restore.map((a) => [a[0], a[1], a[2]]),
+      [
+        ['AddRecord', 'Tasks', 2],
+        ['AddRecord', 'Tasks', 3],
+        ['AddRecord', 'Tasks', 4],
+      ],
+    );
+    assert.equal(restore[1][3].parentTask, 2);
+    assert.equal(restore[0][3].titre, 'Tâche 002 · Modélisation');
+    await until(`D.querySelector('.view [data-task="2"]')`);
+    await until(`/Suppression annulée/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+  },
+);
+
+test(
+  'suppression : chantier non vide refusé sans écriture ; « Annuler » de la fenêtre n’écrit rien',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openChantierForm(2);
+    await until(`D.getElementById('btn-form-delete')`);
+    await clickOn('#btn-form-delete');
+    await until(`D.querySelector('dialog.cdlg[open] #del-close')`);
+    assert.match(
+      await w(`return D.getElementById('del-alert').textContent;`),
+      /déplacez ou supprimez d’abord ses 16 tâches/,
+    );
+    assert.equal(await w(`return D.querySelectorAll('.cdlg__foot button').length;`), 1);
+    await clickOn('#del-close');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    // Fenêtre de la tâche fermée par « Annuler » : rien n'est écrit, le formulaire reste ouvert
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await openTaskForm(2);
+    await clickOn('#btn-form-delete');
+    await until(`D.querySelector('dialog.cdlg[open] #del-cancel')`);
+    await clickOn('#del-cancel');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    assert.equal(await w(`return Boolean(D.getElementById('task-form'));`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test('suppression : chantier vide supprimé puis restauré au même numéro', { skip: SKIP }, async () => {
+  await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+  await openChantierFormById(31);
+  await clickOn('#btn-form-delete');
+  await until(`D.querySelector('dialog.cdlg[open] #del-confirm')`);
+  assert.match(
+    await w(`return D.getElementById('cdlg-title').textContent;`),
+    /Supprimer le chantier « Chantier sans tâche du pilotage » \?/,
+  );
+  await clickOn('#del-confirm');
+  await until(`W.__writes.length === 1`);
+  assert.deepEqual(await writes(), [[['RemoveRecord', 'Chantiers', 31]]]);
+  await until(`/Chantier supprimé/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+  await until(
+    `![...D.querySelectorAll('.grow--chantier')].some((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`,
+  );
+  await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+  await until(`W.__writes.length === 2`);
+  const restore = (await writes())[1];
+  assert.deepEqual([restore.length, restore[0][0], restore[0][1], restore[0][2]], [1, 'AddRecord', 'Chantiers', 31]);
+  await until(
+    `[...D.querySelectorAll('.grow--chantier')].some((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`,
+  );
+});
+
+test('suppression en mode essai : notée dans le journal, rien n’est envoyé', { skip: SKIP }, async () => {
+  await open('?edition=essai');
+  await openTaskForm(2);
+  await clickOn('#btn-form-delete');
+  await until(`D.querySelector('dialog.cdlg[open] #del-confirm')`);
+  assert.match(await w(`return D.getElementById('del-confirm').textContent;`), /essai/);
+  await clickOn('#del-confirm');
+  await until(`!D.querySelector('dialog.cdlg')`);
+  await until(`!D.querySelector('.view [data-task="2"]')`);
+  assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Mode essai/);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  await w(`D.getElementById('btn-edit-pill').click(); return true;`);
+  await until(`!D.getElementById('edit-panel').hidden`);
+  assert.match(
+    await w(`return D.querySelector('.edit-panel__list').textContent;`),
+    /suppression de « Tâche 002 · Modélisation » et de ses 2 sous-tâches/,
+  );
+  assert.match(await w(`return D.querySelector('.edit-panel__json').textContent;`), /RemoveRecord/);
+});
+
+for (const query of ['', '?edition=1&doc=doc-dev-local&ecritures=lecteur']) {
+  test(
+    `suppression : aucun bouton sans édition ou pour un lecteur (${query || 'édition coupée'})`,
+    { skip: SKIP },
+    async () => {
+      await open(query);
+      await clickOn('.view [data-task="2"]');
+      await until(`D.getElementById('app-detail').dataset.open === 'true'`);
+      assert.equal(await w(`return D.querySelectorAll('#btn-form-delete, #btn-edit-open').length;`), 0);
+      assert.equal(await w(`return W.__writes.length;`), 0);
+    },
+  );
+}

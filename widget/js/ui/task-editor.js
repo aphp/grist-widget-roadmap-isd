@@ -6,8 +6,12 @@
  * construite ici. Chaque enregistrement travaille sur un instantané : si le formulaire change pendant l'attente,
  * le résultat est quand même annoncé et appliqué au modèle, mais le nouveau formulaire n'est pas touché.
  */
+import { openDialog } from './dialog.js';
 import { createPeopleBlock, peopleState } from './people-block.js';
-import { conflictBatch, failureKind, runQuickStatus, runSave } from '../core/task-session.js';
+import { conflictBatch, failureKind, runDelete, runQuickStatus, runSave } from '../core/task-session.js';
+import { deletePlan } from '../core/delete-plan.js';
+import { REMOVABLE } from '../core/grist-writer.js';
+import { deleteBody, deleteFoot, deleteTitle } from '../views/delete-dialog.js';
 import { FORM_FIELDS, diffDraft, draftFrom, rebaseDraft, setMilestone, validateTask } from '../core/task-form.js';
 import {
   CHANTIER_FIELDS,
@@ -30,7 +34,7 @@ import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { tagsWriteProblem } from '../core/tags-edit.js';
 import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags-field.js';
-import { draftChangeRight, quickStatusRight } from '../core/write-rights.js';
+import { deleteRight, draftChangeRight, quickStatusRight } from '../core/write-rights.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargesFootHtml,
@@ -111,13 +115,18 @@ const MORE_KEY = 'roadmap-isd.formMore';
  *   getWriter():object|null, fetchRow(table:string, id:number):Promise<object|null>, today():number,
  *   storage:Storage, toast:{show:Function}, kindOf(ref):*, titleOf(ref):string, currentRef():object|null,
  *   showRead(ref):void, onWritten(entry:object):void, onUndo():void, onSessionReadOnly(reason:string):void,
- *   onCreate?(data:object):void, onMove?(ref:object):void}} deps
+ *   onCreate?(data:object):void, onMove?(ref:object):void, canWriteRow?(table:string, id:number):boolean,
+ *   onDeleted?(ref:object, entry:object):void}} deps
  *   onCreate : bouton de création de la fiche (data-create, data-parent, data-chantier) ;
- *   onMove : « Changer » de la ligne Rattachement d'une tâche
+ *   onMove : « Changer » de la ligne Rattachement d'une tâche ;
+ *   canWriteRow : règle de périmètre (bouton « Supprimer » et lignes du lot) ; onDeleted : après une suppression
+ *   (fiche fermée, journal à jour, focus rendu à la vue)
  */
 export function createTaskEditor(deps) {
   let st = null;
   let quickBusy = false;
+  /** Fenêtre de suppression ouverte : {ref, titre, plan, mode, busy, fail, dlg}, ou null. */
+  let del = null;
 
   const model = () => deps.getModel();
   const writer = () => deps.getWriter();
@@ -230,6 +239,9 @@ export function createTaskEditor(deps) {
       base,
       draft: SPECS[ref.table].draftFrom(base),
       canCreate: w.canAdd('Tasks').ok,
+      // « Supprimer » : tâche (avec ses sous-tâches) ou chantier, droit du writer et périmètre ISD
+      canDelete:
+        REMOVABLE.includes(ref.table) && deleteRight(w, ref.table).ok && Boolean(deps.canWriteRow?.(ref.table, ref.id)),
       canMove: Boolean(task && !task.parentId && w.can('Tasks', 'Chantier').ok && w.can('Tasks', 'projet').ok),
       reattachTo: null,
       originalType: base.type,
@@ -544,6 +556,106 @@ export function createTaskEditor(deps) {
     deps.toast.show(text, { tone: 'error' });
     if (cur && st === cur) render('btn-status-menu');
     return kind;
+  }
+
+  // ---------- Suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide) ----------
+
+  function paintDelete(focusId) {
+    del?.dlg.update(deleteBody(del), deleteFoot(del), focusId);
+  }
+
+  function closeDelete() {
+    const d = del;
+    del = null;
+    d?.dlg.close();
+  }
+
+  /**
+   * « Supprimer » : droit relu au moment d'agir, plan calculé sur les données chargées (même règle que le writer),
+   * puis fenêtre de confirmation qui nomme l'élément et liste ses sous-tâches ; refus expliqué sans rien envoyer.
+   */
+  function askDelete() {
+    if (!st || st.busy || st.locked || del) return;
+    const w = writer();
+    const right = deleteRight(w, st.ref.table);
+    if (!right.ok) {
+      st.canDelete = false;
+      deps.toast.show(label('form.fail.refused', { raison: refusedText(right.reason) }), { tone: 'error' });
+      return render();
+    }
+    const plan = deletePlan(model(), st.ref.table, st.ref.id, { canWriteRow: deps.canWriteRow });
+    const d = { ref: { ...st.ref }, titre: deps.titleOf(st.ref), plan, mode: w.mode, busy: false, fail: null };
+    d.dlg = openDialog({
+      title: deleteTitle(d),
+      body: deleteBody(d),
+      foot: deleteFoot(d),
+      focus: plan.ok ? 'del-cancel' : 'del-close',
+      onRequestClose: () => {
+        if (!del?.busy) closeDelete();
+      },
+    });
+    del = d;
+    d.dlg.root.addEventListener('click', (e) => {
+      const b = e.target.closest?.('[data-del]');
+      if (!b || del !== d || d.busy) return;
+      if (b.dataset.del === 'confirm') confirmDelete();
+      else closeDelete();
+    });
+  }
+
+  /** Texte d'un échec de la suppression (refus du writer sur les données relues, Grist, délai). */
+  function deleteFailText(result) {
+    if (result.kind === 'unknown') return { text: label('delete.fail.unknown') };
+    const k = result.kind === 'refused' ? `refused:${result.reason}` : failureKind(result.error);
+    if (k.startsWith('refused:')) return { text: label('form.fail.refused', { raison: refusedText(k.slice(8)) }) };
+    if (k === 'acl' || k === 'missing') return { text: label(`delete.fail.${k}`) };
+    return { text: label('delete.fail.other'), detail: String(result.error?.message ?? '') };
+  }
+
+  /** « Supprimer » confirmé : un seul lot envoyé par le writer, qui relit et recontrôle tout avant l'envoi. */
+  async function confirmDelete() {
+    const d = del;
+    if (!d || d.busy) return;
+    const w = writer();
+    // Droit relu au moment d'agir (session passée en lecture, règle d'accès constatée depuis l'ouverture)
+    const right = deleteRight(w, d.ref.table);
+    if (!right.ok) {
+      d.fail = { text: label('form.fail.refused', { raison: refusedText(right.reason) }) };
+      return paintDelete('del-close');
+    }
+    const cur = st && st.ref.table === d.ref.table && st.ref.id === d.ref.id ? st : null;
+    d.busy = true;
+    if (cur) cur.busy = true; // la fiche ne se quitte pas et n'est pas redessinée pendant l'envoi
+    paintDelete('del-confirm');
+    const result = await runDelete({
+      writer: w,
+      table: d.ref.table,
+      id: d.ref.id,
+      expect: d.plan.rows.map((r) => r.id),
+    });
+    d.busy = false;
+    if (cur) cur.busy = false;
+    if (result.kind === 'saved') {
+      closeDelete();
+      if (st === cur) st = null;
+      deps.onDeleted?.(d.ref, result.entry);
+      const n = result.entry.snapshot.length - 1;
+      const key =
+        d.ref.table === 'Chantiers'
+          ? 'delete.toast.chantier'
+          : n > 1
+            ? 'delete.toast.taskMany'
+            : n === 1
+              ? 'delete.toast.taskOne'
+              : 'delete.toast.task';
+      deps.toast.show(label(result.entry.sent ? key : `${key}Dry`, { n }), { onAction: deps.onUndo });
+      return;
+    }
+    if (result.kind === 'unknown') deps.onUnknown?.();
+    const kind = result.kind === 'failed' ? failureKind(result.error) : `refused:${result.reason ?? ''}`;
+    if (sessionReadOnly(kind)) return closeDelete();
+    d.fail = deleteFailText(result);
+    paintDelete('del-close');
   }
 
   /** Après une relecture des données : le formulaire n'est pas redessiné, un bandeau signale un changement. */
@@ -867,6 +979,7 @@ export function createTaskEditor(deps) {
             });
         }
       } else if (action === 'cancel') close();
+      else if (action === 'delete') askDelete();
       else if (action === 'clear-closure') {
         if (!applyDraft({ ...st.draft, dateCloture: null })) return;
         st.badDates.delete('dateCloture');

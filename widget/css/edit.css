@@ -69,6 +69,27 @@
   gap: var(--space-2);
   margin-left: auto;
 }
+/* Fenêtre de suppression : sous-tâches emportées, rappel « Annuler » ; « Supprimer » en couleur d'erreur */
+.del__lead,
+.del__hint {
+  margin: 0 0 var(--space-2);
+}
+.del__list {
+  margin: 0 0 var(--space-3);
+  white-space: pre-wrap;
+}
+.del__more {
+  color: var(--color-text-muted);
+  list-style: none;
+}
+.del__confirm {
+  background-color: var(--badge-error-text);
+  color: var(--color-surface-raised);
+}
+/* « Supprimer » : à gauche du pied, couleur d'erreur sans fond (jamais le bouton principal) */
+.tf-foot__delete {
+  color: var(--badge-error-text);
+}
 .tf-foot--leave .tf-foot__text {
   font-weight: var(--font-weight-bold);
 }

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { moveChangesProjet } from '../widget/js/core/create-form.js';
 import {
   createDialogRight,
+  deleteRight,
   draftChangeRight,
   personDialogRight,
   quickStatusRight,
@@ -81,6 +82,15 @@ test('fenêtres des personnes et statut rapide : la colonne ou la table de l’a
   assert.equal(quickStatusRight(w, 'Tasks').ok, true);
   assert.deepEqual(quickStatusRight(w, 'Chantiers'), { ok: false, reason: 'formule' });
   assert.equal(quickStatusRight(null, 'Tasks').reason, 'off');
+});
+
+test('suppression depuis la fiche : droit du writer relu (canRemove), writer coupé ou absent, ancien writer', () => {
+  const w = { ...fakeWriter(), canRemove: (t) => (t === 'Chantiers' ? { ok: false, reason: 'acl' } : OK) };
+  assert.deepEqual(deleteRight(w, 'Tasks'), OK);
+  assert.deepEqual(deleteRight(w, 'Chantiers'), { ok: false, reason: 'acl' });
+  assert.equal(deleteRight(null, 'Tasks').reason, 'off');
+  assert.equal(deleteRight({ ...w, mode: 'off' }, 'Tasks').reason, 'off');
+  assert.deepEqual(deleteRight(fakeWriter(), 'Tasks'), { ok: false, reason: 'table' });
 });
 
 test('refus relu avant l’envoi : un message propre à chaque raison', () => {
