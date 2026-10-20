@@ -125,20 +125,21 @@ test('préférences : nouveaux filtres assainis, anciennes préférences migrée
   assert.equal(shouldPromptMe(loadPrefs(store({ mePrompted: true }))), false);
 });
 
-test('« Je suis… » : première personne choisie → périmètre « Mes tâches » ; changement de personne → choix gardé', () => {
+test('« Je suis… » : première personne choisie → périmètre « Mes chantiers » ; changement de personne → choix gardé', () => {
   const start = { ...DEFAULT_PREFS, filters: { ...DEFAULT_FILTERS } };
   const a = choosePerson(start, 5, m.people.get(5));
   assert.equal(a.me, 5);
   assert.equal(a.mePrompted, true);
-  assert.equal(a.filters.scope, 'tasks');
-  assert.deepEqual(ids(applyFilters(m, a.filters, a)), [2001, 2010]);
+  assert.equal(a.filters.scope, 'chantiers');
+  // Eve (5) : le chantier partagé, où elle a une tâche (sa tâche sans chantier est dans l'onglet « Mes tâches »)
+  assert.deepEqual(ids(applyFilters(m, a.filters, a)), [2010]);
   // L'utilisateur choisit « Tout », puis change de personne : le périmètre reste « Tout »
   const all = { ...a, filters: { ...a.filters, scope: 'all' } };
   assert.equal(choosePerson(all, 1, m.people.get(1)).filters.scope, 'all');
-  // Changement de personne avec « Mes tâches » : le filtre suit la nouvelle personne
+  // Changement de personne avec « Mes chantiers » : le filtre suit la nouvelle personne
   const b = choosePerson(a, 1, m.people.get(1));
-  assert.equal(b.filters.scope, 'tasks');
-  assert.deepEqual(ids(applyFilters(m, b.filters, b)), [1001, 1002]);
+  assert.equal(b.filters.scope, 'chantiers');
+  assert.deepEqual(ids(applyFilters(m, b.filters, b)), [1000, 1001, 1002, 2000]);
   // Plus personne : périmètre « Tout », invite pas réaffichée
   const none = choosePerson(b, null);
   assert.equal(none.me, null);
@@ -151,12 +152,12 @@ test('« Je suis… » : première personne choisie → périmètre « Mes tâch
 
 test('« Je suis… » : premier choix → vue d’accueil et périmètre du profil, une seule fois', () => {
   const start = { ...DEFAULT_PREFS, filters: { ...DEFAULT_FILTERS } };
-  // DE, DA : Mes tâches ; personne inconnue : Mes tâches aussi
+  // DE, DA : onglet Mes tâches, périmètre Mes chantiers ; personne inconnue : pareil
   for (const id of [1, 5, 999]) {
     const p = choosePerson(start, id, m.people.get(id));
     assert.equal(p.homeView, 'mytasks');
     assert.equal(p.view, 'mytasks');
-    assert.equal(p.filters.scope, 'tasks');
+    assert.equal(p.filters.scope, 'chantiers');
   }
   // PO : Gantt au niveau des tâches, Mes chantiers
   const po = choosePerson(start, 2, m.people.get(2));
@@ -169,5 +170,5 @@ test('« Je suis… » : premier choix → vue d’accueil et périmètre du pro
   assert.deepEqual([later.homeView, later.view], ['gantt', 'table']);
   // Retour à « personne » puis nouveau choix : périmètre du profil reposé, vue d'accueil gardée
   const again = choosePerson(choosePerson(po, null), 1, m.people.get(1));
-  assert.deepEqual([again.homeView, again.filters.scope], ['gantt', 'tasks']);
+  assert.deepEqual([again.homeView, again.filters.scope], ['gantt', 'chantiers']);
 });

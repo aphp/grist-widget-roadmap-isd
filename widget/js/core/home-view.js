@@ -5,8 +5,11 @@
 
 /** Valeur de « Vue d'accueil » qui rouvre la dernière vue consultée (comportement d'avant). */
 export const HOME_LAST = 'last';
-/** Périmètres des filtres : tout, mes tâches (assigné, responsable ou chargé), mes chantiers (responsable ou contributeur). */
-export const SCOPES = Object.freeze(['all', 'tasks', 'chantiers']);
+/**
+ * Périmètres des filtres : tout, ou mes chantiers (responsable, contributeur, ou impliqué sur une de leurs tâches ;
+ * avec toutes leurs tâches). Les tâches personnelles sont dans l'onglet « Mes tâches ».
+ */
+export const SCOPES = Object.freeze(['all', 'chantiers']);
 
 /**
  * Profil d'une personne pour l'accueil : DE, DS, DA, PO, Management, ou null.
@@ -26,12 +29,9 @@ export function defaultHomeView(person) {
   return 'mytasks';
 }
 
-/** Périmètre posé au premier choix : Mes chantiers pour PO, tout pour le Management, Mes tâches sinon. */
+/** Périmètre posé au premier choix : tout pour le Management, Mes chantiers sinon. */
 export function defaultScope(person) {
-  const p = profileOf(person);
-  if (p === 'PO') return 'chantiers';
-  if (p === 'Management') return 'all';
-  return 'tasks';
+  return profileOf(person) === 'Management' ? 'all' : 'chantiers';
 }
 
 /**

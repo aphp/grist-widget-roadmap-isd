@@ -1,5 +1,5 @@
 /**
- * Filtres (catégorie, projet, chantier, personne, profil, statut, périmètre « Tout / Mes tâches / Mes chantiers »,
+ * Filtres (catégorie, projet, chantier, personne, profil, statut, périmètre « Tout / Mes chantiers »,
  * case hors périmètre, et sous « + Filtres » : responsable, demandeur) et étiquettes de filtres actifs supprimables.
  */
 import { raw } from '../core/sanitize.js';
@@ -50,8 +50,8 @@ export function extraCount(filters) {
 }
 
 /**
- * Périmètre en contrôle segmenté « Tout / Mes tâches / Mes chantiers » (boutons radio d'un même groupe : flèches
- * pour changer). Sans « Je suis… », « Tout » est coché et les deux autres choix sont indisponibles, avec la raison
+ * Périmètre en contrôle segmenté « Tout / Mes chantiers » (boutons radio d'un même groupe : flèches pour
+ * changer). Sans « Je suis… », « Tout » est coché et « Mes chantiers » est indisponible, avec la raison
  * en infobulle (aria-disabled : ils restent atteignables au clavier et lus par les lecteurs d'écran).
  * @param {{scope:string}} f filtres
  * @param {boolean} disabled aucune personne choisie

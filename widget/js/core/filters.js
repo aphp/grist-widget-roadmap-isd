@@ -18,7 +18,7 @@ export const DEFAULT_FILTERS = Object.freeze({
   person: null,
   profile: null,
   statuses: [],
-  /** Périmètre : « all » (tout), « tasks » (Mes tâches) ou « chantiers » (Mes chantiers) ; sans effet sans « Je suis… ». */
+  /** Périmètre : « all » (tout) ou « chantiers » (Mes chantiers) ; sans effet sans « Je suis… ». */
   scope: 'all',
   includeOutOfScope: false,
   /** Filtres repliés sous « + Filtres » : responsable (projet, chantier ou tâche) et demandeur (projet). */
@@ -80,8 +80,8 @@ const hasDemandeur = (project, wanted) =>
 
 /**
  * Choix d'une personne dans « Je suis… » (invite ou liste de l'en-tête) : la personne est enregistrée, l'invite ne
- * revient plus. Quand on passe de personne à quelqu'un, le périmètre du profil est posé (Mes tâches pour DE, DS,
- * DA ; Mes chantiers pour PO ; tout pour le Management) ; changer de personne garde le périmètre choisi, qui suit
+ * revient plus. Quand on passe de personne à quelqu'un, le périmètre du profil est posé (Mes chantiers pour DE, DS,
+ * DA et PO ; tout pour le Management) ; changer de personne garde le périmètre choisi, qui suit
  * la nouvelle personne. Sans personne, le périmètre revient à « Tout ». Au tout premier choix, la vue d'accueil du
  * profil est enregistrée et ouverte (firstChoicePrefs).
  * @param {object} prefs
@@ -108,7 +108,7 @@ function involved(task) {
 /** Vrai si la personne est responsable ou contributrice du chantier (Chantiers.Responsable, Chantiers.Contributeurs). */
 const onChantier = (c, id) => Boolean(c) && (c.responsable === id || c.contributeurs.includes(id));
 
-/** Personnes ciblées par le périmètre (Mes tâches, Mes chantiers) et le filtre Personne. */
+/** Personnes ciblées par le périmètre (Mes chantiers) et le filtre Personne. */
 const targetOf = (f, prefs) => [f.scope !== 'all' ? prefs.me : null, f.person].filter(Boolean);
 
 /** Vrai si le projet est proposé : non masqué, et dans le périmètre ISD sauf case « hors périmètre » cochée. */
@@ -144,21 +144,30 @@ function chantierMatcher(model, key) {
 }
 
 /**
+ * Prédicat « Mes chantiers » d'une personne : nœud d'un chantier (ligne Chantiers) dont elle est responsable ou
+ * contributrice, ou qui porte au moins une tâche où elle est assignée, responsable ou chargée. Un chantier partagé
+ * est retenu sous chacun de ses projets ; un chantier virtuel « (sans chantier) » ne l'est jamais.
+ */
+function myChantierMatcher(model, me) {
+  const viaTasks = new Set();
+  for (const t of model.tasks.values()) if (t.chantierId && involved(t).has(me)) viaTasks.add(t.chantierId);
+  return (c) =>
+    c.ref?.table === 'Chantiers' && (viaTasks.has(c.ref.id) || onChantier(model.chantiers.get(c.ref.id), me));
+}
+
+/**
  * Arbre filtré (catégorie → projet → chantier → tâche → sous-tâche) et tâches retenues.
  * @returns {{tree:object[], taskIds:Set<number>}}
  */
 export function applyFilters(model, f, prefs) {
   const q = normalize(f.search);
-  const me = f.scope === 'tasks' ? prefs.me : null;
-  // Mes chantiers : chantiers dont la personne est responsable ou contributrice, avec toutes leurs tâches
-  const myChantiers = f.scope === 'chantiers' && prefs.me ? prefs.me : null;
-  const chantierMine = myChantiers
-    ? (c) => c.ref?.table === 'Chantiers' && onChantier(model.chantiers.get(c.ref.id), myChantiers)
-    : null;
+  // Mes chantiers : chantiers dont la personne est responsable ou contributrice, ou dont une tâche l'implique
+  // (assignée, responsable ou chargée), avec toutes leurs tâches
+  const chantierMine = f.scope === 'chantiers' && prefs.me ? myChantierMatcher(model, prefs.me) : null;
   const hidden = new Set(prefs.hiddenProjects);
   const taskIds = new Set();
   const target = targetOf(f, prefs);
-  const taskLevel = Boolean(f.person || f.profile || f.statuses.length || me || f.responsable);
+  const taskLevel = Boolean(f.person || f.profile || f.statuses.length || f.responsable);
   const chantierOk = f.chantier ? chantierMatcher(model, f.chantier) : null;
 
   const taskOk = (task, respHit) => {
@@ -167,7 +176,6 @@ export function applyFilters(model, f, prefs) {
     if (f.person && !who.has(f.person)) return false;
     if (f.profile && ![...who].some((id) => model.people.get(id)?.isd && model.people.get(id).role === f.profile))
       return false;
-    if (me && !who.has(me)) return false;
     if (f.statuses.length && !f.statuses.includes(task.status)) return false;
     return true;
   };
@@ -317,7 +325,6 @@ export function activeFilterChips(f, model) {
     chips.push({ field: 'responsable', label: model.people.get(f.responsable)?.nom ?? String(f.responsable) });
   if (f.demandeur) chips.push({ field: 'demandeur', label: f.demandeur });
   if (f.statuses.length) chips.push({ field: 'statuses', label: f.statuses.join(', ') });
-  if (f.scope === 'tasks') chips.push({ field: 'scope', label: 'Mes tâches' });
   if (f.scope === 'chantiers') chips.push({ field: 'scope', label: 'Mes chantiers' });
   if (f.includeOutOfScope) chips.push({ field: 'includeOutOfScope', label: 'Hors périmètre ISD inclus' });
   return chips;
@@ -451,8 +458,9 @@ function sanitizePrefs(saved) {
       person: idOrNull(f.person),
       profile: PROFILES.includes(f.profile) ? f.profile : null,
       statuses: Array.isArray(f.statuses) && f.statuses.every((x) => typeof x === 'string') ? [...f.statuses] : [],
-      // Ancienne case « Mes chantiers » (mine), qui filtrait en fait les tâches : devient « Mes tâches »
-      scope: SCOPES.includes(f.scope) ? f.scope : f.mine === true ? 'tasks' : 'all',
+      // Ancien périmètre « Mes tâches » (tasks) et ancienne case « Mes chantiers » (mine) : « Mes chantiers », qui
+      // couvre aussi les chantiers où l'on a une tâche (les tâches personnelles sont dans l'onglet « Mes tâches »)
+      scope: SCOPES.includes(f.scope) ? f.scope : f.scope === 'tasks' || f.mine === true ? 'chantiers' : 'all',
       includeOutOfScope: f.includeOutOfScope === true,
       responsable: idOrNull(f.responsable),
       demandeur: textOr(f.demandeur, '').trim(),

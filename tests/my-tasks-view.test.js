@@ -105,19 +105,24 @@ test('Mes tâches : titre de tâche, de parent et de chantier contenant du HTML 
   assert.doesNotMatch(out, /onerror=alert\(1\)>/);
 });
 
-test('périmètre : contrôle segmenté Tout / Mes tâches / Mes chantiers, indisponible sans « Je suis… »', () => {
+test('périmètre : contrôle segmenté Tout / Mes chantiers, indisponible sans « Je suis… »', () => {
   const on = scopeHtml({ ...DEFAULT_FILTERS, scope: 'chantiers' }, false).toString();
   assert.match(on, /<fieldset/);
   assert.match(on, /<legend class="fr-segmented__legend filters__scope-legend">Périmètre<\/legend>/);
   assert.deepEqual(
     [...on.matchAll(/<label class="fr-label" for="f-perimetre-(\w+)"/g)].map((x) => x[1]),
-    ['all', 'tasks', 'chantiers'],
+    ['all', 'chantiers'],
   );
+  assert.match(
+    on,
+    /title="Chantiers dont je suis responsable ou contributeur, ou où j’ai une tâche, avec toutes leurs tâches"/,
+  );
+  assert.doesNotMatch(on, /Mes tâches/);
   assert.match(on, /id="f-perimetre-chantiers"\s+value="chantiers"\s+data-scope="chantiers"\s+checked/);
   assert.doesNotMatch(on, /aria-disabled|role="tooltip"/);
-  const off = scopeHtml({ ...DEFAULT_FILTERS, scope: 'tasks' }, true).toString();
+  const off = scopeHtml({ ...DEFAULT_FILTERS, scope: 'chantiers' }, true).toString();
   assert.match(off, /id="f-perimetre-all"\s+value="all"\s+data-scope="all"\s+checked/);
-  assert.equal((off.match(/aria-disabled="true"/g) ?? []).length, 2);
+  assert.equal((off.match(/aria-disabled="true"/g) ?? []).length, 1);
   assert.match(off, /aria-describedby="tip-scope"/);
   assert.match(off, /role="tooltip" id="tip-scope">Choisissez d’abord qui vous êtes/);
 });

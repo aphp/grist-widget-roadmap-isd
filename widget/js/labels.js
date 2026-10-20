@@ -69,11 +69,10 @@ const FR = Object.freeze({
   'filters.status.some': '{n} statuts',
   'filters.scope': 'Périmètre',
   'filters.scope.all': 'Tout',
-  'filters.scope.tasks': 'Mes tâches',
   'filters.scope.chantiers': 'Mes chantiers',
   'filters.scope.all.title': 'Toutes les tâches de la Feuille de route, selon les autres filtres',
-  'filters.scope.tasks.title': 'Tâches où je suis assigné, responsable ou chargé',
-  'filters.scope.chantiers.title': 'Chantiers dont je suis responsable ou contributeur, avec toutes leurs tâches',
+  'filters.scope.chantiers.title':
+    'Chantiers dont je suis responsable ou contributeur, ou où j’ai une tâche, avec toutes leurs tâches',
   'filters.scope.disabled': 'Choisissez d’abord qui vous êtes dans « Je suis… ».',
   'filters.outOfScope': 'Hors périmètre ISD aussi',
   'filters.active': 'Filtres actifs',
