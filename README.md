@@ -9,8 +9,12 @@ onglets, « Ajouter une sous-tâche », « + Tâche ») et de changer une tâche
 de chantier (ses sous-tâches suivent). Onglet Équipe (lot 2d) : ajouter une personne à l'équipe ISD, modifier sa
 fiche (nom, e-mail, rôle parmi les rôles existants, capacité, N+1), la désactiver ou la réactiver, gérer ses
 indisponibilités ; seules les personnes de l'équipe ISD sont modifiables, aucun rôle n'est créé. Projets et
-catégories restent en lecture. Rien n'est supprimé, sauf l'annulation d'une création de la session (jamais une
-personne : elle se désactive). Tout cela seulement si l'adresse de la page l'ouvre :
+catégories restent en lecture. Suppression : « Supprimer » (pied de la fiche tâche ou chantier en édition) supprime une
+tâche avec toutes ses sous-tâches, ou un chantier vide (sinon : « déplacez ou supprimez d'abord ses n tâches »), après
+une fenêtre de confirmation qui nomme l'élément et liste ses sous-tâches ; refusée si une autre tâche ou un chantier
+en dépend (dependDe). « Annuler » (message qui suit, ou panneau d'édition) recrée les lignes au même numéro avec les
+valeurs relues juste avant la suppression. Rien d'autre n'est supprimé, sauf l'annulation d'une création de la
+session (jamais une personne : elle se désactive). Tout cela seulement si l'adresse de la page l'ouvre :
 
 - `?edition=essai` : mode essai, toutes les actions sont notées et affichées, rien n'est envoyé ;
 - `?edition=1&doc=<identifiant du document>` : envoi réel, seulement si `doc=` désigne le document ouvert ;

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Delete from the edit form: a "Supprimer" button (tertiary, left of the form footer, task and chantier forms, shown
+  only with the delete right and inside the ISD scope) deletes a task with all its subtasks (any depth) or an empty
+  chantier, in one `applyUserActions` batch of `RemoveRecord`. A confirmation dialog names the item and lists the
+  subtasks (10 at most, then "et n autres"); a chantier that still holds tasks is refused before anything is sent
+  ("déplacez ou supprimez d'abord ses n tâches"), so is a batch another task or chantier depends on (`dependDe`).
+  The writer re-reads Tasks and Chantiers just before sending, recomputes the batch, refuses if it changed since the
+  confirmation, checks the scope of every row and keeps a snapshot of every data column (formulas excluded). "Annuler"
+  recreates the rows with the same ids and values (`AddRecord` with a fixed id, parents first), refused if an id is
+  in use again; the fixed-id `AddRecord` is accepted only when it reproduces a snapshot of the session. Essai mode
+  logs everything and sends nothing. Never on Team, Projects or Disponibilites.
 - The widget always opens on the Gantt tab: the last viewed tab is no longer restored at load (`DEFAULT_PREFS.view`
   is now `gantt`; other preferences are kept). The first "Je suis…" no longer sets a profile home view (Management
   used to land on Synthèse); home views saved before this are reset once (`homeViewV: 2` marker in the prefs). A home
