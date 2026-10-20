@@ -134,5 +134,5 @@ test('Préférences : « Vue d’accueil » étiquetée, dernière vue puis chaq
   const options = [...out.matchAll(/<option value="(\w+)"/g)].map((x) => x[1]);
   assert.deepEqual(options, ['last', 'mytasks', 'gantt', 'kanban', 'table', 'portfolio', 'stats', 'synthesis', 'team']);
   assert.match(out, /<option value="gantt" selected>Gantt<\/option>/);
-  assert.match(homeViewFieldHtml(null).toString(), /<option value="last" selected>Dernière vue consultée<\/option>/);
+  assert.match(homeViewFieldHtml(null).toString(), /<option value="last" selected>Gantt \(par défaut\)<\/option>/);
 });

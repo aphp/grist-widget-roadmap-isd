@@ -38,8 +38,10 @@ export const DEFAULT_PREFS = Object.freeze({
   hiddenProjects: [],
   theme: 'auto',
   view: 'gantt',
-  /** Vue d'accueil (onglet ouvert au démarrage) ou « last » (dernière vue) ; null tant qu'aucune personne n'a été choisie. */
+  /** Vue d'accueil choisie dans les Préférences (onglet) ; null ou « last » : le Gantt. */
   homeView: null,
+  /** Version de la vue d'accueil : sans ce marqueur, la valeur enregistrée est abandonnée une fois (arrivée sur le Gantt). */
+  homeViewV: 2,
   kanbanGroup: 'status',
   kanbanSort: 'due',
   kanbanCollapsed: [],
@@ -90,8 +92,8 @@ const hasDemandeur = (project, wanted) =>
  * Choix d'une personne dans « Je suis… » (invite ou liste de l'en-tête) : la personne est enregistrée, l'invite ne
  * revient plus. Quand on passe de personne à quelqu'un, le périmètre du profil est posé (Mes chantiers pour DE, DS,
  * DA et PO ; tout pour le Management) ; changer de personne garde le périmètre choisi, qui suit
- * la nouvelle personne. Sans personne, le périmètre revient à « Tout ». Au tout premier choix, la vue d'accueil du
- * profil est enregistrée et ouverte (firstChoicePrefs).
+ * la nouvelle personne. Sans personne, le périmètre revient à « Tout ». Au tout premier choix, seul le niveau du Gantt du PO
+ * est posé (firstChoicePrefs).
  * @param {object} prefs
  * @param {number|null} id
  * @param {object|null} [person] la personne choisie (model.people), pour son profil
@@ -500,7 +502,8 @@ function sanitizePrefs(saved) {
     theme: textOr(s.theme, DEFAULT_PREFS.theme),
     view: textOr(s.view, DEFAULT_PREFS.view),
     // Validée contre les onglets par sanitizeHomeView (main.js)
-    homeView: textOr(s.homeView, null),
+    homeView: s.homeViewV === 2 ? textOr(s.homeView, null) : null,
+    homeViewV: 2,
     kanbanGroup: GROUPS.includes(s.kanbanGroup) ? s.kanbanGroup : DEFAULT_PREFS.kanbanGroup,
     kanbanSort: SORTS.includes(s.kanbanSort) ? s.kanbanSort : DEFAULT_PREFS.kanbanSort,
     kanbanCollapsed:

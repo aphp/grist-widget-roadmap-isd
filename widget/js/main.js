@@ -95,7 +95,7 @@ const storage = safeStorage();
 /** Préférences au démarrage : l'onglet ouvert est vue= de l'adresse, la vue d'accueil (P-UX-2), sinon le Gantt. */
 function initialPrefs() {
   const p = loadPrefs(storage);
-  const homeView = sanitizeHomeView(p.homeView, p.me, TABS);
+  const homeView = sanitizeHomeView(p.homeView, TABS);
   return {
     ...p,
     filters: { ...DEFAULT_FILTERS, ...p.filters },

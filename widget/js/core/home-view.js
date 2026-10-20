@@ -1,9 +1,8 @@
 /**
- * Vue d'accueil par profil (P-UX-2) : onglet ouvert au démarrage, choisi au premier « Je suis… » selon le profil,
- * modifiable dans les Préférences. Fonctions pures ; préférence locale (navigateur) seulement.
+ * Vue d'accueil : onglet ouvert au démarrage, choisi dans les Préférences (jamais posé automatiquement). Fonctions pures ; préférence locale (navigateur) seulement.
  */
 
-/** Valeur de « Vue d'accueil » qui rouvre la dernière vue consultée (comportement d'avant). */
+/** Valeur de « Vue d'accueil » par défaut (ancienne « dernière vue ») : ouvre le Gantt. */
 export const HOME_LAST = 'last';
 /**
  * Périmètres des filtres : tout, ou mes chantiers (responsable ou contributeur du chantier, ou impliqué sur une de
@@ -22,30 +21,18 @@ export function profileOf(person) {
   return person.roleText === 'Management' ? 'Management' : null;
 }
 
-/** Accueil proposé : « Mes tâches » pour DE, DS, DA (et par défaut), Gantt pour PO, Synthèse pour le Management. */
-export function defaultHomeView(person) {
-  const p = profileOf(person);
-  if (p === 'PO') return 'gantt';
-  if (p === 'Management') return 'synthesis';
-  return 'mytasks';
-}
-
 /** Périmètre posé au premier choix : tout pour le Management, Mes chantiers sinon. */
 export function defaultScope(person) {
   return profileOf(person) === 'Management' ? 'all' : 'chantiers';
 }
 
 /**
- * Vue d'accueil enregistrée, ramenée à une valeur connue : un onglet, HOME_LAST, ou null (pas encore choisie).
- * Préférences d'avant la vue d'accueil avec une personne déjà choisie : HOME_LAST, pour ne rien changer à
- * l'ouverture de quelqu'un qui a déjà ses habitudes (il peut choisir une vue d'accueil dans les Préférences).
+ * Vue d'accueil enregistrée, ramenée à une valeur connue : un onglet, HOME_LAST (ouvre le Gantt), ou null.
  * @param {unknown} saved
- * @param {number|null} me
  * @param {readonly string[]} tabs
  */
-export function sanitizeHomeView(saved, me, tabs) {
-  if (saved === HOME_LAST || tabs.includes(saved)) return saved;
-  return me === null || me === undefined ? null : HOME_LAST;
+export function sanitizeHomeView(saved, tabs) {
+  return saved === HOME_LAST || tabs.includes(saved) ? saved : null;
 }
 
 /** Onglet d'arrivée du widget : le Gantt. */
@@ -71,14 +58,13 @@ export function initialView(prefs, search, tabs) {
 }
 
 /**
- * Premier choix d'une personne (aucune vue d'accueil encore enregistrée) : vue d'accueil et préférences de vue
- * du profil (le PO arrive sur le Gantt ouvert au niveau des tâches). Ensuite, rien n'est imposé.
- * @param {object} prefs
+ * Premier choix d'une personne : aucune vue d'accueil n'est posée (le widget arrive sur le Gantt) ; le PO ouvre
+ * le Gantt au niveau des tâches. Ensuite, rien n'est imposé.
+ * @param {{me?:number|null, mePrompted?:boolean}} prefs
  * @param {object|null|undefined} person
- * @returns {object} préférences à fusionner (vide si la vue d'accueil existe déjà)
+ * @returns {object} préférences à fusionner (vide hors premier choix)
  */
 export function firstChoicePrefs(prefs, person) {
-  if (prefs.homeView !== null && prefs.homeView !== undefined) return {};
-  const homeView = defaultHomeView(person);
-  return { homeView, view: homeView, ...(homeView === 'gantt' ? { ganttLevel: 'tache' } : {}) };
+  const first = (prefs.me ?? null) === null && !prefs.mePrompted;
+  return first && profileOf(person) === 'PO' ? { ganttLevel: 'tache' } : {};
 }

@@ -2,7 +2,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  defaultHomeView,
   defaultScope,
   firstChoicePrefs,
   HOME_LAST,
@@ -25,16 +24,7 @@ test('profil : rôle ISD, Management, sinon aucun', () => {
   assert.deepEqual([de, po, mg, other, null, undefined].map(profileOf), ['DE', 'PO', 'Management', null, null, null]);
 });
 
-test('vue d’accueil proposée : Mes tâches (DE, DS, DA), Gantt (PO), Synthèse (Management)', () => {
-  assert.deepEqual([de, ds, da, po, mg, other, null].map(defaultHomeView), [
-    'mytasks',
-    'mytasks',
-    'mytasks',
-    'gantt',
-    'synthesis',
-    'mytasks',
-    'mytasks',
-  ]);
+test('périmètre proposé par profil ; onglets', () => {
   // Périmètre : Mes chantiers pour tous les profils, sauf le Management (tout) ; plus de périmètre « Mes tâches »
   assert.deepEqual([de, da, po, mg, null].map(defaultScope), [
     'chantiers',
@@ -44,19 +34,15 @@ test('vue d’accueil proposée : Mes tâches (DE, DS, DA), Gantt (PO), Synthès
     'chantiers',
   ]);
   assert.deepEqual(SCOPES, ['all', 'chantiers']);
-  // Toutes les vues proposées sont des onglets ; « Mes tâches » est le premier
-  for (const p of [de, po, mg]) assert.ok(TABS.includes(defaultHomeView(p)));
+  // « Mes tâches » est le premier onglet
   assert.equal(TABS[0], 'mytasks');
 });
 
-test('vue d’accueil enregistrée : onglet ou « dernière vue » gardés ; ancienne préférence avec personne → dernière vue', () => {
-  assert.equal(sanitizeHomeView('gantt', 1, TABS), 'gantt');
-  assert.equal(sanitizeHomeView(HOME_LAST, null, TABS), HOME_LAST);
-  assert.equal(sanitizeHomeView(null, null, TABS), null);
-  assert.equal(sanitizeHomeView('disparue', null, TABS), null);
-  // Migration : quelqu'un qui avait déjà choisi « Je suis… » garde l'ouverture sur sa dernière vue
-  assert.equal(sanitizeHomeView(null, 4, TABS), HOME_LAST);
-  assert.equal(sanitizeHomeView('disparue', 4, TABS), HOME_LAST);
+test('vue d’accueil enregistrée : onglet ou « dernière vue » gardés, sinon null', () => {
+  assert.equal(sanitizeHomeView('gantt', TABS), 'gantt');
+  assert.equal(sanitizeHomeView(HOME_LAST, TABS), HOME_LAST);
+  assert.equal(sanitizeHomeView(null, TABS), null);
+  assert.equal(sanitizeHomeView('disparue', TABS), null);
 });
 
 test('onglet à l’ouverture : paramètre vue=, sinon vue d’accueil choisie, sinon Gantt (dernière vue jamais restaurée)', () => {
@@ -72,10 +58,10 @@ test('onglet à l’ouverture : paramètre vue=, sinon vue d’accueil choisie, 
   assert.equal(DEFAULT_PREFS.view, 'gantt');
 });
 
-test('premier choix : vue d’accueil du profil ouverte ; ensuite rien d’imposé', () => {
-  assert.deepEqual(firstChoicePrefs({ homeView: null }, de), { homeView: 'mytasks', view: 'mytasks' });
-  assert.deepEqual(firstChoicePrefs({}, po), { homeView: 'gantt', view: 'gantt', ganttLevel: 'tache' });
-  assert.deepEqual(firstChoicePrefs({ homeView: null }, mg), { homeView: 'synthesis', view: 'synthesis' });
-  assert.deepEqual(firstChoicePrefs({ homeView: HOME_LAST }, de), {});
-  assert.deepEqual(firstChoicePrefs({ homeView: 'table' }, po), {});
+test('premier choix : plus de vue d’accueil posée ; le PO ouvre le Gantt au niveau des tâches, une seule fois', () => {
+  const first = { me: null, mePrompted: false, homeView: null };
+  for (const p of [de, ds, da, mg, other]) assert.deepEqual(firstChoicePrefs(first, p), {});
+  assert.deepEqual(firstChoicePrefs(first, po), { ganttLevel: 'tache' });
+  assert.deepEqual(firstChoicePrefs({ me: 3, mePrompted: true }, po), {});
+  assert.deepEqual(firstChoicePrefs({ me: null, mePrompted: true }, po), {});
 });

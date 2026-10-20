@@ -1798,25 +1798,29 @@ test(
 );
 
 // ---------- Arrivée sur le Gantt ----------
-test('arrivée : le Gantt s’ouvre malgré une vue mémorisée ; vue= ouvre l’onglet demandé', { skip: SKIP }, async () => {
-  const host = `${BASE}/dev/host.html`;
-  const visit = async (q) => {
-    await send('Page.navigate', { url: host });
-    await loaded(host);
-    await send('Runtime.evaluate', {
-      expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: 'synthesis' }))`,
-    });
-    await send('Page.navigate', { url: `${host}${q}` });
-    await loaded(`${host}${q}`);
-  };
-  await visit('?donnees=synthetiques');
-  await until(`D.querySelector('#view-panel[data-view="gantt"]')`);
-  assert.equal(await w(`return D.getElementById('tab-gantt').getAttribute('aria-selected');`), 'true');
-  assert.equal(await w(`return D.getElementById('tab-synthesis').getAttribute('aria-selected');`), 'false');
-  await visit('?donnees=synthetiques&vue=table');
-  await until(`D.querySelector('#view-panel[data-view="table"]')`);
-  assert.equal(await w(`return D.getElementById('tab-table').getAttribute('aria-selected');`), 'true');
-});
+test(
+  'arrivée : le Gantt s’ouvre malgré une vue mémorisée et une ancienne vue d’accueil (Synthèse) ; vue= ouvre l’onglet demandé',
+  { skip: SKIP },
+  async () => {
+    const host = `${BASE}/dev/host.html`;
+    const visit = async (q) => {
+      await send('Page.navigate', { url: host });
+      await loaded(host);
+      await send('Runtime.evaluate', {
+        expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, me: 5, view: 'synthesis', homeView: 'synthesis' }))`,
+      });
+      await send('Page.navigate', { url: `${host}${q}` });
+      await loaded(`${host}${q}`);
+    };
+    await visit('?donnees=synthetiques');
+    await until(`D.querySelector('#view-panel[data-view="gantt"]')`);
+    assert.equal(await w(`return D.getElementById('tab-gantt').getAttribute('aria-selected');`), 'true');
+    assert.equal(await w(`return D.getElementById('tab-synthesis').getAttribute('aria-selected');`), 'false');
+    await visit('?donnees=synthetiques&vue=table');
+    await until(`D.querySelector('#view-panel[data-view="table"]')`);
+    assert.equal(await w(`return D.getElementById('tab-table').getAttribute('aria-selected');`), 'true');
+  },
+);
 
 // ---------- Statut depuis la carte et la ligne (P-UX-6) ----------
 const EDIT = '?edition=1&doc=doc-dev-local&ecritures=memoire';

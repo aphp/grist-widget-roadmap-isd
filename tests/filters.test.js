@@ -137,9 +137,14 @@ test('préférences : ancien périmètre « Mes tâches » et case « mine » �
   assert.equal(load({ filters: { scope: 'nimporte' } }).filters.scope, 'all');
   assert.equal('mine' in load({ filters: { mine: true } }).filters, false);
   // Vue d'accueil : texte gardé tel quel (validé contre les onglets au démarrage), sinon null
-  assert.equal(load({ homeView: 'mytasks' }).homeView, 'mytasks');
-  assert.equal(load({ homeView: 3 }).homeView, null);
+  assert.equal(load({ homeView: 'mytasks', homeViewV: 2 }).homeView, 'mytasks');
+  assert.equal(load({ homeView: 3, homeViewV: 2 }).homeView, null);
   assert.equal(load({}).homeView, null);
+  // Remise à zéro unique : une vue d'accueil enregistrée avant le marqueur (posée seule ou choisie) est abandonnée
+  assert.equal(load({ homeView: 'synthesis' }).homeView, null);
+  assert.equal(load({ homeView: 'last', homeViewV: 1 }).homeView, null);
+  assert.equal(load({ homeView: 'synthesis' }).homeViewV, 2);
+  assert.equal(DEFAULT_PREFS.homeViewV, 2);
 });
 
 test('statut et recherche (accents ignorés, ancêtres compris)', () => {

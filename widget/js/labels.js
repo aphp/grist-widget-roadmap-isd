@@ -1306,7 +1306,7 @@ const FR = Object.freeze({
     'Les tâches terminées ne sont pas affichées. Les autres onglets montrent toute la Feuille de route.',
   'prefs.home': 'Vue d’accueil',
   'prefs.home.help': 'Onglet affiché à l’ouverture du widget.',
-  'prefs.home.last': 'Dernière vue consultée',
+  'prefs.home.last': 'Gantt (par défaut)',
 });
 
 const STATUS_KEYS = new Set(['todo', 'inprogress', 'review', 'done']);

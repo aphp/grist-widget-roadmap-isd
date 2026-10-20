@@ -3,9 +3,11 @@
 ## [Unreleased]
 
 - The widget always opens on the Gantt tab: the last viewed tab is no longer restored at load (`DEFAULT_PREFS.view`
-  is now `gantt`; other preferences are kept). A home view chosen in the Preferences still wins, and the page address
-  parameter `vue=<tab>` (`mytasks`, `gantt`, `kanban`, `table`, `portfolio`, `stats`, `synthesis`, `team`) opens
-  that tab; an unknown value is ignored. Logic in `initialView` (`core/home-view.js`).
+  is now `gantt`; other preferences are kept). The first "Je suis…" no longer sets a profile home view (Management
+  used to land on Synthèse); home views saved before this are reset once (`homeViewV: 2` marker in the prefs). A home
+  view chosen afterwards in the Preferences still wins ("Dernière vue consultée" is now "Gantt (par défaut)",
+  same stored value), and the page address parameter `vue=<tab>` (`mytasks`, `gantt`, `kanban`, `table`,
+  `portfolio`, `stats`, `synthesis`, `team`) wins over everything; an unknown value is ignored.
 - Gantt: resizable name column. Drag handle on the right edge of the "Élément" header (`role="separator"`, arrows
   ±16 px, Shift ±64 px, Home/End, double-click resets the default width) and a "Largeur des noms" range slider in
   the controls bar, kept in sync. Width between 160 px and 60 % of the view, saved in the `ganttLabelWidth` pref
