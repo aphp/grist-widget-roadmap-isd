@@ -93,7 +93,13 @@ const SPECS = Object.freeze({
     draftFrom: personDraftFrom,
     rebase: rebasePerson,
     focus: 'tf-nom',
-    validate: (st, model) => validatePerson(st.draft, { model, personId: st.ref.id, domaine: st.base.Domaine ?? '' }),
+    validate: (st, model) =>
+      validatePerson(st.draft, {
+        model,
+        personId: st.ref.id,
+        domaine: st.base.Domaine ?? '',
+        aphType: st.columnType?.('aph') ?? null,
+      }),
     body: (st, model) => personFormBody(st, model),
   },
 });
@@ -246,6 +252,7 @@ export function createTaskEditor(deps) {
       moreOpen: moreOpen(),
       mode: w.mode,
       can: (f) => w.can(ref.table, f),
+      columnType: (f) => w.columnType?.(ref.table, f) ?? null,
       validation: { errors: {}, warnings: [] },
     };
     render(SPECS[ref.table].focus);

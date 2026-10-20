@@ -2215,7 +2215,9 @@ test(
     assert.equal(await w(`return D.querySelector('[data-aph="1"]').textContent.trim();`), 'APH 1000001');
     // Personne estimation : badge « Estimation » ; aucune autre personne ne le porte
     assert.match(await w(`return D.querySelector('[data-aph="19"]').textContent;`), /APH 9999999\s*Estimation/);
-    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 1);
+    // Plusieurs personnes estimation : toutes ont le badge (Estimation DE, Estimation DS)
+    assert.match(await w(`return D.querySelector('[data-aph="20"]').textContent;`), /APH 9999999\s*Estimation/);
+    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 2);
     await clickOn('[data-person="1"]');
     await until(`D.getElementById('btn-edit-open')`);
     assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*1000001/);
@@ -2247,60 +2249,71 @@ test(
   },
 );
 
-test(
-  'estimation : 3 ETP acceptés pour la personne estimation (badge), refusés pour une autre personne',
-  { skip: SKIP },
-  async () => {
-    await open('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
-    await w(`localStorage.removeItem('roadmap-isd.chargesUnit'); return true;`);
-    const id = await openForm();
-    if (await w(`return D.getElementById('tf-type').checked;`))
-      await w(`const c = D.getElementById('tf-type'); c.click(); return true;`);
-    await until(`D.getElementById('tf-dateDebut')`);
-    const setDate = (f, iso) =>
-      w(
-        `const t = D.getElementById('tf-${f}'); t.value = '${iso}'; t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
-      );
-    // 14 jours : 1 ETP = 70 h, 3 ETP = 210 h
-    await setDate('dateDebut', '2026-11-02');
-    await setDate('dateEcheance', '2026-11-15');
-    const pick = (who) =>
-      w(`const s = D.getElementById('tf-assignees');
+for (const [variant, opt] of [
+  ['Text', 'aph-donnee'],
+  ['Int', 'aph-entier'],
+])
+  test(
+    `estimation (colonne ${variant}) : 3 ETP acceptés pour la personne estimation (badge), refusés pour une autre personne`,
+    { skip: SKIP },
+    async () => {
+      await open(`?edition=1&doc=doc-dev-local&ecritures=memoire,${opt}`);
+      await w(`localStorage.removeItem('roadmap-isd.chargesUnit'); return true;`);
+      const id = await openForm();
+      if (await w(`return D.getElementById('tf-type').checked;`))
+        await w(`const c = D.getElementById('tf-type'); c.click(); return true;`);
+      await until(`D.getElementById('tf-dateDebut')`);
+      const setDate = (f, iso) =>
+        w(
+          `const t = D.getElementById('tf-${f}'); t.value = '${iso}'; t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
+        );
+      // 14 jours : 1 ETP = 70 h, 3 ETP = 210 h
+      await setDate('dateDebut', '2026-11-02');
+      await setDate('dateEcheance', '2026-11-15');
+      const pick = (who) =>
+        w(`const s = D.getElementById('tf-assignees');
         const o = [...s.querySelectorAll('optgroup option')].find((x) => ${who}); s.value = o.value;
         s.dispatchEvent(new W.Event('change', { bubbles: true })); return Number(o.value);`);
-    const est = await pick(`x.textContent.trim() === 'Estimation DE'`);
-    await until(`D.getElementById('tf-ch-${est}')`);
-    assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est}"] .est-badge'));`));
-    await type(`tf-ch-${est}`, '3');
-    assert.equal(await w(`return D.getElementById('tf-ch-${est}-msg').textContent.trim();`), '');
-    assert.equal(await w(`return D.getElementById('tf-ch-${est}-eq').textContent.trim();`), '= 210 h');
-    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
-    // Au-delà de 50 ETP : refusé même pour elle
-    await type(`tf-ch-${est}`, '51');
-    assert.match(await w(`return D.getElementById('tf-ch-${est}-msg').textContent;`), /50 ETP maximum/);
-    await type(`tf-ch-${est}`, '3');
-    // Une autre personne : 1 ETP au plus, sans badge
-    const other = await pick(`x.textContent.trim() !== 'Estimation DE'`);
-    await until(`D.getElementById('tf-ch-${other}')`);
-    assert.equal(await w(`return Boolean(D.querySelector('[data-charge="${other}"] .est-badge'));`), false);
-    await type(`tf-ch-${other}`, '3');
-    assert.match(
-      await w(`return D.getElementById('tf-ch-${other}-msg').textContent;`),
-      /1 ETP maximum par personne \(soit 70 h sur la période\)/,
-    );
-    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
-    await type(`tf-ch-${other}`, '1');
-    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
-    await w(`D.getElementById('btn-form-save').click(); return true;`);
-    await until(`W.__writes.length === 1`);
-    const [[[name, table, rowId, cells]]] = await writes();
-    assert.deepEqual([name, table, rowId], ['UpdateRecord', 'Tasks', id]);
-    assert.deepEqual(JSON.parse(cells.charges), [
-      { teamId: est, heures: 210 },
-      { teamId: other, heures: 70 },
-    ]);
-  },
-);
+      const est = await pick(`x.textContent.trim() === 'Estimation DE'`);
+      await until(`D.getElementById('tf-ch-${est}')`);
+      assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est}"] .est-badge'));`));
+      await type(`tf-ch-${est}`, '3');
+      assert.equal(await w(`return D.getElementById('tf-ch-${est}-msg').textContent.trim();`), '');
+      assert.equal(await w(`return D.getElementById('tf-ch-${est}-eq').textContent.trim();`), '= 210 h');
+      assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+      // Au-delà de 50 ETP : refusé même pour elle
+      await type(`tf-ch-${est}`, '51');
+      assert.match(await w(`return D.getElementById('tf-ch-${est}-msg').textContent;`), /50 ETP maximum/);
+      await type(`tf-ch-${est}`, '3');
+      // Deuxième personne estimation (Estimation DS) : exemptée elle aussi
+      const est2 = await pick(`x.textContent.trim() === 'Estimation DS'`);
+      await until(`D.getElementById('tf-ch-${est2}')`);
+      assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est2}"] .est-badge'));`));
+      await type(`tf-ch-${est2}`, '3');
+      assert.equal(await w(`return D.getElementById('tf-ch-${est2}-msg').textContent.trim();`), '');
+      // Une autre personne : 1 ETP au plus, sans badge
+      const other = await pick(`!x.textContent.trim().startsWith('Estimation')`);
+      await until(`D.getElementById('tf-ch-${other}')`);
+      assert.equal(await w(`return Boolean(D.querySelector('[data-charge="${other}"] .est-badge'));`), false);
+      await type(`tf-ch-${other}`, '3');
+      assert.match(
+        await w(`return D.getElementById('tf-ch-${other}-msg').textContent;`),
+        /1 ETP maximum par personne \(soit 70 h sur la période\)/,
+      );
+      assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+      await type(`tf-ch-${other}`, '1');
+      assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+      await w(`D.getElementById('btn-form-save').click(); return true;`);
+      await until(`W.__writes.length === 1`);
+      const [[[name, table, rowId, cells]]] = await writes();
+      assert.deepEqual([name, table, rowId], ['UpdateRecord', 'Tasks', id]);
+      assert.deepEqual(JSON.parse(cells.charges), [
+        { teamId: est, heures: 210 },
+        { teamId: est2, heures: 210 },
+        { teamId: other, heures: 70 },
+      ]);
+    },
+  );
 
 test(
   'estimation : l’APH d’estimation ne se pose ni ne se retire depuis le widget (fiche en lecture, saisie refusée)',
@@ -2331,6 +2344,90 @@ test(
     );
     assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
     assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
+  'APH : colonne Int (convertie par Grist), affichée en chiffres dans la liste et la fiche, écrite en nombre',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-entier');
+    assert.equal(await w(`return D.querySelector('[data-aph="1"]').textContent.trim();`), 'APH 1000001');
+    // 0 dans une colonne Int : vide, rien d'affiché
+    assert.equal(await w(`return Boolean(D.querySelector('[data-aph="2"]'));`), false);
+    // Personne estimation (nombre 9999999) : badge dans la liste et dans sa fiche
+    assert.match(await w(`return D.querySelector('[data-aph="19"]').textContent;`), /APH 9999999\s*Estimation/);
+    // Plusieurs personnes estimation : toutes ont le badge (Estimation DE, Estimation DS)
+    assert.match(await w(`return D.querySelector('[data-aph="20"]').textContent;`), /APH 9999999\s*Estimation/);
+    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 2);
+    await clickOn('[data-person="19"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*9999999\s*Estimation/);
+    assert.ok(await w(`return Boolean(D.querySelector('#app-detail .dt-aph + .est-badge'));`));
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    // Fiche d'une autre personne : APH affiché, modifiable, envoyé en nombre
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*1000001/);
+    assert.equal(await w(`return Boolean(D.querySelector('#app-detail .est-badge'));`), false);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').disabled;`), false);
+    assert.equal(await w(`return D.getElementById('tf-aph').value;`), '1000001');
+    // Zéro de tête : la colonne numérique le perdrait, refusé
+    await typeIn('#tf-aph', '0123456');
+    assert.match(await w(`return D.getElementById('tf-aph-msgs').textContent;`), /ne peut pas commencer par 0/);
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    // 9999999 : refusé, comme pour une colonne Text
+    await typeIn('#tf-aph', '9999999');
+    assert.match(
+      await w(`return D.getElementById('tf-aph-msgs').textContent;`),
+      /La personne d’estimation se désigne directement dans la Feuille/,
+    );
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await typeIn('#tf-aph', ' 1234568 ');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    await clickOn('#btn-form-save');
+    await until(`!D.getElementById('person-form') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [[['UpdateRecord', 'Team', 1, { aph: 1234568 }]]]);
+    await until(`/APH\\s*1234568/.test(D.getElementById('app-detail').textContent)`);
+    assert.equal(await w(`return D.querySelector('[data-aph="1"]').textContent.trim();`), 'APH 1234568');
+  },
+);
+
+test(
+  'APH : colonne Int, la fiche de la personne estimation garde l’APH en lecture ; création envoyée en nombre',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-entier');
+    await clickOn('[data-person="19"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').readOnly;`), true);
+    assert.equal(await w(`return D.getElementById('tf-aph').value;`), '9999999');
+    assert.match(
+      await w(`return D.getElementById('tf-aph-help').textContent;`),
+      /La personne d’estimation se désigne directement dans la Feuille/,
+    );
+    await clickOn('#btn-form-cancel');
+    await until(`D.getElementById('btn-person-active')`);
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await clickOn('#btn-person-add');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-aph')`);
+    await typeIn('#pf-nom', 'Personne Aph Entier');
+    await change('#pf-role', 'DA');
+    await typeIn('#pf-aph', '9999999');
+    assert.match(await w(`return D.getElementById('pf-aph-msgs').textContent;`), /se désigne directement/);
+    await typeIn('#pf-aph', ' 7000001 ');
+    await clickOn('#pf-submit');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+    const [[add]] = await writes();
+    assert.equal(add[0], 'AddRecord');
+    assert.equal(add[3].aph, 7000001);
   },
 );
 

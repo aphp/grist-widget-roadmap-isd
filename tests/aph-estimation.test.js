@@ -126,15 +126,16 @@ test('formulaire : APH nettoyé de ses espaces, invalide bloquant, longueur inha
   assert.equal('aph' in newPersonFields(draft('1234567'), { model: m, canAddField: (c) => c !== 'aph' }), false);
 });
 
-test('modèle et annuaire : APH lu tel quel (texte seulement), vide si la colonne manque', () => {
+test('modèle et annuaire : APH texte lu tel quel, entier lu en chiffres, vide si la colonne manque', () => {
   const r = raw();
   r.tables.Team.aph[1] = ' 7000001 ';
   r.tables.Team.aph[2] = 7000002;
   const m = buildModel(r);
   assert.equal(m.people.get(1).aph, ESTIMATION_APH);
   assert.equal(m.people.get(2).aph, ' 7000001 ');
-  assert.equal(m.people.get(3).aph, '');
-  assert.deepEqual(m.estimation, { holders: [1], id: 1 });
+  assert.equal(m.people.get(3).aph, '7000002');
+  assert.equal(m.people.get(4).aph, '');
+  assert.deepEqual(m.estimation, { ids: new Set([1]) });
   const users = filterUsers(m);
   assert.equal(users.find((p) => p.id === 1).aph, ESTIMATION_APH);
   assert.equal(users.find((p) => p.id === 1).estimation, true);
@@ -251,7 +252,23 @@ test('estimation : le widget ne pose jamais l’APH d’estimation et ne le reti
 test('estimation : seul le texte exact 9999999 désigne la personne estimation (comparaison stricte)', () => {
   assert.equal(ESTIMATION_APH, '9999999');
   assert.equal(isEstimationAph('9999999'), true);
-  for (const no of [' 9999999 ', '9999999 ', 9999999, '', '999999', '99999999', '1234567', null, undefined, {}])
+  // Colonne Int : le nombre 9999999 compte aussi (aphText), jamais un autre nombre
+  assert.equal(isEstimationAph(9999999), true);
+  for (const no of [
+    ' 9999999 ',
+    '9999999 ',
+    '09999999',
+    9999999.5,
+    -9999999,
+    99999990,
+    '',
+    '999999',
+    '99999999',
+    '1234567',
+    null,
+    undefined,
+    {},
+  ])
     assert.equal(isEstimationAph(no), false, String(no));
   const m = buildModel(raw());
   assert.equal(isEstimationPerson(m, 1), true);
@@ -261,29 +278,47 @@ test('estimation : seul le texte exact 9999999 désigne la personne estimation (
   // Espaces de bord dans la Feuille : pas la personne estimation
   const r = raw();
   r.tables.Team.aph[0] = ' 9999999 ';
-  assert.deepEqual(buildModel(r).estimation, { holders: [], id: null });
+  assert.deepEqual(buildModel(r).estimation, { ids: new Set() });
 });
 
-test('estimation : deux titulaires de l’APH, personne n’est exempté (saisie, writer) et le formulaire avertit', async () => {
+test('estimation : plusieurs titulaires actifs de l’APH, tous exemptés (saisie, writer) ; une ligne inactive non', async () => {
   const r = raw();
   r.tables.Team.aph[4] = ESTIMATION_APH; // Eve DA aussi
+  r.tables.Team.aph[2] = ESTIMATION_APH; // n° 3, inactive : pas exemptée
   const m = buildModel(r);
-  assert.deepEqual(m.estimation, { holders: [1, 5], id: null });
-  assert.equal(isEstimationPerson(m, 1), false);
-  assert.equal(isEstimationPerson(m, 5), false);
+  assert.deepEqual(m.estimation, { ids: new Set([1, 5]) });
+  assert.equal(isEstimationPerson(m, 1), true);
+  assert.equal(isEstimationPerson(m, 5), true);
+  assert.equal(isEstimationPerson(m, 3), false);
+  // Aucun avertissement : plusieurs personnes estimation sont voulues (une par profil)
   const draft = personDraftFrom({ nom: 'Alice DE', role: 'DE', aph: ESTIMATION_APH });
-  assert.deepEqual(validatePerson(draft, { model: m, personId: 1 }).warnings, [
-    { field: 'aph', key: 'person.warn.aphEstimationMany', vars: { n: 2 } },
-  ]);
+  assert.deepEqual(validatePerson(draft, { model: m, personId: 1 }), { errors: {}, warnings: [] });
+  // L'APH reste protégé pour chacune, inactive comprise
+  assert.deepEqual(validatePerson({ ...draft, aph: '' }, { model: m, personId: 5 }).errors.aph, {
+    key: 'person.error.aphEstimation',
+  });
   const { g, writer } = setup();
   g.data.Team.aph[4] = ESTIMATION_APH;
+  g.data.Team.aph[2] = ESTIMATION_APH;
   const period = { start: 100, end: 113 };
+  for (const who of [1, 5]) {
+    const i = g.data.Tasks.id.indexOf(1002);
+    await writer.update(
+      'Tasks',
+      1002,
+      { charges: `[{"teamId":${who},"heures":210}]` },
+      { before: { charges: g.data.Tasks.charges[i] }, period },
+    );
+  }
+  assert.equal(g.batches.length, 2);
+  // Au-delà de 50 ETP : refusé pour chacune ; la ligne inactive reste bornée à 1 ETP
   for (const who of [1, 5])
     assert.equal(
-      await reason(writer.update('Tasks', 1002, { charges: `[{"teamId":${who},"heures":210}]` }, { period })),
+      await reason(writer.update('Tasks', 1002, { charges: `[{"teamId":${who},"heures":3500.5}]` }, { period })),
       'charges',
     );
-  assert.equal(g.batches.length, 0);
+  for (const id of [5, 3]) assert.equal(await reason(writer.update('Team', id, { aph: '1234567' })), 'aph-estimation');
+  assert.equal(g.batches.length, 2);
 });
 
 test('estimation : saisie au-delà de 1 ETP acceptée jusqu’à 50 ETP sur la période ; les autres restent à 1 ETP', () => {
@@ -372,11 +407,11 @@ test('estimation : « Annuler » une charge d’estimation rend la valeur d’av
   const u = await writer.undoLast(readRow);
   assert.equal(g.data.Tasks.charges[i], '[{"teamId":1,"heures":70}]');
   assert.ok(u.undoEntry);
-  // Charge d'estimation ramenée à 70 h, puis l'exemption tombe (deuxième titulaire) : l'annulation rend les 210 h
+  // Charge d'estimation ramenée à 70 h, puis l'exemption tombe (personne désactivée) : l'annulation rend les 210 h
   // telles quelles (valeur d'avant, non recontrôlée), une nouvelle saisie au-dessus de 1 ETP reste refusée
   await writer.update('Tasks', 1002, { charges: est }, { before: { charges: g.data.Tasks.charges[i] }, period });
   await writer.update('Tasks', 1002, { charges: '[{"teamId":1,"heures":70}]' }, { before: { charges: est }, period });
-  g.data.Team.aph[4] = ESTIMATION_APH;
+  g.data.Team.actif[0] = false;
   await writer.undoLast(readRow);
   assert.equal(g.data.Tasks.charges[i], est);
   const v = '[{"teamId":1,"heures":280}]';

@@ -111,11 +111,12 @@ export function rebasePerson(oldBase, draft, fresh) {
  * Règles du formulaire d'une personne (fiche ou création). Les erreurs bloquent l'enregistrement ; les
  * avertissements non.
  * @param {object} draft brouillon
- * @param {{model:object, personId?:number|null, domaine?:string}} ctx personId null : création ; domaine : Domaine
- *   de la personne (fiche) ou celui de la création
+ * @param {{model:object, personId?:number|null, domaine?:string, aphType?:string|null}} ctx personId null :
+ *   création ; domaine : Domaine de la personne (fiche) ou celui de la création ; aphType : type d'écriture de
+ *   Team.aph (writer.columnType) ; 'Int' : un zéro de tête est refusé (la colonne numérique le perdrait)
  * @returns {{errors:Record<string,{key:string, vars?:object}>, warnings:{field:string, key:string, vars?:object}[]}}
  */
-export function validatePerson(draft, { model, personId = null, domaine = '' }) {
+export function validatePerson(draft, { model, personId = null, domaine = '', aphType = null }) {
   const errors = {};
   const warnings = [];
   const add = personId === null;
@@ -129,10 +130,9 @@ export function validatePerson(draft, { model, personId = null, domaine = '' }) 
   const held = personId === null ? '' : (model.people.get(personId)?.aph ?? '');
   if (isEstimationAph(held)) {
     if (draft.aph !== held) errors.aph = { key: 'person.error.aphEstimation' };
-    const n = model.estimation?.holders.length ?? 0;
-    if (n > 1) warnings.push({ field: 'aph', key: 'person.warn.aphEstimationMany', vars: { n } });
   } else if (aph === ESTIMATION_APH) errors.aph = { key: 'person.error.aphEstimation' };
   else if (aph && !validAph(aph)) errors.aph = { key: 'person.error.aph', vars: { max: APH_MAX_DIGITS } };
+  else if (aph && aphType === 'Int' && aph.startsWith('0')) errors.aph = { key: 'person.error.aphZero' };
   else if (aph && aph.length !== APH_USUAL_DIGITS)
     warnings.push({ field: 'aph', key: 'person.warn.aphLength', vars: { n: APH_USUAL_DIGITS } });
   const choices = model.choices?.['Team.role'] ?? [];

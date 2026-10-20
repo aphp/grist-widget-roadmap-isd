@@ -1,7 +1,7 @@
 /** Feuille de route EDS (tables colonnaires) → modèle du widget. Fonctions pures. Voir spec §4. */
 import { dayOf } from './dates.js';
 import { parseCharges } from './charges.js';
-import { estimationOf } from './estimation.js';
+import { aphText, estimationOf } from './estimation.js';
 import { readTagsCell } from './tags-edit.js';
 
 export const ISD_ROLES = Object.freeze({ DE: 'DE', DA: 'DA', DS: 'DS', 'PO Data': 'PO' });
@@ -61,8 +61,8 @@ export function buildModel(raw) {
         actif: Boolean(r.actif),
         roleText: text(r.role),
         email: text(r.email),
-        // APH (Team.aph, facultative) : texte tel quel (comparaison stricte de la personne estimation)
-        aph: typeof r.aph === 'string' ? r.aph : '',
+        // APH (Team.aph, facultative) : texte, colonne Text ou Int (aphText ; comparaison stricte de l'estimation)
+        aph: aphText(r.aph),
         domaine: text(r.Domaine),
         n1: ref(r.n_1),
         capaciteHebdo: Number(r.capaciteHebdo) || 0,
@@ -292,7 +292,7 @@ export function buildModel(raw) {
     people,
     /** Domaine ISD (isdDomainOf), calculé une fois : équipe ISD, périmètre, sélecteurs, onglet Équipe. */
     isdDomain: isdName,
-    // Personne estimation (Team.aph = ESTIMATION_APH) : id seulement si elle est seule à porter cet APH
+    // Personnes estimation (Team.aph = ESTIMATION_APH, actives) : toutes exemptées de la borne de 1 ETP
     estimation: estimationOf(people.values()),
     projects,
     chantiers,

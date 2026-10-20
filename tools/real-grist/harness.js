@@ -44,7 +44,12 @@ import { chantierDraftFrom, diffChantier } from '../../widget/js/core/chantier-f
 import { draftFrom, taskInScope } from '../../widget/js/core/task-form.js';
 import { SECONDS_PER_DAY, parisToday } from '../../widget/js/core/write-encode.js';
 import { canWriteRowIn, canWriteValuesIn } from '../../widget/js/core/write-scope.js';
-import { estimationIdOfTable } from '../../widget/js/core/estimation.js';
+import {
+  ESTIMATION_APH,
+  estimationIdsOfTable,
+  isEstimationAph,
+  isEstimationPerson,
+} from '../../widget/js/core/estimation.js';
 import { createRest, guardedConfig } from './rest.js';
 
 const cfg = guardedConfig();
@@ -69,7 +74,7 @@ async function load() {
 const lookup = {
   choices: (key) => state.model?.choices?.[key] ?? null,
   row: (table, id) => (state.raw?.tables[table] ? decodeRow(state.raw.tables[table], table, id) : null),
-  estimationId: () => estimationIdOfTable(state.raw?.tables.Team),
+  estimationIds: () => estimationIdsOfTable(state.raw?.tables.Team),
   childIds: (id) => {
     const t = state.raw?.tables.Tasks;
     return t?.parentTask ? t.id.filter((_, i) => t.parentTask[i] === id) : [];
@@ -696,43 +701,135 @@ async function main() {
     await expectStored('Chantiers', created.chantier, { Statut: 'En réalisation' });
   });
 
+  // 10. Team.aph colonne Int (convertie par Grist) et personnes estimation. Seule la cellule aph d'une personne
+  // ordinaire est écrite, puis remise à sa valeur d'origine ; aucune autre table n'est touchée.
+  await scenario('10a APH : métadonnées de Team.aph et personnes estimation détectées', async () => {
+    const col = (await rest.columns('Team')).find((c) => c.id === 'aph')?.fields;
+    note(`Team.aph : type ${J(col?.type)}, isFormula ${J(col?.isFormula)}, formule ${J(col?.formula ?? '')}`);
+    eq(W().columnType('Team', 'aph'), col?.type === 'Int' ? 'Int' : 'Text', 'type d’écriture du writer');
+    const t = state.raw.tables.Team;
+    const holders = t.id.filter((_, i) => isEstimationAph(t.aph[i]));
+    const active = holders.filter((id) => t.actif[t.id.indexOf(id)] === true);
+    note(
+      `titulaires de ${ESTIMATION_APH} : ${J(holders.map((id) => `${id} ${state.model.people.get(id)?.nom} (${state.model.people.get(id)?.roleText}${state.model.people.get(id)?.actif ? '' : ', inactive'})`))}`,
+    );
+    eq(
+      [...estimationIdsOfTable(t)].sort((a, b) => a - b),
+      active,
+      'estimationIdsOfTable = titulaires actifs',
+    );
+    eq(
+      [...state.model.estimation.ids].sort((a, b) => a - b),
+      active,
+      'model.estimation.ids = titulaires actifs',
+    );
+    for (const id of active) ok(isEstimationPerson(state.model, id), `${id} personne estimation (badge, exemption)`);
+    note(`valeurs de Team.aph : ${[...new Set(t.aph.map((v) => (v === null ? 'null' : typeof v)))].join(', ')}`);
+  });
+
+  await scenario(
+    '10b APH : écrit selon le type de la colonne (nombre si Int), vidé, relu en texte, remis à l’origine',
+    async () => {
+      if (!W().can('Team', 'aph').ok) return note(`Team.aph non modifiable : ${W().can('Team', 'aph').reason}`);
+      const type = W().columnType('Team', 'aph');
+      const who = S.isd.find((p) => !isEstimationAph(p.aph) && !p.aph);
+      if (!who) return cur.failures.push('aucune personne ISD sans APH pour l’essai');
+      const origSql = await sqlCell('Team', who.id, 'aph');
+      note(`personne ${who.id}, aph d’origine en SQL ${J(origSql)}`);
+      let base = await fetchRow('Team', who.id);
+      let r = await save('Team', who.id, base, { ...personDraftFrom(base), aph: ' 7000123 ' }, { diff: diffPerson });
+      eq(r.kind, 'saved', 'écriture');
+      if (r.kind !== 'saved') return note(J(r.error?.message ?? r));
+      eq(r.entry.actions[0][3], { aph: type === 'Int' ? 7000123 : '7000123' }, 'cellule envoyée');
+      await expectStored('Team', who.id, { aph: type === 'Int' ? 7000123 : '7000123' });
+      eq((await fetchRow('Team', who.id)).aph, '7000123', 'relu (modèle)');
+      await load();
+      base = await fetchRow('Team', who.id);
+      r = await save('Team', who.id, base, { ...personDraftFrom(base), aph: '' }, { diff: diffPerson });
+      eq(r.kind, 'saved', 'vidage');
+      if (r.kind !== 'saved') return note(J(r.error?.message ?? r));
+      eq(r.entry.actions[0][3], { aph: type === 'Int' ? null : '' }, 'cellule envoyée (vide)');
+      const stored = await rest.row('Team', who.id);
+      note(`relu après vidage : /records ${J(stored?.aph)}, SQL ${J(await sqlCell('Team', who.id, 'aph'))}`);
+      eq((await fetchRow('Team', who.id)).aph, '', 'relu (modèle) vide');
+      // Remise à la valeur d'origine exacte (0 d'une cellule Int jamais remplie), hors writer
+      if (J(await sqlCell('Team', who.id, 'aph')) !== J(origSql)) {
+        await otherUser([['UpdateRecord', 'Team', who.id, { aph: origSql }]]);
+        note(`remis à ${J(origSql)}`);
+      }
+      eq(await sqlCell('Team', who.id, 'aph'), origSql, 'valeur d’origine rendue');
+    },
+  );
+
+  await scenario('10c APH : 9999999 jamais posé ni retiré, zéro de tête refusé en Int, rien envoyé', async () => {
+    const who = S.isd.find((p) => !isEstimationAph(p.aph));
+    await expectRefused(W().update('Team', who.id, { aph: ESTIMATION_APH }), 'aph-estimation', 'poser « 9999999 »');
+    await expectRefused(W().update('Team', who.id, { aph: 9999999 }), 'aph-estimation', 'poser le nombre 9999999');
+    const holder = [...state.model.people.values()].find((p) => isEstimationAph(p.aph));
+    if (holder) {
+      await expectRefused(W().update('Team', holder.id, { aph: '' }), 'aph-estimation', `retirer (${holder.id})`);
+      await expectRefused(
+        W().update('Team', holder.id, { aph: '1234567' }),
+        'aph-estimation',
+        `changer (${holder.id})`,
+      );
+    } else note('aucun titulaire de 9999999 dans le document de test');
+    if (W().columnType('Team', 'aph') === 'Int')
+      await expectRefused(W().update('Team', who.id, { aph: '0123456' }), 'aph-zero', 'zéro de tête (Int)');
+    const col = (await rest.columns('Team')).find((c) => c.id === 'aph')?.fields;
+    note(`Team.aph après : type ${J(col?.type)}, isFormula ${J(col?.isFormula)}`);
+  });
+
   // 7. Équipe
   const person = {};
-  await scenario('7a équipe : ajout d’une personne ISD (aph et capacité omis : colonnes formules vides)', async () => {
-    const mgr = S.mgmt[0] ?? P1;
-    const draft = {
-      nom: `  Essai RÉEL ${STAMP}  `,
-      email: ' essai.reel@example.org ',
-      aph: '1234567',
-      role: 'DE',
-      capaciteHebdo: 35,
-      n_1: mgr.id,
-    };
-    const fields = newPersonFields(draft, { model: state.model, canAddField: (c) => W().canAddField('Team', c) });
-    ok(!('aph' in fields) && !('capaciteHebdo' in fields), `aph et capacité omis : ${J(Object.keys(fields))}`);
-    eq(fields.Domaine, isdDomainValue(state.model), 'Domaine ISD');
-    const r = await runCreate({ writer: W(), table: 'Team', fields });
-    eq(r.kind, 'saved', 'résultat');
-    if (r.kind !== 'saved') return note(J(r.error?.message ?? r));
-    person.id = r.entry.id;
-    eq(lastSent().response.retValues?.[0], r.entry.id, 'retValues[0]');
-    const stored = await expectStored('Team', r.entry.id, r.entry.actions[0][3]);
-    note(`relu : aph ${J(stored?.aph)}, capaciteHebdo ${J(stored?.capaciteHebdo)}, actif ${J(stored?.actif)}`);
-  });
+  // Team.aph : colonne formule vide de la Feuille, ou colonne de données (Text ou Int) après conversion dans Grist
+  const aphData = () => W().can('Team', 'aph').ok;
+  await scenario(
+    '7a équipe : ajout d’une personne ISD (capacité omise ; aph omis tant que colonne formule)',
+    async () => {
+      const mgr = S.mgmt[0] ?? P1;
+      const draft = {
+        nom: `  Essai RÉEL ${STAMP}  `,
+        email: ' essai.reel@example.org ',
+        aph: '1234567',
+        role: 'DE',
+        capaciteHebdo: 35,
+        n_1: mgr.id,
+      };
+      const fields = newPersonFields(draft, { model: state.model, canAddField: (c) => W().canAddField('Team', c) });
+      ok(!('capaciteHebdo' in fields), `capacité omise : ${J(Object.keys(fields))}`);
+      ok(
+        'aph' in fields === aphData(),
+        `aph ${aphData() ? 'envoyé (colonne de données)' : 'omis'} : ${J(Object.keys(fields))}`,
+      );
+      eq(fields.Domaine, isdDomainValue(state.model), 'Domaine ISD');
+      const r = await runCreate({ writer: W(), table: 'Team', fields });
+      eq(r.kind, 'saved', 'résultat');
+      if (r.kind !== 'saved') return note(J(r.error?.message ?? r));
+      person.id = r.entry.id;
+      eq(lastSent().response.retValues?.[0], r.entry.id, 'retValues[0]');
+      const stored = await expectStored('Team', r.entry.id, r.entry.actions[0][3]);
+      note(`relu : aph ${J(stored?.aph)}, capaciteHebdo ${J(stored?.capaciteHebdo)}, actif ${J(stored?.actif)}`);
+    },
+  );
 
   await scenario('7b équipe : aph et capaciteHebdo refusés par le writer, colonnes non converties', async () => {
     const before = Object.fromEntries((await rest.columns('Team')).map((c) => [c.id, c.fields]));
-    await expectRefused(W().update('Team', person.id, { aph: '7654321' }), 'colonne-retiree', 'aph (mise à jour)');
+    const aphFormula = !aphData();
+    if (aphFormula)
+      await expectRefused(W().update('Team', person.id, { aph: '7654321' }), 'colonne-retiree', 'aph (mise à jour)');
+    else note('Team.aph colonne de données : refus de l’aph non vérifiés ici (scénario 10)');
     await expectRefused(
       W().update('Team', person.id, { capaciteHebdo: 30 }),
       'colonne-retiree',
       'capacité (mise à jour)',
     );
-    await expectRefused(
-      W().add('Team', { nom: 'X', role: 'DE', Domaine: isdDomainValue(state.model), actif: true, aph: '1' }),
-      'colonne-retiree',
-      'aph (création)',
-    );
+    if (aphFormula)
+      await expectRefused(
+        W().add('Team', { nom: 'X', role: 'DE', Domaine: isdDomainValue(state.model), actif: true, aph: '1' }),
+        'colonne-retiree',
+        'aph (création)',
+      );
     const after = Object.fromEntries((await rest.columns('Team')).map((c) => [c.id, c.fields]));
     for (const c of ['aph', 'capaciteHebdo'])
       eq(
@@ -740,7 +837,7 @@ async function main() {
         [before[c]?.isFormula, before[c]?.formula, before[c]?.type],
         `colonne ${c}`,
       );
-    eq(after.aph?.isFormula, true, 'aph reste une colonne formule');
+    if (aphFormula) eq(after.aph?.isFormula, true, 'aph reste une colonne formule');
   });
 
   await scenario('7c équipe : e-mail, rôle et N+1 modifiés (fiche personne)', async () => {

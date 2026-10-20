@@ -41,7 +41,7 @@ export const capacityText = (p) =>
   p.capaciteHebdo ? label('team.capacity.value', { h: hours.format(p.capaciteHebdo) }) : label('team.capacity.default');
 
 /**
- * Badge discret « Estimation » de la personne estimation (titulaire unique de ESTIMATION_APH, isEstimationPerson) :
+ * Badge discret « Estimation » d'une personne estimation (active, porte ESTIMATION_APH, isEstimationPerson) :
  * il explique pourquoi la limite de 1 ETP par personne ne s'applique pas à elle. Rien pour les autres personnes.
  * @param {boolean} on la personne est la personne estimation
  */

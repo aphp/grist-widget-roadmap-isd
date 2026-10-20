@@ -454,8 +454,6 @@ const FR = Object.freeze({
   'team.capacity.default': '35 h (par défaut)',
   'team.aph': 'APH {aph}',
   'estimation.badge': 'Estimation',
-  'estimation.many':
-    '{n} personnes portent l’APH d’estimation dans la Feuille : aucune n’est exemptée de la limite de 1 ETP.',
   'estimation.title':
     'Personne d’estimation (APH {aph}) : la limite de 1 ETP par personne ne s’applique pas ({etp} ETP au plus sur la période).',
   'team.unav.period': 'du {debut} au {fin}',
@@ -1171,8 +1169,8 @@ const FR = Object.freeze({
   'person.error.n1Self': 'Une personne ne peut pas être son propre N+1.',
   'person.error.aph': 'APH invalide : de 1 à {max} chiffres, sans espace ni lettre.',
   'person.error.aphEstimation': 'La personne d’estimation se désigne directement dans la Feuille.',
-  'person.warn.aphEstimationMany':
-    '{n} personnes portent cet APH dans la Feuille : aucune n’est exemptée de la limite de 1 ETP par personne.',
+  'person.error.aphZero':
+    'La colonne APH de la Feuille est numérique : un APH ne peut pas commencer par 0 (il serait perdu).',
   'person.warn.aphLength': 'Un APH compte le plus souvent {n} chiffres : vérifiez la saisie.',
   'person.warn.emailDuplicate': 'Adresse déjà utilisée par {nom}.',
   'person.warn.nameDuplicate': 'Une personne porte déjà ce nom dans la Feuille.',
@@ -1182,6 +1180,7 @@ const FR = Object.freeze({
   'form.refused.email': 'l’adresse e-mail est invalide',
   'form.refused.aph': 'l’APH doit compter de 1 à 10 chiffres',
   'form.refused.aph-estimation': 'la personne d’estimation se désigne directement dans la Feuille',
+  'form.refused.aph-zero': 'la colonne APH de la Feuille est numérique : un APH ne peut pas y commencer par 0',
   'form.refused.role': 'le rôle n’est pas l’un des rôles de la Feuille',
   'form.refused.domaine': 'le Domaine n’est pas l’un des choix de la Feuille',
   'form.refused.capacite': 'la capacité doit être comprise entre 0,5 et 60 h, au pas de 0,5',

@@ -9,15 +9,23 @@
 - Team: optional `Team.aph` column (APH id) read and shown in the Team tab rows and the person card. It can be edited
   in the person form and on creation only once it is a data column in Grist; while it is the empty formula column of
   the Feuille, the field stays read-only with its reason. Strict check in the writer: 1 to 10 digits, or empty.
-- Charges: the person whose APH is `9999999` (`ESTIMATION_APH`, used to estimate load in the roadmap) is the only
-  one exempt from the "1 FTE maximum per person" rule, in the form and in the writer; a sanity bound of 50 FTE over
-  the period (2,000 h without dates) still applies. An "Estimation" badge explains it next to that person. The
-  exemption needs exactly one Team row with that APH (strict comparison); with none or several, nobody is exempt.
-  The widget never sets that APH nor changes it away: the estimation person is chosen in the Feuille.
+- Charges: people whose APH is `9999999` (`ESTIMATION_APH`, generic people such as "Data Engineer" or "Data
+  Scientist" used to estimate load per profile in the roadmap) are the only ones exempt from the "1 FTE maximum per
+  person" rule, in the form and in the writer; a sanity bound of 50 FTE over the period (2,000 h without dates)
+  still applies. An "Estimation" badge explains it next to each of them. Every active Team row with that APH is
+  exempt, however many there are (strict comparison); an inactive row is not. The widget never sets that APH nor
+  changes it away: estimation people are chosen in the Feuille.
 - Writer: column metadata is re-checked on every reload; a column that turned back into a formula is no longer
   written (columns are never re-enabled during a session).
-- Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs and an
-  "Estimation DE" person).
+- Team: `Team.aph` is accepted as a **Text or Int** data column (typing a value in the empty formula column makes Grist
+  convert it, often to Int, which left the field read-only and hid the value). Read as a digit string (`aphText`:
+  Int without decimals, 0 or null = empty), so the Team rows, the person card and the estimation rule (`9999999`
+  as text or number) work for both. Written by the column's actual type: a number for Int (null when empty, a
+  leading zero refused since Int would drop it), the string for Text. Numeric and other types stay refused
+  (read-only). The writer still never sets or removes `9999999`, as text or number.
+- Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs, two
+  active estimation people "Estimation DE" and "Estimation DS", and an inactive "Estimation DA").
+  `?ecritures=aph-entier` makes it an Int data column (numbers, 0 = empty).
 - Tags: assign and remove existing tags on tasks and chantiers in their forms (searchable, keyboard-accessible chip
   picker). A new name can be assigned without being declared in the sheet (column options are never changed) and is
   marked "non déclaré". Tags shown in the detail panel, an optional "Tags" column in the Table and a "Tag" filter
