@@ -36,8 +36,9 @@ test('personne, profil, périmètre « Mes tâches »', () => {
 });
 
 test('périmètre « Mes chantiers » : chantiers dont je suis responsable ou contributeur, avec toutes leurs tâches', () => {
-  // Bob (2) est responsable du chantier 100 : toutes ses tâches, même sans lui
-  assert.deepEqual([...run({ scope: 'chantiers' }, { me: 2 }).taskIds].sort(), [1000, 1001, 1002]);
+  // Bob (2) est responsable du chantier 100 (toutes ses tâches, même sans lui) et du projet ChatDPI (20) : tous
+  // les chantiers du projet comptent comme les siens
+  assert.deepEqual([...run({ scope: 'chantiers' }, { me: 2 }).taskIds].sort(), [1000, 1001, 1002, 2000, 2001, 2010]);
   // Alice (1) est responsable de WP1 (sans tâche visible ailleurs) : chantier gardé, avec ses tâches
   const alice = run({ scope: 'chantiers' }, { me: 1 });
   assert.deepEqual([...alice.taskIds].sort(), [2000]);

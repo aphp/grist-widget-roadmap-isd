@@ -1470,3 +1470,36 @@ for (const query of [
     },
   );
 }
+
+// ---------- Périmètre ISD : Management et éléments sans tâche ----------
+test(
+  'périmètre : projet du seul Management ISD et chantier sans tâche visibles dans le Gantt, absents du Kanban',
+  { skip: SKIP },
+  async () => {
+    const host = `${BASE}/dev/host.html`;
+    const q = `?donnees=synthetiques`;
+    await send('Page.navigate', { url: host });
+    await loaded(host);
+    // Fanny Manager (12, Management ISD), périmètre « Tout »
+    await send('Runtime.evaluate', {
+      expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: 'gantt', me: 12 }))`,
+    });
+    await send('Page.navigate', { url: `${host}${q}` });
+    await loaded(`${host}${q}`);
+    const row = `[...D.querySelectorAll('#view-panel[data-view="gantt"] .grow--chantier')].find((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`;
+    // Dans le périmètre ISD (responsable Management ISD, sponsor hors ISD) ; niveau Chantiers ouvert par défaut
+    await until(row);
+    assert.equal(await w(`return ${row}.querySelector('.grow__empty')?.textContent;`), 'Aucune tâche');
+    assert.match(await w(`return ${row}.getAttribute('aria-label');`), /Aucune tâche/);
+    // Kanban : centré sur les tâches, aucune carte de ce projet
+    await w(`D.getElementById('tab-kanban').click(); return true;`);
+    await until(`D.querySelector('#view-panel[data-view="kanban"] .kcard')`);
+    assert.equal(await w(`return D.getElementById('view-panel').textContent.includes('Pilotage Management');`), false);
+    // « Mes chantiers » : le chantier vide dont elle est contributrice reste visible dans le Gantt
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(row);
+    await w(`D.getElementById('f-perimetre-chantiers').click(); return true;`);
+    await until(`D.getElementById('f-perimetre-chantiers').checked && ${row}`);
+    assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
+  },
+);

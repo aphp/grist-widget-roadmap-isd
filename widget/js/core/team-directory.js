@@ -3,7 +3,7 @@
  * Fonctions pures.
  */
 import { hoursToEtp } from './capacity.js';
-import { ISD_ROLES } from './model.js';
+import { ISD_ROLES, inIsdTeam, isdDomainOf } from './model.js';
 import { normalize } from './text.js';
 
 /** Capacité hebdomadaire par défaut (h) quand Team.capaciteHebdo est vide ou nul. */
@@ -13,8 +13,6 @@ const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
 const EMAIL = /^[^\s@<>()[\]\\,;:"']+@[^\s@<>()[\]\\,;:"']+\.[^\s@<>()[\]\\,;:"']{2,}$/;
 /** Statuts de chantier considérés comme clos. */
 const CLOSED = /termin|clos|abandon|annul/i;
-/** Équipe ISD : Domaine dont le nom contient le sigle « ISD ». */
-const ISD_DOMAIN = /\bISD\b/i;
 
 /** Vrai si le texte est une adresse électronique utilisable dans un lien mailto. */
 export function isValidEmail(s) {
@@ -40,22 +38,13 @@ export function upcomingUnavailability(person, today) {
 
 /**
  * Nom de l'équipe ISD : le Domaine qui contient « ISD », sinon celui qui compte le plus de personnes de profil
- * ISD (DE, DA, DS, PO Data), sinon null.
+ * ISD (DE, DA, DS, PO Data), sinon null (model.js:isdDomainOf).
  */
 export function isdDomain(model) {
-  const names = [...new Set([...model.people.values()].map((p) => p.domaine).filter(Boolean))];
-  const named = names.find((d) => ISD_DOMAIN.test(d));
-  if (named) return named;
-  const counts = new Map();
-  for (const p of model.people.values())
-    if (p.domaine && p.role) counts.set(p.domaine, (counts.get(p.domaine) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1] || collator.compare(a[0], b[0]))[0]?.[0] ?? null;
+  return isdDomainOf(model.people.values());
 }
 
-/** Vrai si la personne fait partie de l'équipe ISD : profil ISD (DE, DA, DS, PO Data) ou Domaine ISD. */
-export function inIsdTeam(person, isd) {
-  return Boolean(person.role) || (isd !== null && person.domaine === isd);
-}
+export { inIsdTeam };
 
 /** Vrai si la personne fait partie de l'équipe ISD du modèle (voir inIsdTeam) ; faux pour une personne absente. */
 export function isIsdTeamMember(model, person) {

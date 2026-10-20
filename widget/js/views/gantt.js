@@ -17,6 +17,7 @@ import {
   expandableKeys,
   ganttRows,
   levelExpanded,
+  isEmptyContainer,
   isLate,
   isMilestone,
   nodeBar,
@@ -76,6 +77,7 @@ function describe(ctx, r, colorBy) {
   if (n.status) parts.push(label('gantt.status', { statut: statusLabel(n.status) }));
   if (LEAF_KINDS.has(n.kind) && colorBy === 'phase')
     parts.push(label('gantt.phase', { etape: colorName(phaseOf(n.title) ?? 'other', 'phase') }));
+  if (isEmptyContainer(n)) parts.push(label('gantt.noTasks'));
   if (isMilestone(ctx.model, n)) parts.push(label('gantt.milestone'));
   if (isLate(ctx.model, n, ctx.today)) parts.push(label('gantt.late'));
   return parts.join('. ');
@@ -147,8 +149,9 @@ function rowHtml(ctx, r, i, scale, colorBy, focusIndex) {
   const name = n.ref
     ? h`<span class="grow__title" data-open="${i}" data-i="${i}">${title}</span>`
     : h`<span class="grow__title grow__title--static" data-i="${i}">${title}</span>`;
+  const empty = isEmptyContainer(n) ? h`<span class="grow__empty">${label('gantt.noTasks')}</span>` : '';
   return h`<div class="grow grow--${n.kind}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}" aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy)}">
-    <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${name}</div>
+    <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${name}${empty}</div>
     <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy)}</div>
   </div>`;
 }

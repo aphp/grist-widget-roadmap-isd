@@ -62,6 +62,12 @@ export const VIEWS = Object.freeze({
 
 /** Onglets sur lesquels les filtres globaux ne s'appliquent pas (ils y sont masqués). */
 const UNFILTERED_VIEWS = new Set(['mytasks', 'team']);
+/**
+ * Onglets qui montrent aussi les projets et chantiers sans tâche (arbre filtré) : leur état vide dépend de
+ * l'arbre, pas du nombre de tâches retenues. Kanban, Tableau, Plan de charge, Statistiques et Synthèse restent
+ * centrés sur les tâches.
+ */
+const TREE_VIEWS = new Set(['gantt', 'portfolio']);
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -387,11 +393,12 @@ function renderView() {
   const panel = $('view-panel');
   panel.setAttribute('aria-labelledby', `tab-${state.prefs.view}`);
   panel.dataset.view = state.prefs.view;
-  if (![...m.people.values()].some((p) => p.isd)) {
+  if (![...m.people.values()].some((p) => p.isdTeam)) {
     panel.innerHTML = emptyPeopleHtml();
     return;
   }
-  if (view.taskIds.size === 0 && !unfiltered) {
+  const nothing = TREE_VIEWS.has(state.prefs.view) ? view.tree.length === 0 : view.taskIds.size === 0;
+  if (nothing && !unfiltered) {
     panel.innerHTML = emptyFiltersHtml();
     return;
   }

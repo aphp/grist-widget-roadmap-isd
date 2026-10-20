@@ -23,6 +23,31 @@ personne : elle se désactive). Tout cela seulement si l'adresse de la page l'ou
 La CSP n'autorise que la même origine et l'instance Grist `https://grist.numerique.gouv.fr`
 (`widget/js/config.js`), pour lire le niveau d'accès du compte.
 
+## Règles d'affichage
+
+- **Équipe ISD** : personnes actives de rôle DE, DA, DS ou PO Data, ou du Domaine ISD (le Management ISD en fait
+  partie ; le Management d'un autre Domaine, non).
+- **Périmètre ISD** : un projet en fait partie si une personne de l'équipe ISD en est responsable, sponsor ou
+  contributrice clé, est responsable ou contributrice d'un de ses chantiers, ou est assignée, responsable ou chargée
+  sur une de ses tâches. Les autres projets sont masqués par défaut, ainsi que leurs chantiers et tâches.
+- **« Hors périmètre ISD aussi »** : affiche aussi les projets hors périmètre. Sans la case, un projet hors périmètre
+  reste visible quand la personne ciblée (« Je suis… » avec « Mes tâches » ou « Mes chantiers », ou le filtre
+  Personne) y est impliquée.
+- **Périmètre « Tout / Mes tâches / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint
+  rien ; « Mes tâches » garde les tâches où je suis assigné, responsable ou chargé ; « Mes chantiers » garde les
+  chantiers dont je suis responsable ou contributeur et tous les chantiers des projets dont je suis responsable,
+  sponsor ou contributeur clé, avec toutes leurs tâches.
+- **Catégorie, Projet, Chantier** : limitent l'arbre à cet élément (listes en cascade, projets du périmètre). Ils
+  s'appliquent aussi aux projets et chantiers sans tâche.
+- **Personne, Profil, Statut** (et Responsable sous « + Filtres ») : filtres de tâche. Personne : la personne est
+  assignée, responsable ou chargée ; Profil : une personne de ce profil l'est ; Statut : statut de la tâche. Dès
+  qu'un de ces filtres, ou « Mes tâches », est actif, seuls restent les projets et chantiers qui ont une tâche
+  retenue.
+- **Éléments sans tâche** : un projet ou un chantier sans tâche apparaît dans le Gantt, avec la mention « Aucune
+  tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), et dans le Portfolio (onglets Projets
+  et Chantiers), avec « Tout » ou « Mes chantiers » et sans filtre de tâche. Kanban, Tableau, Statistiques (dont le
+  plan de charge), Synthèse et l'onglet Mes tâches ne montrent que des tâches. L'onglet Équipe n'est pas filtré.
+
 ## Développement
 npm install · npm test · npm run lint · python3 dev/serve.py (http://localhost:8770/dev/host.html)
 

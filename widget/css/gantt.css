@@ -368,6 +368,15 @@
 .grow__title--static:hover {
   text-decoration: none;
 }
+/* Projet ou chantier sans tâche : mention discrète après le titre */
+.grow__empty {
+  flex: none;
+  padding-right: var(--space-1);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
 .grow__track {
   position: relative;
   min-width: 0;

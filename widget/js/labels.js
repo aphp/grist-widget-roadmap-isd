@@ -73,7 +73,8 @@ const FR = Object.freeze({
   'filters.scope.chantiers': 'Mes chantiers',
   'filters.scope.all.title': 'Toutes les tâches de la Feuille de route, selon les autres filtres',
   'filters.scope.tasks.title': 'Tâches où je suis assigné, responsable ou chargé',
-  'filters.scope.chantiers.title': 'Chantiers dont je suis responsable ou contributeur, avec toutes leurs tâches',
+  'filters.scope.chantiers.title':
+    'Chantiers dont je suis responsable ou contributeur, et projets dont je suis responsable, sponsor ou contributeur clé, avec toutes leurs tâches',
   'filters.scope.disabled': 'Choisissez d’abord qui vous êtes dans « Je suis… ».',
   'filters.outOfScope': 'Hors périmètre ISD aussi',
   'filters.active': 'Filtres actifs',
@@ -229,6 +230,7 @@ const FR = Object.freeze({
   'gantt.late': 'En retard',
   'gantt.todayLine': 'Aujourd’hui',
   'gantt.noDates': 'Pas de dates',
+  'gantt.noTasks': 'Aucune tâche',
   'gantt.before': 'Avant la période : {date}',
   'gantt.after': 'Après la période : {date}',
   'gantt.dates': 'Du {debut} au {fin}',
@@ -474,7 +476,7 @@ const FR = Object.freeze({
   'empty.filters': 'Aucune tâche ne correspond aux filtres.',
   'empty.filters.hint': 'Élargissez la recherche ou retirez un filtre.',
   'empty.filters.action': 'Effacer les filtres',
-  'empty.people': 'Aucune personne ISD (DE, DA, DS, PO) dans la table Team.',
+  'empty.people': 'Aucune personne active de l’équipe ISD (DE, DA, DS, PO ou Domaine ISD) dans la table Team.',
   'empty.people.hint': 'Renseignez le rôle et cochez « actif » pour les membres de l’équipe dans la Feuille.',
   'view.error': 'Cette vue n’a pas pu s’afficher : {message}. Les autres vues restent disponibles.',
 

@@ -5,6 +5,11 @@
   Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
   lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);
   scroll and focus kept, the card follows its new column.
+- ISD scope uses the ISD team (ISD profile or ISD Domaine, Management ISD included): a project where only the
+  Management ISD is involved is no longer "hors périmètre". "Mes chantiers" also counts projects where I am the
+  project lead, sponsor or key contributor. Projects and chantiers without tasks show "Aucune tâche" in the Gantt,
+  which (like the Portfolio) no longer falls back to the empty state when only such items match. README: "Règles
+  d'affichage".
 
 ## [0.2.0] — 2026-10-20
 First published version.

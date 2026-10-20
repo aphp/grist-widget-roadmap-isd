@@ -108,6 +108,10 @@ function involved(task) {
 /** Vrai si la personne est responsable ou contributrice du chantier (Chantiers.Responsable, Chantiers.Contributeurs). */
 const onChantier = (c, id) => Boolean(c) && (c.responsable === id || c.contributeurs.includes(id));
 
+/** Vrai si la personne est responsable, sponsor ou contributrice clé du projet (Projects). */
+const onProject = (p, id) =>
+  Boolean(p) && (p.responsable === id || p.sponsor.includes(id) || p.contributeursCles.includes(id));
+
 /** Personnes ciblées par le périmètre (Mes tâches, Mes chantiers) et le filtre Personne. */
 const targetOf = (f, prefs) => [f.scope !== 'all' ? prefs.me : null, f.person].filter(Boolean);
 
@@ -119,11 +123,12 @@ function projetShown(model, p, f, hidden, who = []) {
 }
 
 /**
- * Vrai si une des personnes est assignée, responsable ou chargée sur une tâche du projet, ou responsable ou
- * contributrice d'un de ses chantiers. Garde visible un projet hors périmètre ISD (sans personne de profil ISD)
- * quand on cible une personne, par exemple du Management.
+ * Vrai si une des personnes est responsable, sponsor ou contributrice clé du projet, responsable ou
+ * contributrice d'un de ses chantiers, ou assignée, responsable ou chargée sur une de ses tâches. Garde visible
+ * un projet hors périmètre ISD (aucune personne active de l'équipe ISD) quand on cible une personne.
  */
 function projectInvolves(model, node, who) {
+  if (node.ref?.table === 'Projects' && who.some((id) => onProject(model.projects.get(node.ref.id), id))) return true;
   if (node.ref?.table === 'Chantiers' && who.some((id) => onChantier(model.chantiers.get(node.ref.id), id)))
     return true;
   if (node.taskId) {
@@ -150,11 +155,17 @@ function chantierMatcher(model, key) {
 export function applyFilters(model, f, prefs) {
   const q = normalize(f.search);
   const me = f.scope === 'tasks' ? prefs.me : null;
-  // Mes chantiers : chantiers dont la personne est responsable ou contributrice, avec toutes leurs tâches
+  // Mes chantiers : chantiers dont la personne est responsable ou contributrice, avec toutes leurs tâches, et
+  // projets dont elle est responsable, sponsor ou contributrice clé, avec tous leurs chantiers (même sans tâche)
   const myChantiers = f.scope === 'chantiers' && prefs.me ? prefs.me : null;
   const chantierMine = myChantiers
     ? (c) => c.ref?.table === 'Chantiers' && onChantier(model.chantiers.get(c.ref.id), myChantiers)
     : null;
+  const mine = (p) => {
+    if (onProject(model.projects.get(p.projectId), myChantiers)) return p;
+    const children = p.children.filter(chantierMine);
+    return children.length ? { ...p, children } : null;
+  };
   const hidden = new Set(prefs.hiddenProjects);
   const taskIds = new Set();
   const target = targetOf(f, prefs);
@@ -205,8 +216,8 @@ export function applyFilters(model, f, prefs) {
         .filter((p) => !f.demandeur || hasDemandeur(model.projects.get(p.projectId), f.demandeur))
         .map((p) => (chantierOk ? { ...p, children: p.children.filter(chantierOk) } : p))
         .filter((p) => !chantierOk || p.children.length)
-        .map((p) => (chantierMine ? { ...p, children: p.children.filter(chantierMine) } : p))
-        .filter((p) => !chantierMine || p.children.length)
+        .map((p) => (chantierMine ? mine(p) : p))
+        .filter(Boolean)
         .map((p) => prune(p, catHit(cat)))
         .filter(Boolean);
       return projets.length ? { ...cat, children: projets } : null;

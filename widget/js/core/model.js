@@ -6,6 +6,29 @@ export const ISD_ROLES = Object.freeze({ DE: 'DE', DA: 'DA', DS: 'DS', 'PO Data'
 export const NO_CHANTIER = '(sans chantier)';
 export const NO_CATEGORIE = 'Sans catégorie';
 const DONE = new Set(['done']);
+/** Équipe ISD : Domaine dont le nom contient le sigle « ISD ». */
+const ISD_DOMAIN = /\bISD\b/i;
+const domainCollator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+
+/**
+ * Nom du Domaine ISD parmi les personnes : celui qui contient « ISD », sinon celui qui compte le plus de
+ * personnes de profil ISD (DE, DA, DS, PO Data), sinon null.
+ * @param {Iterable<{domaine:string, role:string|null}>} people
+ */
+export function isdDomainOf(people) {
+  const list = [...people];
+  const names = [...new Set(list.map((p) => p.domaine).filter(Boolean))];
+  const named = names.find((d) => ISD_DOMAIN.test(d));
+  if (named) return named;
+  const counts = new Map();
+  for (const p of list) if (p.domaine && p.role) counts.set(p.domaine, (counts.get(p.domaine) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || domainCollator.compare(a[0], b[0]))[0]?.[0] ?? null;
+}
+
+/** Vrai si la personne fait partie de l'équipe ISD : profil ISD (DE, DA, DS, PO Data) ou Domaine ISD. */
+export function inIsdTeam(person, isd) {
+  return Boolean(person.role) || (isd !== null && person.domaine === isd);
+}
 
 function rows(table) {
   if (!table?.id) return [];
@@ -27,7 +50,10 @@ export function buildModel(raw) {
         id: r.id,
         nom: text(r.nom),
         role: ISD_ROLES[r.role] ?? null,
+        /** Profil ISD actif (DE, DA, DS, PO) : filtre Profil, ventilation des ETP par profil. */
         isd: Boolean(ISD_ROLES[r.role] && r.actif),
+        /** Membre actif de l'équipe ISD (profil ISD ou Domaine ISD, Management compris) : périmètre ISD. */
+        isdTeam: false,
         actif: Boolean(r.actif),
         roleText: text(r.role),
         email: text(r.email),
@@ -38,6 +64,8 @@ export function buildModel(raw) {
       },
     ]),
   );
+  const isdName = isdDomainOf(people.values());
+  for (const p of people.values()) p.isdTeam = p.actif && inIsdTeam(p, isdName);
   for (const r of rows(t.Disponibilites)) {
     const p = people.get(ref(r.membre)),
       start = dayOf(r.dateDebut),
@@ -227,8 +255,8 @@ export function buildModel(raw) {
   };
   categories.forEach(span);
 
-  // ---- Périmètre ISD (spec §4.3) ----
-  const isd = (id) => people.get(id)?.isd === true;
+  // ---- Périmètre ISD (spec §4.3) : une personne active de l'équipe ISD (Management ISD compris) y est impliquée ----
+  const isd = (id) => people.get(id)?.isdTeam === true;
   const taskTouches = (task) =>
     task.assignees.some(isd) || isd(task.responsable) || task.charges.some((c) => isd(c.personId));
   const subtreeTasks = (n, acc = []) => {

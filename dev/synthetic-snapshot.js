@@ -283,6 +283,39 @@ export function syntheticSnapshot(today = new Date()) {
     }
   }
 
+  // Projet porté par le seul Management ISD (sponsor hors ISD), avec un chantier sans tâche : dans le
+  // périmètre ISD, visible dans le Gantt (« Aucune tâche ») et dans « Mes chantiers » du Management
+  const pilotage = projects.length + 1;
+  projects.push({
+    id: pilotage,
+    nom: 'Pilotage Management',
+    Categorie: 'Projet',
+    Statut: SCHEMA.Projects[2][3][0],
+    dateDebut: day(-30),
+    dateFin: day(150),
+    responsable: managers[0],
+    Sponsor: ['L', outsiders[0]],
+    Contributeurs_cles: null,
+    Priorite_de_la_direction: '',
+    Commanditaires: 'Direction C',
+    Description: 'Projet fictif porté par le Management.',
+    actif: true,
+  });
+  chantiers.push({
+    id: chId++,
+    Nom_du_chantier: 'Chantier sans tâche du pilotage',
+    Projets: ['L', pilotage],
+    Statut: 'À cadrer',
+    Debut: day(0),
+    Fin: day(90),
+    Responsable: managers[0],
+    Contributeurs: ['L', managers[0]],
+    Priorite: '',
+    Criteres_de_succes: '',
+    Description: 'Chantier fictif sans tâche.',
+    tags: null,
+  });
+
   const dispos = [
     { id: 1, membre: 1, dateDebut: day(7), dateFin: day(11), dispo: 0, type: 'Congés' },
     { id: 2, membre: 5, dateDebut: day(21), dateFin: day(25), dispo: 0.5, type: 'Formation' },

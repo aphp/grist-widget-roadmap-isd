@@ -104,7 +104,8 @@ export function dataQuality(model, taskIds, chantierIds = [], projectIds = []) {
 }
 
 /**
- * Répartition des tâches. key : 'status', 'priority' ou 'person' (personnes ISD, une tâche compte pour chacune).
+ * Répartition des tâches. key : 'status', 'priority' ou 'person' (personnes actives de l'équipe ISD, Management
+ * ISD compris ; une tâche compte pour chacune).
  * @returns {{key:string, label:string, value:number}[]} statuts dans l'ordre du modèle, le reste par valeur
  *   décroissante ; key = statut, priorité ('' sans priorité) ou identifiant de la personne (en texte)
  */
@@ -121,7 +122,7 @@ export function countBy(model, taskIds, key) {
     else if (key === 'priority') {
       const p = taskPriority(model, t);
       add(p, p ? priorityText(p) : label('kanban.noPriority')); // « Priorité 3 », comme le Kanban et le Tableau
-    } else for (const p of taskPeople(model, t)) if (p.isd) add(p.id, p.nom);
+    } else for (const p of taskPeople(model, t)) if (p.isdTeam) add(p.id, p.nom);
   }
   const rows = [...counts.entries()];
   if (key === 'status') {

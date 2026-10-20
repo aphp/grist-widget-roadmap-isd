@@ -5,7 +5,10 @@
 
 /** Valeur de « Vue d'accueil » qui rouvre la dernière vue consultée (comportement d'avant). */
 export const HOME_LAST = 'last';
-/** Périmètres des filtres : tout, mes tâches (assigné, responsable ou chargé), mes chantiers (responsable ou contributeur). */
+/**
+ * Périmètres des filtres : tout, mes tâches (assigné, responsable ou chargé), mes chantiers (responsable ou
+ * contributeur du chantier ; responsable, sponsor ou contributeur clé du projet).
+ */
 export const SCOPES = Object.freeze(['all', 'tasks', 'chantiers']);
 
 /**

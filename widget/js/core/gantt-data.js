@@ -281,6 +281,14 @@ export function nodeBar(node) {
   return null;
 }
 
+/**
+ * Projet ou chantier sans tâche dans l'arbre affiché (« Aucune tâche ») : visible dans le Gantt quand il est
+ * retenu (périmètre, Mes chantiers), alors que les vues centrées sur les tâches l'ignorent.
+ */
+export function isEmptyContainer(node) {
+  return (node.kind === 'projet' || node.kind === 'chantier') && node.children.length === 0;
+}
+
 /** Tâche en retard : échéance passée (avant aujourd'hui) et non terminée. Les autres niveaux ne sont jamais en retard. */
 export function isLate(model, node, today) {
   const task = node.taskId ? model.tasks.get(node.taskId) : null;
