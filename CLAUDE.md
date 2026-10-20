@@ -55,10 +55,12 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   widget dans le document de test), `check_writes.py save|check|diff` (contrôle avant/après un scénario).
 
 ## État et suite
-- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD.
+- Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD, statut
+  depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
+  `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte).
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
-- Lots suivants : « Mes tâches » et vue d'accueil par profil, statut depuis la carte, tags (attribuer), glisser-
+- Lots suivants : « Mes tâches » et vue d'accueil par profil, tags (attribuer), glisser-
   déposer du Kanban, dates à la souris dans le Gantt.
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
   d'aide), gestion des tags (options de colonne), échelle de priorité, demandeur par chantier. Pas de création de

@@ -14,6 +14,7 @@
 //   flags-bloque    : flags.json ne répond jamais (window.__flagsBloque = true en cours de session) ;
 //   lent            : 1,5 s de latence avant la réponse ;
 //   coupe           : flags.json répond { "edition": false } (arrêt d'urgence ; window.__coupe = true en cours de session) ;
+//   statut-vide     : la tâche n° 1 n'a pas de statut (menu de statut sans entrée cochée) ;
 //   capacite-donnee : Team.capaciteHebdo devient une colonne de données (comme après sa conversion dans Grist par un
 //                     responsable) ; sans cette option, elle reste la colonne vide de la Feuille, non modifiable.
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
@@ -35,6 +36,10 @@
     } catch (err) {
       window.__mockError = `[faux Grist] données indisponibles : ${err?.message ?? err}`;
       throw err;
+    }
+    if (has('statut-vide')) {
+      const i = data.Tasks.id.indexOf(1);
+      if (i >= 0) data.Tasks.statut[i] = '';
     }
     if (has('capacite-donnee')) {
       const t = data._grist_Tables;

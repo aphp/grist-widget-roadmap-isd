@@ -924,6 +924,16 @@ const FR = Object.freeze({
 
   'toast.saved': 'Modifications enregistrées.',
   'toast.savedDry': 'Mode essai : modification notée, rien n’a été envoyé.',
+  // P-UX-6 : statut depuis la carte du Kanban, la ligne du Tableau et la ligne de Mes tâches
+  'quickStatus.menu': 'Statut de « {titre} »',
+  'quickStatus.menu.title': 'Changer le statut',
+  'quickStatus.current': '(statut actuel)',
+  'quickStatus.open': 'Changer le statut de « {titre} » (actuel : {statut})',
+  'quickStatus.button': '{statut}, changer le statut de « {titre} »',
+  'quickStatus.busy': 'Un changement de statut est en cours d’envoi : rien n’a été modifié, réessayez dans un instant.',
+  'quickStatus.fail.reread': 'Impossible de relire la tâche avant l’envoi : rien n’a été envoyé. Réessayez.',
+  'kanban.help.edit':
+    'Une seule tabulation par colonne. Flèches haut et bas : se déplacer dans la colonne ; flèches gauche et droite : changer de colonne ; Entrée : ouvrir la fiche ; S ou Maj+F10 : changer le statut de la carte.',
   'toast.status': 'Statut changé en « {statut} ».',
   'toast.statusDry': 'Mode essai : statut « {statut} » noté, rien n’a été envoyé.',
   'toast.undo': 'Annuler',

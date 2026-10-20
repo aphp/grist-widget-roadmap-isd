@@ -1287,7 +1287,7 @@ test(
 );
 
 /** Touche réelle (CDP) envoyée à l'élément focalisé : Tab, Maj+Tab, Entrée. */
-async function press(key, shift = false) {
+async function pressKey(key, shift = false) {
   const codes = { Tab: 9, Enter: 13 };
   const base = { key, code: key, windowsVirtualKeyCode: codes[key], modifiers: shift ? 8 : 0 };
   await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
@@ -1306,7 +1306,7 @@ test(
     const where = `const a = D.activeElement; return { id: a.id, name: a.type === 'radio' ? a.name : '', inside: Boolean(a.closest('#app-detail')), disabled: Boolean(a.disabled) };`;
     const seen = [];
     for (let i = 0; i < 200; i++) {
-      await press('Tab');
+      await pressKey('Tab');
       const at = await w(where);
       seen.push(at);
       if (at.id === 'btn-detail-close') break;
@@ -1330,10 +1330,10 @@ test(
     assert.ok(radios.includes('tf-priorite'), trace);
     assert.equal(new Set(radios).size, radios.length, trace);
     // Maj+Tab depuis « Fermer » : dernier arrêt de la fiche, sans sortir
-    await press('Tab', true);
+    await pressKey('Tab', true);
     const last = await w(where);
     assert.ok(last.inside && last.id !== 'btn-detail-close', JSON.stringify(last));
-    await press('Tab');
+    await pressKey('Tab');
     assert.equal((await w(where)).id, 'btn-detail-close');
   },
 );
@@ -1390,26 +1390,26 @@ test(
     const where = `const a = D.activeElement; return a.closest('#app-detail') ? 'fiche' : a.closest('.toast-region') ? (a.matches('[data-toast-action]') ? 'annuler' : 'message') : 'ailleurs';`;
     const seen = [];
     for (let i = 0; i < 60 && !seen.includes('annuler'); i++) {
-      await press('Tab');
+      await pressKey('Tab');
       seen.push(await w(where));
     }
     assert.ok(seen.includes('annuler'), seen.join(','));
     assert.ok(!seen.includes('ailleurs'), seen.join(','));
     // Maj+Tab revient dans la fiche ; Tab puis Tab bouclent vers la fiche après le message
-    await press('Tab', true);
+    await pressKey('Tab', true);
     assert.equal(await w(where), 'fiche');
-    await press('Tab');
+    await pressKey('Tab');
     assert.equal(await w(where), 'annuler');
-    await press('Tab');
+    await pressKey('Tab');
     assert.equal(await w(where), 'message');
-    await press('Tab');
+    await pressKey('Tab');
     assert.equal(await w(where), 'fiche');
     assert.equal(await w(`return D.getElementById('app-detail').getAttribute('aria-modal');`), 'true');
     // Entrée sur « Annuler » : la personne est réactivée, le focus revient dans la fiche
-    await press('Tab', true);
-    await press('Tab', true);
+    await pressKey('Tab', true);
+    await pressKey('Tab', true);
     assert.equal(await w(where), 'annuler');
-    await press('Enter');
+    await pressKey('Enter');
     await until(`W.__writes.length === 2`);
     assert.deepEqual((await writes())[1], [['UpdateRecord', 'Team', 2, { actif: true }]]);
     await until(`D.activeElement.closest('#app-detail')`);
@@ -1570,3 +1570,336 @@ for (const query of [
     },
   );
 }
+
+// ---------- Statut depuis la carte et la ligne (P-UX-6) ----------
+const EDIT = '?edition=1&doc=doc-dev-local&ecritures=memoire';
+
+/** Ouvre une vue avec « Je suis… » posé (Mes tâches), toujours sur le jeu synthétique. */
+async function openView(query, view, me = 5) {
+  const host = `${BASE}/dev/host.html`;
+  const q = `${query}&donnees=synthetiques`;
+  await send('Page.navigate', { url: host });
+  await loaded(host);
+  await send('Runtime.evaluate', {
+    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: '${view}', me: ${me} }))`,
+  });
+  await send('Page.navigate', { url: `${host}${q}` });
+  await loaded(`${host}${q}`);
+  await until(`D.querySelector('#view-panel[data-view="${view}"] .view [data-task]')`);
+}
+
+/** Choisit dans le menu ouvert le premier statut différent de l'actuel (ou `value`) ; renvoie la valeur choisie. */
+const pickStatus = (value) =>
+  w(`const items = [...D.querySelectorAll('#qs-menu [data-qs-value]')];
+    const b = ${value ? `items.find((x) => x.dataset.qsValue === ${JSON.stringify(value)})` : `items.find((x) => x.getAttribute('aria-checked') !== 'true')`};
+    b.focus(); b.click(); return b.dataset.qsValue;`);
+const key = (k, extra = {}) =>
+  w(
+    `D.activeElement.dispatchEvent(new W.KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true, cancelable: true, ...${JSON.stringify(extra)} })); return true;`,
+  );
+
+test(
+  'statut depuis la carte (P-UX-6) : « s » ouvre le menu, les flèches n’écrivent rien, la carte change de colonne et garde le focus',
+  { skip: SKIP },
+  async () => {
+    await open(EDIT);
+    const id = await w(
+      `const c = D.querySelector('.kcol[data-col="status:todo"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+    );
+    // Bouton ⋯ hors du focus itinérant : un seul arrêt de tabulation par colonne
+    assert.equal(await w(`return D.querySelector('[data-qs-open="${id}"]').tabIndex;`), -1);
+    assert.match(await w(`return D.getElementById('kanban-help').textContent;`), /Maj\+F10/);
+    await key('s');
+    await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+    assert.equal(await w(`return D.activeElement.getAttribute('aria-checked');`), 'true');
+    for (let i = 0; i < 3; i++) await key('ArrowDown');
+    await key('Escape');
+    await until(`!D.getElementById('qs-menu') && D.activeElement.id === 'kc-${id}'`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // Maj+F10 rouvre le même menu ; choix « En revue »
+    await key('F10', { shiftKey: true });
+    await until(`D.getElementById('qs-menu')`);
+    assert.equal(await pickStatus('review'), 'review');
+    await until(`W.__writes.length === 1 && D.querySelector('.kcol[data-col="status:review"] #kc-${id}')`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { statut: 'review' }]]);
+    await until(`D.activeElement?.id === 'kc-${id}'`);
+    // La carte déplacée est l'arrêt de tabulation de sa nouvelle colonne
+    assert.equal(await w(`return D.getElementById('kc-${id}').tabIndex;`), 0);
+    assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /En revue/);
+    assert.equal(await w(`return Boolean(D.querySelector('.toast [data-toast-action]'));`), true);
+    // « Annuler » : la carte revient, le focus la suit
+    await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+    await until(`D.querySelector('.kcol[data-col="status:todo"] #kc-${id}') && D.activeElement?.id === 'kc-${id}'`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { statut: 'todo' }]]);
+  },
+);
+
+test(
+  'statut depuis la carte (P-UX-6) : la souris passe par le bouton ⋯, « Terminé » remplit la clôture',
+  { skip: SKIP },
+  async () => {
+    await open(EDIT);
+    const id = await w(
+      `return Number(D.querySelector('.kcol[data-col="status:inprogress"] .kcard[data-qs-focus]').dataset.task);`,
+    );
+    const y = await w(`W.scrollTo(0, 200); return W.scrollY;`);
+    await w(`D.querySelector('[data-qs-open="${id}"]').click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    assert.equal(await w(`return D.querySelector('[data-qs-open="${id}"]').getAttribute('aria-expanded');`), 'true');
+    await pickStatus('done');
+    await until(`W.__writes.length === 1 && D.activeElement?.id === 'kc-${id}'`);
+    const cells = (await writes())[0][0][3];
+    assert.equal(cells.statut, 'done');
+    assert.equal(typeof cells.dateCloture, 'number');
+    // La vue est redessinée sans perdre le défilement de la page
+    assert.ok(Math.abs((await w(`return W.scrollY;`)) - y) < 400);
+  },
+);
+
+test(
+  'statut depuis la ligne du Tableau (P-UX-6) : la cellule devient un bouton-menu ; focus rendu au bouton',
+  { skip: SKIP },
+  async () => {
+    await open(EDIT);
+    await w(`D.getElementById('tab-table').click(); return true;`);
+    await until(`D.querySelector('#view-panel[data-view="table"] .tbl-qs')`);
+    const id = await w(`const b = D.querySelectorAll('.tbl-qs')[3]; b.focus(); return Number(b.dataset.qsOpen);`);
+    await w(`D.activeElement.click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    for (let i = 0; i < 2; i++) await key('ArrowUp');
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    const chosen = await pickStatus();
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0][0].slice(0, 3), ['UpdateRecord', 'Tasks', id]);
+    assert.equal((await writes())[0][0][3].statut, chosen);
+    await until(`D.activeElement?.dataset.qsFocus === '${id}'`);
+    // Aucune fiche ouverte : le clic sur la cellule n'ouvre que le menu
+    assert.notEqual(await w(`return D.getElementById('app-detail').dataset.open;`), 'true');
+  },
+);
+
+test(
+  'statut depuis Mes tâches (P-UX-6) : « Terminé » retire la ligne, le focus passe à la voisine',
+  { skip: SKIP },
+  async () => {
+    await openView(EDIT, 'mytasks');
+    const [id, next] = await w(
+      `const b = [...D.querySelectorAll('.mt__qs')]; return [Number(b[0].dataset.qsOpen), b[1].dataset.qsOpen];`,
+    );
+    await w(`D.querySelector('[data-qs-open="${id}"]').click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('done');
+    await until(`W.__writes.length === 1 && !D.querySelector('[data-qs-open="${id}"]')`);
+    assert.equal((await writes())[0][0][3].statut, 'done');
+    await until(`D.activeElement?.dataset.qsFocus === '${next}'`);
+  },
+);
+
+test(
+  'statut depuis la carte en mode essai (P-UX-6) : la carte change de colonne, rien n’est envoyé',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=essai');
+    const id = await w(
+      `const c = D.querySelector('.kcol[data-col="status:todo"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+    );
+    await key('s');
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('inprogress');
+    await until(
+      `D.querySelector('.kcol[data-col="status:inprogress"] #kc-${id}') && D.activeElement?.id === 'kc-${id}'`,
+    );
+    assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Mode essai/);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+for (const query of [
+  '?x=1',
+  '?edition=1&doc=autre-document&ecritures=memoire',
+  '?edition=1&doc=doc-dev-local&ecritures=lecteur',
+]) {
+  test(
+    `statut depuis la carte et la ligne (P-UX-6), lecture seule (${query}) : aucun contrôle`,
+    { skip: SKIP },
+    async () => {
+      for (const view of ['kanban', 'table', 'mytasks']) {
+        await openView(query, view);
+        await sleep(200);
+        assert.equal(await w(`return D.querySelectorAll('[data-qs-open], [data-qs-focus]').length;`), 0, view);
+      }
+      // « s » et le clic droit sur une carte n'ouvrent rien ; le menu du navigateur reste intact
+      await openView(query, 'kanban');
+      await w(`D.querySelector('.kcard').focus(); return true;`);
+      await key('s');
+      const prevented =
+        await w(`const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+        D.querySelector('.kcard').dispatchEvent(e); return e.defaultPrevented;`);
+      assert.equal(prevented, false);
+      await sleep(200);
+      assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), false);
+      assert.doesNotMatch(await w(`return D.getElementById('kanban-help').textContent;`), /Maj\+F10/);
+      assert.equal(await w(`return W.__writes.length;`), 0);
+    },
+  );
+}
+
+/** Vraie frappe clavier (CDP) dans l'élément focalisé : active les boutons comme un utilisateur ; repeat = touche maintenue. */
+async function press(k, { repeat = false } = {}) {
+  const codes = { Enter: 13, ' ': 32, ArrowDown: 40 };
+  const text = k === 'Enter' ? '\r' : k === ' ' ? ' ' : undefined;
+  const base = { key: k, code: k === ' ' ? 'Space' : k, windowsVirtualKeyCode: codes[k] ?? 0, autoRepeat: repeat };
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', ...base, text });
+  if (!repeat) await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+  await sleep(50);
+}
+
+async function openTableMenu(query, index = 2) {
+  await open(query);
+  await w(`D.getElementById('tab-table').click(); return true;`);
+  await until(`D.querySelector('#view-panel[data-view="table"] .tbl-qs')`);
+  const id = await w(`const b = D.querySelectorAll('.tbl-qs')[${index}]; b.focus(); return Number(b.dataset.qsOpen);`);
+  await press('Enter');
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  return id;
+}
+
+test(
+  'menu de statut (P-UX-6) : choisir le statut actuel n’écrit rien ; Entrée maintenue n’écrit rien',
+  { skip: SKIP },
+  async () => {
+    const id = await openTableMenu(EDIT);
+    // Ouvert par Entrée : la répétition de la touche arrive dans le menu, sur le statut actuel, sans rien choisir
+    assert.equal(await w(`return D.activeElement.getAttribute('aria-checked');`), 'true');
+    await press('Enter', { repeat: true });
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    await press('ArrowDown');
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // Statut actuel choisi franchement : menu fermé, rien n'est écrit, focus rendu au bouton
+    await w(`D.querySelector('#qs-menu [aria-checked="true"]').focus(); return true;`);
+    await press('Enter');
+    await until(`!D.getElementById('qs-menu') && D.activeElement?.dataset.qsOpen === '${id}'`);
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // aria-controls retiré avec le menu
+    assert.equal(await w(`return D.activeElement.hasAttribute('aria-controls');`), false);
+    assert.equal(await w(`return D.activeElement.getAttribute('aria-expanded');`), 'false');
+  },
+);
+
+test('menu de statut (P-UX-6) : Entrée et Espace sur une entrée écrivent ce statut', { skip: SKIP }, async () => {
+  const id = await openTableMenu(EDIT);
+  await w(
+    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
+  );
+  const first = await w(`return D.activeElement.dataset.qsValue;`);
+  await press('Enter');
+  await until(`W.__writes.length === 1 && D.activeElement?.dataset.qsFocus === '${id}'`);
+  assert.equal((await writes())[0][0][3].statut, first);
+  await press('Enter');
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  await w(
+    `[...D.querySelectorAll('#qs-menu [data-qs-value]')].find((b) => b.getAttribute('aria-checked') !== 'true').focus(); return true;`,
+  );
+  const second = await w(`return D.activeElement.dataset.qsValue;`);
+  await press(' ');
+  await until(`W.__writes.length === 2`);
+  assert.equal((await writes())[1][0][3].statut, second);
+});
+
+test(
+  'menu de statut (P-UX-6) : tâche sans statut, focus neutre sur le menu, Entrée n’y choisit rien',
+  { skip: SKIP },
+  async () => {
+    await open(`${EDIT},statut-vide`);
+    await until(`D.querySelector('#kc-1[data-qs-focus]')`);
+    await w(`D.getElementById('kc-1').focus(); return true;`);
+    await key('s');
+    await until(`D.getElementById('qs-menu')`);
+    assert.equal(await w(`return D.activeElement.id;`), 'qs-menu');
+    assert.equal(await w(`return D.querySelectorAll('#qs-menu [aria-checked="true"]').length;`), 0);
+    await press('Enter');
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // Flèche : première entrée, choisie seulement par un appui franc
+    await press('ArrowDown');
+    assert.equal(await w(`return D.activeElement.dataset.qsValue;`), 'todo');
+    await press('Enter', { repeat: true });
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await press('Enter');
+    await until(`W.__writes.length === 1 && D.activeElement?.id === 'kc-1'`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', 1, { statut: 'todo' }]]);
+  },
+);
+
+test(
+  'statut depuis la carte (P-UX-6) : le clic droit ouvre le menu de statut ; choix pendant un envoi signalé',
+  { skip: SKIP },
+  async () => {
+    await open(`${EDIT},lent`);
+    const ctxMenu = (sel) =>
+      w(`const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+      D.querySelector(${JSON.stringify(sel)}).dispatchEvent(e); return e.defaultPrevented;`);
+    const id = await w(`return Number(D.querySelector('.kcard[data-qs-focus]').dataset.task);`);
+    // Clic droit sur la carte : menu de statut (pas celui du navigateur), ancré sur son ⋯
+    assert.equal(await ctxMenu(`#kc-${id}`), true);
+    await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+    assert.equal(await w(`return D.querySelector('[data-qs-open="${id}"]').getAttribute('aria-expanded');`), 'true');
+    // Deuxième « contextmenu » (Maj+F10 relâché sous Windows) : le menu reste ouvert ; dans le menu : bloqué
+    assert.equal(await ctxMenu(`#kc-${id}`), true);
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true);
+    assert.equal(await ctxMenu('#qs-menu'), true);
+    await key('Escape');
+    await until(`!D.getElementById('qs-menu') && D.activeElement?.id === 'kc-${id}'`);
+    // Clic droit sur le ⋯ : même menu
+    assert.equal(await ctxMenu(`[data-qs-open="${id}"]`), true);
+    await until(`D.getElementById('qs-menu')`);
+    await key('Escape');
+    await until(`!D.getElementById('qs-menu')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    const [a, b] = await w(
+      `const c = [...D.querySelectorAll('.kcol[data-col="status:todo"] .kcard[data-qs-focus]')]; return [Number(c[0].dataset.task), Number(c[1].dataset.task)];`,
+    );
+    await w(`D.querySelector('[data-qs-open="${a}"]').click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('review');
+    await until(`W.__writes.length === 1`);
+    // Premier envoi encore en cours (1,5 s) : le second choix est refusé avec un message, rien n'est envoyé
+    await w(`D.querySelector('[data-qs-open="${b}"]').click(); return true;`);
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('review');
+    await until(`/en cours d’envoi/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+    await sleep(2000);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);
+
+test(
+  '« Annuler » au clavier (P-UX-6) : la carte revient dans sa colonne et reprend le focus',
+  { skip: SKIP },
+  async () => {
+    await open(EDIT);
+    const id = await w(
+      `const c = D.querySelector('.kcol[data-col="status:todo"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+    );
+    await key('s');
+    await until(`D.getElementById('qs-menu')`);
+    await pickStatus('review');
+    await until(`W.__writes.length === 1 && D.querySelector('.kcol[data-col="status:review"] #kc-${id}')`);
+    // Le message « Annuler » reçoit le focus (comme par Tab), puis Entrée ; le message disparaît avec son bouton
+    await until(`D.querySelector('.toast [data-toast-action]')`);
+    await w(`D.querySelector('.toast [data-toast-action]').focus(); return true;`);
+    assert.equal(await w(`return D.activeElement.dataset.toastAction !== undefined;`), true);
+    await press('Enter');
+    await until(`W.__writes.length === 2 && D.querySelector('.kcol[data-col="status:todo"] #kc-${id}')`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { statut: 'todo' }]]);
+    await until(`D.activeElement?.id === 'kc-${id}'`);
+    // Toujours là après la relecture qui suit l'annulation
+    await sleep(500);
+    assert.equal(await w(`return D.activeElement?.id;`), `kc-${id}`);
+  },
+);
