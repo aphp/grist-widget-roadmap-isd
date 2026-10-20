@@ -15,6 +15,8 @@ function rows(table) {
 const refs = (v) => (Array.isArray(v) && v[0] === 'L' ? v.slice(1).filter((x) => x > 0) : []);
 const ref = (v) => (typeof v === 'number' && v > 0 ? v : null);
 const text = (v) => (typeof v === 'string' ? v.trim() : '');
+/** Liste de choix (ChoiceList) : ['L', …] → chaînes ; vide ou illisible → []. */
+const tagList = (v) => (Array.isArray(v) && v[0] === 'L' ? v.slice(1).filter((x) => typeof x === 'string') : []);
 const byTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
 
 export function buildModel(raw) {
@@ -88,6 +90,7 @@ export function buildModel(raw) {
         priorite: text(r.Priorite),
         criteres: text(r.Criteres_de_succes),
         description: text(r.Description),
+        tags: tagList(r.tags),
       },
     ]),
   );
@@ -123,7 +126,7 @@ export function buildModel(raw) {
       type: text(r.type),
       priorite: text(r.priorite),
       progression: typeof r.progression === 'number' && Number.isFinite(r.progression) ? r.progression : null,
-      tags: Array.isArray(r.tags) && r.tags[0] === 'L' ? r.tags.slice(1).filter((x) => typeof x === 'string') : [],
+      tags: tagList(r.tags),
     };
     if (task.start !== null && task.end !== null && task.end < task.start)
       issues.push({ kind: 'dates-incoherentes', taskId: r.id });

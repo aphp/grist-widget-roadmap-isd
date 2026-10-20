@@ -101,7 +101,8 @@ test('étiquettes : responsable (nom) et demandeur', () => {
   assert.deepEqual(activeFilterChips({ ...DEFAULT_FILTERS, responsable: 999 }, m), [
     { field: 'responsable', label: '999' },
   ]);
-  assert.deepEqual(EXTRA_FILTERS, ['responsable', 'demandeur']);
+  assert.deepEqual(EXTRA_FILTERS, ['responsable', 'demandeur', 'tag']);
+  assert.deepEqual(activeFilterChips({ ...DEFAULT_FILTERS, tag: 'atelier' }, m), [{ field: 'tag', label: 'atelier' }]);
 });
 
 const store = (value) => ({ getItem: (k) => (k === PREFS_KEY ? JSON.stringify(value) : null), setItem() {} });

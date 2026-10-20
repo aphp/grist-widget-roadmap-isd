@@ -24,6 +24,7 @@ import { h, roleSpan, statusBadge } from '../ui/kit.js';
 import { raw } from '../core/sanitize.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 import { activeBadge, capacityText, roleText, unavailabilityText } from './team.js';
+import { tagChipsHtml } from './tags-field.js';
 
 export const id = 'detail';
 
@@ -189,6 +190,7 @@ function taskBody(model, task, today, canCreate = false) {
           task.tempsPasse ? label('detail.hours', { h: hoursFormat.format(task.tempsPasse) }) : null,
         ],
         ['detail.field.link', linkHtml(task.lien)],
+        ['detail.field.tags', tagChipsHtml(model, 'Tasks', task.tags) || null],
       ]),
     )}
     ${section('detail.section.people', peopleHtml(model, task), h` <span class="dt-count">${taskPeopleRows(model, task).length}</span>`)}
@@ -216,6 +218,7 @@ function chantierBody(model, c, canCreate = false) {
         ['detail.field.priority', textOr(priorityText(c.priorite))],
         ['detail.field.responsable', c.responsable ? (person(model, c.responsable) ?? null) : null],
         ['detail.field.contributeurs', people(model, c.contributeurs)],
+        ['detail.field.tags', tagChipsHtml(model, 'Chantiers', c.tags) || null],
       ]),
     )}
     ${c.criteres ? section('detail.section.criteres', prose(c.criteres)) : ''}

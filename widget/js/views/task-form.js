@@ -1,8 +1,8 @@
 /**
  * Formulaire d'une tâche ou sous-tâche dans la fiche (lot 2a) : rendu seul (fragments h``), à partir de l'état
  * tenu par ui/task-editor.js. Liste courte de champs, le reste sous « Plus de champs » ; pied fixe
- * Enregistrer / Annuler. Bloc « Personnes » : assignés et charges en ETP ou en heures réunis ; rattachement et tags
- * en lecture.
+ * Enregistrer / Annuler. Bloc « Personnes » : assignés et charges en ETP ou en heures réunis ; rattachement en
+ * lecture (« Changer » ouvre sa fenêtre) ; tags affectés et retirés (lot 2e, views/tags-field.js).
  */
 import {
   chargeRows,
@@ -26,6 +26,7 @@ import { hasLabel, label, statusLabel } from '../labels.js';
 import { isIsdTeamMember, pickerGroups } from '../core/team-directory.js';
 import { h } from '../ui/kit.js';
 import { addSubtaskButton, refList, roleBadge, section, statusMenu } from './detail.js';
+import { tagsFieldHtml } from './tags-field.js';
 
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const etpInputFormat = new Intl.NumberFormat('fr-FR', {
@@ -69,6 +70,7 @@ export function valueText(model, col, v) {
   if (col === 'statut') return statusLabel(v);
   if (col === 'progression') return `${v} %`;
   if (col === 'charges') return chargesText(model, v);
+  if (col === 'tags') return v.join(', ');
   return String(v);
 }
 
@@ -526,9 +528,8 @@ export function taskFormBody(st, model) {
               : ''
         }
       </dd></div>
-      <div class="dt-field"><dt>${label('form.field.tags')}</dt><dd>${task.tags.length ? h`<span class="tf-tags">${task.tags.map((t) => h`<span class="fr-tag fr-tag--sm">${t}</span>`)}</span>` : label('form.field.tags.none')}</dd></div>
     </dl>
-    <p class="tf-note">${label('form.later')}</p>
+    ${tagsFieldHtml(st, model, field, attrs)}
     ${peopleBlockHtml(st, model)}
     <details class="tf-more" id="tf-more" ${raw(st.moreOpen ? 'open' : '')}>
       <summary class="tf-more__summary">${label('form.more')} <span class="tf-more__hint">(${label('form.more.hint')})</span></summary>

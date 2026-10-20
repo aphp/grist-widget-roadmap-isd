@@ -1301,3 +1301,120 @@ for (const query of [
     },
   );
 }
+
+/** Clavier dans la recherche des tags (Entrée, flèches, Échap, Retour arrière). */
+const tagKey = (key) =>
+  w(
+    `D.getElementById('tf-tags').dispatchEvent(new W.KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); return true;`,
+  );
+const tagChips = () =>
+  w(
+    `return [...D.querySelectorAll('[data-field="tags"] .tf-tagchip')].map((c) => [c.querySelector('.tf-chip__text').firstChild.textContent, c.classList.contains('tf-tagchip--undeclared')]);`,
+  );
+
+test(
+  'tags (2e) : tâche, ajout d’un tag existant au clavier et d’un nom nouveau non déclaré, puis retrait ; lots exacts',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    const id = await openForm();
+    assert.deepEqual(await tagChips(), []);
+    // Recherche sans accents ni casse : « ATEL » propose « atelier », Entrée l'ajoute
+    await w(`D.getElementById('tf-tags').focus(); return true;`);
+    await typeIn('#tf-tags', 'ATEL');
+    await until(`!D.getElementById('tf-tags-list').hidden`);
+    assert.equal(await w(`return D.getElementById('tf-tags').getAttribute('aria-expanded');`), 'true');
+    assert.match(await w(`return D.getElementById('tf-tags-opt-0').textContent;`), /atelier/);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    assert.equal(await w(`return D.activeElement.id;`), 'tf-tags');
+    // Nom nouveau : dernière option « Affecter le nouveau tag », atteinte aux flèches ; Échap ferme la liste seule
+    await typeIn('#tf-tags', '  Tag   neuf ');
+    await until(`D.querySelector('.tf-tagopt--create')`);
+    await tagKey('Escape');
+    await until(`D.getElementById('tf-tags-list').hidden`);
+    assert.equal(await w(`return Boolean(D.getElementById('task-form'));`), true);
+    await tagKey('ArrowDown');
+    await until(`!D.getElementById('tf-tags-list').hidden`);
+    await w(
+      `const n = D.querySelectorAll('.tf-tagopt').length; for (let i = 1; i < n; i++) D.getElementById('tf-tags').dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); return true;`,
+    );
+    assert.equal(
+      await w(`return D.getElementById(D.getElementById('tf-tags').getAttribute('aria-activedescendant')).className;`),
+      'tf-tagopt is-active tf-tagopt--create',
+    );
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 2`);
+    // Tags des tâches : aucun choix déclaré dans la Feuille, tous marqués « non déclaré »
+    assert.deepEqual(await tagChips(), [
+      ['atelier', true],
+      ['Tag neuf', true],
+    ]);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { tags: ['L', 'atelier', 'Tag neuf'] }]]);
+    // En lecture : pastilles dans la fiche ; puis retrait de « atelier » (bouton de la pastille)
+    await until(`D.querySelector('.drawer__body .tf-tagchip')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('task-form')`);
+    await clickOn('[data-remove-tag="0"]');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    // Retour arrière dans la recherche vide : retire le dernier tag ; Annuler les modifications le rend
+    await tagKey('Backspace');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 0`);
+    await typeIn('#tf-tags', 'Tag neuf');
+    await until(`D.querySelector('.tf-tagopt')`);
+    await tagKey('Enter');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 2`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Tasks', id, { tags: ['L', 'Tag neuf'] }]]);
+  },
+);
+
+test(
+  'tags (2e) : chantier, tag choisi à la souris et tag retiré ; choix déclaré et non déclaré distingués',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await w(`D.querySelector('.view [data-task]').click(); return true;`);
+    await until(`D.querySelector('.dt-crumbs [data-ref-table="Chantiers"]')`);
+    await clickOn('.dt-crumbs [data-ref-table="Chantiers"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('chantier-form')`);
+    const id = await w(`return Number(D.getElementById('chantier-form').dataset.chantierId);`);
+    // « Intégration de données » est un choix déclaré de Chantiers.tags
+    assert.deepEqual(await tagChips(), [['Intégration de données', false]]);
+    // Clic dans la recherche : liste des tags des chantiers (pas ceux des tâches)
+    await clickOn('#tf-tags');
+    await until(`!D.getElementById('tf-tags-list').hidden`);
+    const opts = await w(`return [...D.querySelectorAll('.tf-tagopt__name')].map((x) => x.textContent);`);
+    assert.deepEqual(opts, ['Projet pilote']);
+    await w(
+      `const o = D.querySelector('.tf-tagopt'); o.dispatchEvent(new W.MouseEvent('mousedown', { bubbles: true, cancelable: true })); o.click(); return true;`,
+    );
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 2`);
+    await clickOn('[data-remove-tag="0"]');
+    await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+    assert.deepEqual(await tagChips(), [['Projet pilote', true]]);
+    await clickOn('#btn-form-save');
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Chantiers', id, { tags: ['L', 'Projet pilote'] }]]);
+  },
+);
+
+test('tags (2e), mode essai : l’ajout est noté dans le journal, rien n’est envoyé', { skip: SKIP }, async () => {
+  await open('?edition=essai');
+  await openForm();
+  await w(`D.getElementById('tf-tags').focus(); return true;`);
+  await typeIn('#tf-tags', 'essai');
+  await until(`D.querySelector('.tf-tagopt--create')`);
+  await tagKey('Enter');
+  await until(`D.querySelectorAll('[data-field="tags"] .tf-tagchip').length === 1`);
+  await clickOn('#btn-form-save');
+  await until(`!D.getElementById('task-form')`);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  assert.match(await w(`return D.getElementById('btn-edit-pill').textContent;`), /Mode essai · 1/);
+});

@@ -145,6 +145,8 @@ function cell(r, key, today) {
     }
     case 'etp':
       return etpCell(r);
+    case 'tags':
+      return h`<td class="tbl__td tbl__td--tags">${r.tagItems.length ? h`<span class="tbl-tags" title="${r.tags}">${r.tagItems.map((t) => h`<span class="tbl-tagchip${raw(t.declared ? '' : ' tbl-tagchip--undeclared')}" title="${t.declared ? t.value : `${t.value} — ${label('form.tags.undeclaredTitle')}`}">${t.value}${t.declared ? '' : h`<span class="fr-sr-only"> (${label('form.tags.undeclared')})</span>`}</span>`)}</span>` : ''}</td>`;
     case 'etpPO':
     case 'etpDA':
     case 'etpDS':

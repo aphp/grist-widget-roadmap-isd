@@ -1,6 +1,6 @@
 /**
  * Filtres (catégorie, projet, chantier, personne, profil, statut, périmètre « Tout / Mes tâches / Mes chantiers »,
- * case hors périmètre, et sous « + Filtres » : responsable, demandeur) et étiquettes de filtres actifs supprimables.
+ * case hors périmètre, et sous « + Filtres » : responsable, demandeur, tag) et étiquettes de filtres actifs supprimables.
  */
 import { raw } from '../core/sanitize.js';
 import { activeFilterChips, DEFAULT_FILTERS, EXTRA_FILTERS, filterChoices } from '../core/filters.js';
@@ -266,6 +266,15 @@ export function createFilters(root, on, popovers) {
                   ...(f.demandeur && !choices.demandeurs.includes(f.demandeur) ? [f.demandeur] : []),
                   ...choices.demandeurs,
                 ].map((d) => h`<option value="${d}" ${raw(d === f.demandeur ? 'selected' : '')}>${d}</option>`),
+              )}
+              ${field(
+                'tag',
+                f.tag || label('filters.tag.all'),
+                [
+                  // Tag choisi absent des données (retiré entre-temps) : gardé pour rester visible
+                  ...(f.tag && !choices.tags.includes(f.tag) ? [f.tag] : []),
+                  ...choices.tags,
+                ].map((t) => h`<option value="${t}" ${raw(t === f.tag ? 'selected' : '')}>${t}</option>`),
               )}
             </div>
           </div>

@@ -18,12 +18,14 @@
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
+import { tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
 
 /**
  * Colonnes modifiables par table et par opération. update : mise à jour d'une ligne existante (lots 2a, 2b, 2c) ;
- * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5), tags au lot 2e.
+ * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5). Tags (lot 2e, Q3 B) :
+ * affectés et retirés dans les fiches, jamais à la création ; aucune option de colonne n'est jamais modifiée.
  */
 export const WRITABLE = Object.freeze({
   Tasks: Object.freeze({
@@ -46,6 +48,7 @@ export const WRITABLE = Object.freeze({
       'charges',
       'Chantier',
       'projet',
+      'tags',
     ]),
     add: Object.freeze([
       'titre',
@@ -75,6 +78,7 @@ export const WRITABLE = Object.freeze({
       'Description',
       'Objectifs_resultats_attendus',
       'Criteres_de_succes',
+      'tags',
     ]),
     add: Object.freeze([
       'Nom_du_chantier',
@@ -141,6 +145,7 @@ export const EXPECTED_TYPES = Object.freeze({
   'Tasks.Chantier': 'Ref:Chantiers',
   'Tasks.projet': 'Ref:Projects',
   'Tasks.Cree_par': 'Text',
+  'Tasks.tags': 'ChoiceList',
   'Chantiers.Nom_du_chantier': 'Text',
   'Chantiers.Projets': 'RefList:Projects',
   'Chantiers.Statut': 'Choice',
@@ -151,6 +156,7 @@ export const EXPECTED_TYPES = Object.freeze({
   'Chantiers.Description': 'Text',
   'Chantiers.Objectifs_resultats_attendus': 'Text',
   'Chantiers.Criteres_de_succes': 'Text',
+  'Chantiers.tags': 'ChoiceList',
   'Team.nom': 'Text',
   'Team.email': 'Text',
   'Team.role': 'Choice',
@@ -298,6 +304,11 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
         ctx.days ?? null,
       );
       if (problem) throw new WriteRefused('charges', problem);
+    }
+    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées
+    if (col === 'tags' && !ctx.restoring?.includes(col)) {
+      const problem = tagsWriteProblem(changes[col], ctx.before?.[col] ?? []);
+      if (problem) throw new WriteRefused('tags', problem);
     }
     fields[col] = encodeCol(table, col, changes[col]);
   }

@@ -29,7 +29,9 @@ import {
 } from '../core/person-form.js';
 import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
-import { label, statusLabel } from '../labels.js';
+import { tagsWriteProblem } from '../core/tags-edit.js';
+import { tagItems, tagListHtml } from '../views/tags-field.js';
+import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargeEqText,
   chargeRowMsgs,
@@ -131,6 +133,12 @@ export function createTaskEditor(deps) {
     if (st.badNumber) v.errors.progression = { key: 'form.error.progression' };
     if (st.badCapacity) v.errors.capaciteHebdo = { key: 'person.error.capacity', vars: { max: CAPACITY_MAX } };
     if (st.chargeErrors.size) v.errors.charges = { key: 'form.error.charges' };
+    // Tags (fiches tâche et chantier) : mêmes règles que le writer, signalées avant l'envoi
+    if ('tags' in st.draft) {
+      const p = tagsWriteProblem(st.draft.tags, st.base.tags ?? []);
+      const why = hasLabel(`form.error.tags.${p}`) ? `form.error.tags.${p}` : 'form.error.tags.autre';
+      if (p) v.errors.tags = { key: 'form.error.tags', vars: { raison: label(why) } };
+    }
     // Saisie sur une colonne devenue non modifiable : « Rétablir » ce champ pour enregistrer le reste
     if (!st.locked)
       for (const f of Object.keys(changes()))
@@ -268,6 +276,10 @@ export function createTaskEditor(deps) {
       pendingLeave: null,
       changedElsewhere: false,
       depQuery: '',
+      tagQuery: '',
+      tagOpen: false,
+      tagActive: 0,
+      tagAnnounce: '',
       badDates: new Set(),
       badNumber: false,
       chargeErrors: new Map(),
@@ -412,7 +424,9 @@ export function createTaskEditor(deps) {
           ? 'tf-priorite-none'
           : first === 'charges'
             ? (document.querySelector('#tf-people [aria-invalid="true"]')?.id ?? 'tf-people-title')
-            : `tf-${first}`;
+            : first === 'tags' && document.getElementById('tf-tags')?.disabled
+              ? 'tf-tags-label'
+              : `tf-${first}`;
       render(target);
       return;
     }
@@ -565,6 +579,76 @@ export function createTaskEditor(deps) {
     }
   }
 
+  // ---------- Tags : sélecteur en « combobox » (liste proposée, flèches, Entrée, Échap) ----------
+
+  /** Liste des tags proposés et attributs de la zone de recherche mis à jour, sans redessiner le formulaire. */
+  function tagRefresh() {
+    const box = document.getElementById('tf-tags-results');
+    if (box) box.innerHTML = tagListHtml(st, model()).toString();
+    const input = document.getElementById('tf-tags');
+    if (!input) return;
+    const n = st.tagOpen ? tagItems(st, model()).items.length : 0;
+    st.tagActive = Math.max(0, Math.min(st.tagActive, n - 1));
+    input.setAttribute('aria-expanded', String(n > 0));
+    if (n) input.setAttribute('aria-activedescendant', `tf-tags-opt-${st.tagActive}`);
+    else input.removeAttribute('aria-activedescendant');
+    document.getElementById(`tf-tags-opt-${st.tagActive}`)?.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  /** Ajoute le tag de l'option choisie (existant, ou nom nouveau non déclaré) ; la recherche se vide. */
+  function addTag(item) {
+    if (!item || !st.can('tags').ok) return;
+    const tags = st.draft.tags ?? [];
+    if (!tags.includes(item.value)) st.draft.tags = [...tags, item.value];
+    st.tagQuery = '';
+    st.tagOpen = false;
+    st.tagActive = 0;
+    st.tagAnnounce = label('form.tags.added', { nom: item.value });
+    render('tf-tags');
+  }
+
+  /** Retire le tag à cette position (les autres valeurs de la cellule restent telles quelles). */
+  function removeTag(i) {
+    const tags = st.draft.tags ?? [];
+    if (!st.can('tags').ok || !Number.isInteger(i) || i < 0 || i >= tags.length) return;
+    st.tagAnnounce = label('form.tags.removed', { nom: tags[i] });
+    st.draft.tags = tags.filter((_, k) => k !== i);
+    st.tagOpen = false;
+    render('tf-tags');
+  }
+
+  /** Clavier de la zone de recherche des tags ; vrai si la touche est traitée. */
+  function tagKeydown(e) {
+    const items = tagItems(st, model()).items;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!st.tagOpen) {
+        st.tagOpen = true;
+        st.tagActive = e.key === 'ArrowUp' ? items.length - 1 : 0;
+      } else if (items.length)
+        st.tagActive = (st.tagActive + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      tagRefresh();
+      return true;
+    }
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      if (st.tagOpen && items.length) addTag(items[Math.min(st.tagActive, items.length - 1)]);
+      return true;
+    }
+    if (e.key === 'Escape' && st.tagOpen) {
+      e.stopPropagation();
+      st.tagOpen = false;
+      tagRefresh();
+      return true;
+    }
+    if (e.key === 'Backspace' && !e.target.value && st.draft.tags?.length) {
+      e.preventDefault();
+      removeTag(st.draft.tags.length - 1);
+      return true;
+    }
+    return false;
+  }
+
   function toggleStatusMenu(force) {
     const btn = document.getElementById('btn-status-menu');
     const list = document.getElementById('status-menu-list');
@@ -610,7 +694,23 @@ export function createTaskEditor(deps) {
       st.depQuery = t.value;
       const box = document.getElementById('tf-dep-results');
       if (box) box.innerHTML = depResultsHtml(st, model()).toString();
+    } else if (t.dataset.tagSearch !== undefined) {
+      st.tagQuery = t.value;
+      st.tagOpen = true;
+      st.tagActive = 0;
+      st.tagAnnounce = '';
+      tagRefresh();
     }
+  });
+
+  // Liste des tags : un clic sur une option ne retire pas le focus de la recherche
+  deps.root.addEventListener('mousedown', (e) => {
+    if (st && e.target.closest?.('[data-tag-opt]')) e.preventDefault();
+  });
+  deps.root.addEventListener('focusout', (e) => {
+    if (!st || e.target.dataset?.tagSearch === undefined || !st.tagOpen) return;
+    st.tagOpen = false;
+    tagRefresh();
   });
 
   deps.root.addEventListener('change', (e) => {
@@ -688,6 +788,17 @@ export function createTaskEditor(deps) {
   );
 
   deps.root.addEventListener('click', (e) => {
+    const opt = e.target.closest?.('[data-tag-opt]');
+    if (opt && st && !st.busy) {
+      addTag(tagItems(st, model()).items[Number(opt.dataset.tagOpt)]);
+      return;
+    }
+    if (st && !st.busy && e.target.dataset?.tagSearch !== undefined && !st.tagOpen) {
+      st.tagOpen = true;
+      st.tagActive = 0;
+      tagRefresh();
+      return;
+    }
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.statusToggle !== undefined) return void toggleStatusMenu();
@@ -734,6 +845,8 @@ export function createTaskEditor(deps) {
       st.draft = assignPerson(st.draft, id);
       renderCharges();
       document.getElementById(lineFocus(id))?.focus();
+    } else if (t.dataset.removeTag !== undefined) {
+      removeTag(Number(t.dataset.removeTag));
     } else if (t.dataset.removeDep) {
       const id = Number(t.dataset.removeDep);
       st.draft.dependDe = st.draft.dependDe.filter((x) => x !== id);
@@ -797,6 +910,7 @@ export function createTaskEditor(deps) {
   });
 
   deps.root.addEventListener('keydown', (e) => {
+    if (st && !st.busy && e.target.dataset?.tagSearch !== undefined && tagKeydown(e)) return;
     // Échap ferme d'abord le menu de statut, sans fermer la fiche
     if (e.key === 'Escape') {
       const list = document.getElementById('status-menu-list');

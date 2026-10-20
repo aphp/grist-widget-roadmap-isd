@@ -8,6 +8,7 @@ import { detectConflicts, mergeChargesChange } from './conflicts.js';
 import { DEFAULT_TIMEOUT_MS, WriteFailed, WriteRefused, withTimeout } from './grist-writer.js';
 import { chantierStatusChanges, reattachRows, taskLinksFromTable } from './chantier-form.js';
 import { moveRows } from './create-form.js';
+import { mergeTags, mergeTagsChange } from './tags-edit.js';
 import { diffDraft, statusChanges } from './task-form.js';
 
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
@@ -104,9 +105,11 @@ export async function runSave(snap) {
       return { kind: 'reread-failed', error: String(err?.message ?? err) };
     }
     if (fresh === null) return { kind: 'missing' };
-    const merged = mergeChargesChange(base, fresh, changes);
-    const others = { ...changes };
+    // Tags modifiés aussi dans la Feuille : fusion en ensemble (ajouts et retraits de chacun), jamais de conflit
+    const merged = mergeChargesChange(base, fresh, mergeTagsChange(base, fresh, changes));
+    const others = { ...merged.changes };
     delete others.charges;
+    delete others.tags;
     const cols = detectConflicts(base, fresh, others);
     if (merged.conflict) cols.push('charges');
     if (cols.length)
@@ -151,6 +154,11 @@ export async function runSave(snap) {
 export function conflictBatch(oldBase, draft, fresh, choices, diff = diffDraft) {
   const changes = {};
   for (const [c, v] of Object.entries(diff(oldBase, draft))) if (choices[c] !== 'theirs') changes[c] = v;
+  // Tags : la saisie (ajouts, retraits) est refusionnée sur la cellule relue, jamais écrite par-dessus
+  if ('tags' in changes) {
+    changes.tags = mergeTags(oldBase.tags, changes.tags, fresh.tags);
+    if (JSON.stringify(changes.tags) === JSON.stringify(fresh.tags ?? [])) delete changes.tags;
+  }
   return {
     changes,
     before: pick(fresh, Object.keys(changes)),
