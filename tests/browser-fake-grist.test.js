@@ -3303,3 +3303,28 @@ test(
     }
   },
 );
+
+test(
+  'Fiche tâche : la date de clôture saisie, un vrai clic sur « Enregistrer » pendant le blur n’est pas perdu',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    await w(`if (!D.getElementById('tf-more').open) D.querySelector('#tf-more > summary').click(); return true;`);
+    await until(`D.getElementById('tf-more').open`);
+    await type('tf-titre', 'Titre et clôture'); // le bouton est déjà actif : il est mis à jour sur place
+    await w(`const t = D.getElementById('tf-dateCloture'); t.focus(); t.value = '2025-10-20';
+      t.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`);
+    await sleep(400); // fin de la transition d'ouverture du panneau
+    const at = await w(`const r = D.getElementById('btn-form-save').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    // Le champ de date perd le focus au mousedown : son événement change part avant le relâchement
+    await w(`D.getElementById('tf-dateCloture').dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await until(`W.__writes.length === 1`);
+    assert.equal(await w(`return 'dateCloture' in W.__writes[0].args[0][0][3];`), true);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);

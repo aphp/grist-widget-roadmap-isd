@@ -130,6 +130,13 @@ export function field(st, f, control, opts = {}) {
   </div>`;
 }
 
+/** Bouton « Vider la date de clôture » : présent seulement si une date est donnée et modifiable. */
+export function closureClearHtml(st) {
+  return st.draft.dateCloture !== null && st.can('dateCloture').ok
+    ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tf-clear" data-form="clear-closure" ${raw(st.busy ? 'disabled' : '')}>${label('form.field.dateCloture.clear')}</button>`
+    : '';
+}
+
 /** Attributs communs des contrôles : désactivé si la colonne n'est pas modifiable, description, état d'erreur. */
 export function attrs(st, f, help = false) {
   const off = !st.can(f).ok || st.busy;
@@ -482,12 +489,12 @@ export function taskFormBody(st, model) {
   if (d.parentTask !== null && !parents.includes(d.parentTask)) parents.unshift(d.parentTask);
   const tref = (i) => ({ table: 'Tasks', id: i });
   const subs = task.childIds.filter((i) => model.tasks.has(i)).map(tref);
-  const date = (f, labelKey = null, after = '') => {
+  const date = (f, labelKey = null, after = null) => {
     const input = h`<input type="date" id="tf-${f}" class="fr-input" min="${MIN_YEAR}-01-01" max="${MAX_YEAR}-12-31" value="${inputFromDay(d[f])}" data-input="${f}" ${attrs(st, f)}>`;
     return field(
       st,
       f,
-      after ? h`<div class="tf-inline">${input}${after}</div>` : input,
+      after !== null ? h`<div class="tf-inline">${input}${after}</div>` : input,
       labelKey ? { labelText: label(labelKey) } : {},
     );
   };
@@ -579,13 +586,7 @@ export function taskFormBody(st, model) {
           <div id="tf-dep-results" aria-live="polite">${depResultsHtml(st, model)}</div>`,
           { legend: true, wide: true },
         )}
-        ${date(
-          'dateCloture',
-          null,
-          d.dateCloture !== null && st.can('dateCloture').ok
-            ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tf-clear" data-form="clear-closure" ${raw(st.busy ? 'disabled' : '')}>${label('form.field.dateCloture.clear')}</button>`
-            : '',
-        )}
+        ${date('dateCloture', null, closureClearHtml(st))}
       </div>
     </details>
     ${section(

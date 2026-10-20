@@ -41,6 +41,7 @@ import {
   taskFormBody,
   taskFormFoot,
   valueText,
+  closureClearHtml,
 } from '../views/task-form.js';
 
 const TEXT_FIELDS = new Set([
@@ -182,7 +183,30 @@ export function createTaskEditor(deps) {
     const chFoot = document.getElementById('tf-charges-foot');
     if (chFoot) chFoot.innerHTML = chargesFootHtml(st, model()).toString();
     const foot = deps.root.querySelector('.drawer__foot');
-    if (foot) foot.innerHTML = taskFormFoot(st, changes(), errorCount()).toString();
+    if (foot) patchFoot(foot, taskFormFoot(st, changes(), errorCount()).toString());
+  }
+
+  /**
+   * Met le pied à jour sur place quand sa structure ne change pas (mêmes boutons) : un bouton pressé n'est pas
+   * remplacé entre le mousedown et le mouseup (le clic serait perdu). Autre structure : pied remplacé.
+   */
+  function patchFoot(foot, html) {
+    const next = document.createElement('div');
+    next.innerHTML = html;
+    const ids = (root) => [...root.querySelectorAll('[id]')].map((e) => e.id).join(' ');
+    if (ids(foot) !== ids(next) || !foot.querySelector('#tf-pending')) {
+      foot.innerHTML = html;
+      return;
+    }
+    foot.querySelector('#tf-pending').innerHTML = next.querySelector('#tf-pending').innerHTML;
+    for (const b of foot.querySelectorAll('button[id]')) {
+      const n = next.querySelector(`#${b.id}`);
+      for (const a of ['disabled', 'aria-busy']) {
+        if (n.hasAttribute(a)) b.setAttribute(a, n.getAttribute(a));
+        else b.removeAttribute(a);
+      }
+      if (b.textContent !== n.textContent) b.textContent = n.textContent;
+    }
   }
 
   function moreOpen() {
@@ -726,9 +750,14 @@ export function createTaskEditor(deps) {
         st.badDates.add(f);
       }
       // Q8 A : les heures (valeur stockée) sont conservées ; l'ETP et l'écart sont recalculés
-      // Le bouton « Vider la date de clôture » suit la date : le formulaire est redessiné, focus gardé
-      if (f === 'dateCloture') render(t.id);
-      else people.render();
+      people.render();
+      if (f === 'dateCloture') {
+        // Le bouton « Vider la date de clôture » suit la date : seule cette ligne est mise à jour (pied et focus intacts)
+        const row = t.closest('.tf-inline');
+        row?.querySelector('.tf-clear')?.remove();
+        row?.insertAdjacentHTML('beforeend', closureClearHtml(st).toString());
+        refresh();
+      }
     } else if (f === 'type') {
       st.draft = setMilestone(st.draft, t.checked, st.originalType);
       render('tf-type');
