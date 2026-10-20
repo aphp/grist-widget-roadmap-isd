@@ -973,17 +973,22 @@ export function missingReference(snapshot, exists) {
   return null;
 }
 
+/** Nom d'une table de résumé de Grist (<Source>_summary ou <Source>_summary_<colonnes>). */
+const SUMMARY_NAME = /^[A-Za-z0-9_]+?_summary(_|$)/;
+
 /**
  * Colonnes de DONNÉES d'autres tables que Tasks et Chantiers qui référencent cette table (Ref: ou RefList:) : une
  * suppression y laisserait des références orphelines, elle est refusée pour cette table. Les formules se
- * recalculent et ne comptent pas. Fonction pure.
+ * recalculent et ne comptent pas, ni les tables de résumé (summary des métadonnées, ou nom en _summary) dont Grist
+ * recalcule les colonnes de regroupement. Fonction pure.
  * @returns {string[]} 'Table.colonne'
  */
 export function otherTableRefs(columns, table) {
   return Object.entries(columns ?? {})
     .filter(([k, m]) => {
       const t = k.slice(0, k.indexOf('.'));
-      return !m.isFormula && !REMOVABLE.includes(t) && (m.type === `Ref:${table}` || m.type === `RefList:${table}`);
+      if (m.isFormula || m.summary || SUMMARY_NAME.test(t) || REMOVABLE.includes(t)) return false;
+      return m.type === `Ref:${table}` || m.type === `RefList:${table}`;
     })
     .map(([k]) => k);
 }
@@ -1542,7 +1547,7 @@ export function createWriter({
    * Annule une suppression : chaque ligne est recréée au même identifiant avec les cellules relues avant la
    * suppression (AddRecord, parents avant enfants). Refus 'reutilise' si un identifiant existe de nouveau dans les
    * tables relues, 'reference-absente' (missing) si une ligne recréée viserait une ligne qui n'existe plus,
-   * 'non-supprimee' si une suppression sans réponse n'a finalement pas eu lieu, 'relecture' si les tables ne
+   * 'non-supprimee' si une suppression sans réponse n'a pas (encore) eu lieu, 'relecture' si les tables ne
    * peuvent pas être lues. Une restauration ne s'annule pas.
    */
   async function undoDelete(entry) {
@@ -1554,12 +1559,9 @@ export function createWriter({
       return keep('relecture');
     }
     const present = entry.snapshot.filter((r) => tables[r.table]?.id?.includes(r.id));
-    // Suppression sans réponse dont les lignes sont toujours là : elle n'a pas eu lieu, rien à recréer
-    if (entry.unknown && present.length === entry.snapshot.length) {
-      entry.undone = true;
-      for (const r of entry.snapshot) restorable.delete(`${r.table}:${r.id}`);
-      return keep('non-supprimee');
-    }
+    // Suppression sans réponse dont les lignes sont toujours là : rien à recréer pour l'instant ; l'entrée reste
+    // annulable avec son instantané (la suppression peut encore aboutir plus tard)
+    if (entry.unknown && present.length === entry.snapshot.length) return keep('non-supprimee');
     if (present.length) return keep('reutilise');
     // Références des lignes recréées : tâches et chantiers relus ; projets relus aussi en envoi réel (les données
     // chargées peuvent être en retard), données chargées en mode essai (refExists sans table chargée)

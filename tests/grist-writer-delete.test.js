@@ -340,7 +340,8 @@ test('sans réponse dans le délai : lignes disparues à la relecture → suppre
   const e = await after.writer.remove('Chantiers', 500);
   assert.equal(e.recovered, true);
   assert.equal(after.writer.lastUndoable(), e);
-  const before = setup({ grist: { hang: 'before' }, writer: { timeoutMs: 30 } });
+  const hang = { hang: 'before' };
+  const before = setup({ grist: hang, writer: { timeoutMs: 30 } });
   await assert.rejects(before.writer.remove('Chantiers', 500), (x) => x instanceof WriteFailed && x.kind === 'timeout');
   // Résultat inconnu : l'instantané est gardé ; lignes encore là à la relecture → rien à annuler, rien d'envoyé
   const u = before.writer.lastUndoable();
@@ -352,7 +353,29 @@ test('sans réponse dans le délai : lignes disparues à la relecture → suppre
   assert.equal(r.reason, 'non-supprimee');
   assert.equal(r.undoEntry, null);
   assert.equal(before.g.batches.length, n);
-  assert.equal(before.writer.lastUndoable(), null);
+  // Toujours annulable : la suppression peut encore aboutir plus tard
+  assert.equal(before.writer.lastUndoable(), u);
+  assert.equal(u.undone, false);
+  // Elle aboutit finalement : « Annuler » recrée le chantier
+  const i = before.g.data.Chantiers.id.indexOf(500);
+  for (const c of Object.keys(before.g.data.Chantiers)) before.g.data.Chantiers[c].splice(i, 1);
+  hang.hang = undefined;
+  const r2 = await before.writer.undoLast(async () => null);
+  assert.equal(r2.undoEntry.kind, 'restore');
+  assert.deepEqual(before.g.batches.at(-1)[0].slice(0, 3), ['AddRecord', 'Chantiers', 500]);
+  assert.equal(u.undone, true);
+});
+
+test('suppression sans réponse, lignes en partie présentes : « Annuler » refusé (reutilise), rien n’est envoyé', async () => {
+  const s1 = setup({ grist: { hang: 'before' }, writer: { timeoutMs: 30 } });
+  await assert.rejects(s1.writer.remove('Tasks', 1000), (x) => x instanceof WriteFailed && x.kind === 'timeout');
+  const i = s1.g.data.Tasks.id.indexOf(1002);
+  for (const c of Object.keys(s1.g.data.Tasks)) s1.g.data.Tasks[c].splice(i, 1);
+  const n = s1.g.batches.length;
+  const r = await s1.writer.undoLast(async () => null);
+  assert.equal(r.reason, 'reutilise');
+  assert.equal(r.undoEntry, null);
+  assert.equal(s1.g.batches.length, n);
 });
 
 test('suppression sans réponse puis lignes disparues : « Annuler » après relecture les recrée', async () => {
@@ -495,6 +518,18 @@ test('canRemove : refusé si une autre table référence cette table par une col
   assert.deepEqual(otherTableRefs(meta, 'Chantiers'), []);
   assert.deepEqual(otherTableRefs({ 'Tasks.parentTask': { type: 'Ref:Tasks' } }, 'Tasks'), []);
   assert.deepEqual(otherTableRefs({ 'X.y': { type: 'RefList:Chantiers' } }, 'Chantiers'), ['X.y']);
+  // Tables de résumé (recalculées par Grist) : jamais comptées, par le drapeau des métadonnées ou par leur nom
+  const summary = {
+    ...metaOf(t),
+    'Tasks_summary_Chantier.Chantier': { type: 'Ref:Chantiers', isFormula: false, summary: true },
+    'Tasks_summary_projet_Chantier.Chantier': { type: 'Ref:Chantiers', isFormula: false },
+    'Suivi.tache': { type: 'Ref:Tasks', isFormula: false },
+  };
+  assert.deepEqual(otherTableRefs(summary, 'Chantiers'), []);
+  assert.deepEqual(otherTableRefs(summary, 'Tasks'), ['Suivi.tache']);
+  const s0 = setup({ writer: { columns: summary } });
+  assert.equal(s0.writer.canRemove('Chantiers').ok, true);
+  assert.equal(s0.writer.canRemove('Tasks').reason, 'reference-autre-table');
   const s1 = setup({ writer: { columns: meta } });
   assert.deepEqual(s1.writer.canRemove('Tasks'), { ok: false, reason: 'reference-autre-table' });
   assert.equal(s1.writer.canRemove('Chantiers').ok, true);

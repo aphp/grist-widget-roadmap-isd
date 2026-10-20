@@ -1047,7 +1047,7 @@ const FR = Object.freeze({
     'Suppression conservée, rien n’a été recréé : un de ces numéros est de nouveau utilisé dans la Feuille.',
   'toast.undoDelete.reference-absente': 'Suppression conservée, rien n’a été recréé : {ligne} n’existe plus.',
   'toast.undoDelete.non-supprimee':
-    'Rien à annuler : la suppression restée sans réponse n’a pas eu lieu, les éléments sont toujours dans la Feuille.',
+    'Rien à annuler pour l’instant : la suppression restée sans réponse n’a pas eu lieu, les éléments sont toujours dans la Feuille.',
   'delete.ref.Tasks': 'la tâche n° {id}',
   'delete.ref.Chantiers': 'le chantier n° {id}',
   'delete.ref.Projects': 'le projet n° {id}',
