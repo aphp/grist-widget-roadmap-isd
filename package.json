@@ -1,0 +1,23 @@
+{
+  "name": "grist-roadmap-isd",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Widget Grist Roadmap ISD : vue de pilotage en lecture seule sur la Feuille de route EDS",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test 'tests/**/*.test.js'",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-include='widget/js/core/**' 'tests/**/*.test.js'",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "globals": "16.5.0",
+    "prettier": "3.6.2"
+  }
+}

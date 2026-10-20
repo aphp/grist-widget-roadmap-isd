@@ -1,0 +1,6 @@
+docs/
+schema/
+dev/data/
+node_modules/
+*.md
+widget/vendor/

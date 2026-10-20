@@ -1,0 +1,9 @@
+node_modules
+docs/
+schema/
+dev/data/
+tools/__pycache__/
+*.pyc
+.playwright-mcp/
+tools/.check_writes.json
+.idea/
