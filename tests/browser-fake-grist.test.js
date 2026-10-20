@@ -3181,3 +3181,104 @@ test(
     assert.equal(await w(`return !!D.querySelector('.grow__chip');`), false);
   },
 );
+
+// ---------- Fiche tâche : mise en page des lignes « Date de clôture » et « Rattachement » ----------
+
+test(
+  'Fiche tâche : champs dans le panneau, bouton « Vider la date de clôture » à côté du champ, libellé « Rattachement » comme les autres',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    try {
+      for (const panel of [360, 480, 720]) {
+        await w(`D.getElementById('layout-probe')?.remove();
+          const s = D.createElement('style'); s.id = 'layout-probe';
+          s.textContent = '.drawer[data-mode=edit]{width:min(${panel}px,100vw)!important}'; D.head.append(s); return true;`);
+        // Une date de clôture donnée : le bouton « Vider » est affiché
+        await w(`D.querySelector('.view [data-task]').click(); return true;`);
+        await until(`D.getElementById('btn-edit-open')`);
+        await w(`D.getElementById('btn-edit-open').click(); return true;`);
+        await until(`D.getElementById('task-form')`);
+        await w(`D.getElementById('tf-more').open = true; return true;`);
+        if (!(await w(`return Boolean(D.querySelector('.tf-clear'));`))) {
+          await w(`const t = D.getElementById('tf-dateCloture'); t.value = '2025-10-20';
+            t.dispatchEvent(new W.Event('input', { bubbles: true })); t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+          // Le bouton suit le brouillon au prochain rendu complet du formulaire (jalon coché puis décoché)
+          await w(`for (let i = 0; i < 2; i++) D.getElementById('tf-type').click(); return true;`);
+          await until(`D.querySelector('.tf-clear')`);
+        }
+        const m =
+          await w(`const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
+          const body = D.querySelector('.drawer__body');
+          const style = (e) => { const c = W.getComputedStyle(e); return [c.fontWeight, c.color, c.fontSize].join('|'); };
+          const path = D.getElementById('tf-attach-path');
+          return {
+            body: box(body), hscroll: body.scrollWidth > body.clientWidth,
+            inputs: [...D.querySelectorAll('#task-form input:not([type=radio]):not([type=checkbox]), #task-form select, #task-form textarea')]
+              .map((e) => ({ id: e.id, ...box(e) })),
+            date: box(D.getElementById('tf-dateCloture')), clear: box(D.querySelector('.tf-clear')),
+            attachLabel: style(D.getElementById('tf-attach-label') || D.querySelector('.tf-attach dt')),
+            titleLabel: style(D.querySelector('label[for=tf-titre]')),
+            path: box(path), move: box(D.getElementById('tf-move')),
+          };`);
+        const at = `panneau ${panel} px`;
+        assert.equal(m.hscroll, false, `${at} : défilement horizontal`);
+        for (const i of m.inputs)
+          assert.ok(
+            i.l >= m.body.l - 0.5 && i.r <= m.body.r + 0.5,
+            `${at} : ${i.id} déborde (${i.l}-${i.r} pour ${m.body.l}-${m.body.r})`,
+          );
+        assert.ok(
+          m.clear.l >= m.body.l - 0.5 && m.clear.r <= m.body.r + 0.5,
+          `${at} : bouton « Vider » hors du panneau`,
+        );
+        const apart = m.clear.l >= m.date.r - 0.5 || m.clear.t >= m.date.b - 0.5 || m.clear.b <= m.date.t + 0.5;
+        assert.ok(apart, `${at} : le bouton « Vider » chevauche le champ de date`);
+        assert.equal(m.attachLabel, m.titleLabel, `${at} : libellé « Rattachement » différent des autres libellés`);
+        assert.ok(
+          m.move.l >= m.body.l - 0.5 && m.move.r <= m.body.r + 0.5,
+          `${at} : bouton « Changer » hors du panneau`,
+        );
+        const same = m.move.l >= m.path.r - 0.5;
+        const below = m.move.t >= m.path.b - 0.5;
+        assert.ok(same || below, `${at} : « Changer » chevauche le chemin`);
+        if (same)
+          assert.ok(
+            Math.abs((m.move.t + m.move.b) / 2 - (m.path.t + m.path.b) / 2) <= 14,
+            `${at} : « Changer » mal aligné avec le chemin`,
+          );
+        await w(
+          `D.getElementById('btn-form-cancel')?.click(); D.querySelector('.drawer__head [data-close], #drawer-close')?.click(); return true;`,
+        );
+        await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+      }
+    } finally {
+      await w(`D.getElementById('layout-probe')?.remove(); return true;`).catch(() => {});
+    }
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
+  'Fiche tâche : le panneau tient dans la fenêtre à 390 px, sans passer sous la barre de défilement',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    try {
+      await until(`D.documentElement.clientWidth <= 390`);
+      await openForm();
+      await sleep(400); // fin de la transition d'ouverture
+      const r = await w(`const d = D.querySelector('.drawer').getBoundingClientRect();
+        return { l: d.left, r: d.right, cw: D.documentElement.clientWidth };`);
+      assert.ok(r.l >= -0.5 && r.r <= r.cw + 0.5, `panneau ${r.l}-${r.r} pour une fenêtre de ${r.cw} px`);
+    } finally {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: 1440,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+    }
+  },
+);

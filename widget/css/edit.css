@@ -29,7 +29,7 @@
 
 /* ---- Panneau en édition : plus large, pied fixe ---- */
 .drawer[data-mode='edit'] {
-  width: min(520px, 100vw);
+  width: min(520px, 100%);
 }
 .drawer__foot {
   flex: none;
@@ -363,8 +363,22 @@
   gap: var(--space-4);
   margin-top: var(--space-3);
 }
+.tf-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: 0.5rem;
+}
+.tf-inline > .fr-input {
+  flex: 1 1 10rem;
+  width: auto;
+  min-width: 0;
+  margin-top: 0;
+}
 .tf-clear {
-  align-self: end;
+  flex: none;
+  margin: 0;
 }
 
 /* Bandeaux du formulaire (erreur Grist, conflit, modification ailleurs) */
@@ -763,13 +777,20 @@
   align-self: flex-start;
   margin-top: var(--space-2);
 }
-.tf-attach dd {
+.tf-attach__body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-3);
+}
+.tf-attach__path {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
 }
 .tf-attach__change {
+  flex: none;
   margin: 0;
 }
 .tf-attach__hint {

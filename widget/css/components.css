@@ -51,6 +51,14 @@ input[type='radio']:focus ~ label::before,
   --active: var(--background-default-grey-active);
 }
 
+/*
+ * Le DSFR règle `box-sizing: inherit` sur tous les éléments, mais Chrome pose `content-box` sur le contenu d'un
+ * <details> (::details-content, hors de `*`) : sans ceci, chaque champ à 100 % y déborde de son padding.
+ */
+details::details-content {
+  box-sizing: inherit;
+}
+
 /* Champs : fond de carte, contour fin arrondi (au lieu du champ gris souligné du DSFR) */
 .fr-input,
 .fr-select {
@@ -280,7 +288,7 @@ input[type='radio']:focus ~ label::before,
   z-index: 40;
   display: flex;
   flex-direction: column;
-  width: min(var(--drawer-width), 100vw);
+  width: min(var(--drawer-width), 100%);
   background: var(--color-surface-raised);
   border-radius: var(--radius-lg) 0 0 var(--radius-lg);
   box-shadow: var(--shadow-3);
