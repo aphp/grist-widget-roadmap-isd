@@ -25,8 +25,9 @@ import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode
 
 /**
  * Colonnes modifiables par table et par opération. update : mise à jour d'une ligne existante (lots 2a, 2b, 2c) ;
- * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5). Tags (lot 2e, Q3 B) :
- * affectés et retirés dans les fiches, jamais à la création ; aucune option de colonne n'est jamais modifiée.
+ * add : colonnes permises à la création (lot 2c ; Tasks.charges depuis le bloc « Personnes » des fenêtres de
+ * création, avec les mêmes contrôles qu'en mise à jour). Priorite des chantiers en lecture (Q5). Tags (lot 2e,
+ * Q3 B) : affectés et retirés dans les fiches, jamais à la création ; aucune option de colonne n'est jamais modifiée.
  */
 export const WRITABLE = Object.freeze({
   Tasks: Object.freeze({
@@ -60,6 +61,7 @@ export const WRITABLE = Object.freeze({
       'priorite',
       'Responsable',
       'assignees',
+      'charges',
       'description',
       'Chantier',
       'projet',
@@ -340,11 +342,35 @@ const isBlank = (v) =>
   v === null || v === undefined || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length) || v === 0;
 
 /**
+ * Charges d'une tâche à créer : mêmes règles qu'en mise à jour (chargesWriteProblem, sans cellule d'avant : chaque
+ * entrée est contrôlée, borne de 1 ETP sur la période des dates du même AddRecord, exemption de la personne
+ * estimation) et cohérence du bloc « Personnes » : une seule entrée par personne, chaque personne chargée assignée
+ * (ajouter une personne l'assigne ; une charge sans assignation ne se crée pas). Fonction pure.
+ * @returns {string|null} raison du refus
+ */
+export function newChargesProblem(fields, teamExists, isEstimation = null) {
+  const value = fields.charges;
+  const days = periodDays(fields.dateDebut ?? null, fields.dateEcheance ?? null);
+  const problem = chargesWriteProblem(value, null, teamExists, days, isEstimation);
+  if (problem) return problem;
+  const assigned = new Set(Array.isArray(fields.assignees) ? fields.assignees : []);
+  const seen = new Set();
+  for (const e of JSON.parse(value)) {
+    if (seen.has(e.teamId)) return `personne en double : ${e.teamId}`;
+    seen.add(e.teamId);
+    if (!assigned.has(e.teamId)) return `personne chargée non assignée : ${e.teamId}`;
+  }
+  return null;
+}
+
+/**
  * Construit l'action AddRecord d'une nouvelle ligne, après contrôle de la liste blanche (colonnes de création),
  * des colonnes obligatoires et de l'encodage. Fonction pure.
+ * @param {{refExists?:(table:string, id:number) => boolean, isEstimation?:(teamId:number) => boolean}} [ctx]
+ *   contrôle des charges d'une tâche (newChargesProblem) : personnes existantes, personne estimation
  * @returns {['AddRecord', string, null, Record<string,*>]}
  */
-export function buildAdd(table, fields, disabled = new Map()) {
+export function buildAdd(table, fields, disabled = new Map(), ctx = {}) {
   if (typeof table !== 'string' || table.startsWith('_grist')) throw new WriteRefused('table', String(table));
   const allowed = has(WRITABLE, table) ? WRITABLE[table].add : null;
   if (!allowed) throw new WriteRefused('table', table);
@@ -355,6 +381,10 @@ export function buildAdd(table, fields, disabled = new Map()) {
   for (const col of cols) {
     if (!allowed.includes(col)) throw new WriteRefused('colonne', key(table, col));
     if (disabled.has(key(table, col))) throw new WriteRefused('colonne-retiree', key(table, col));
+    if (key(table, col) === 'Tasks.charges') {
+      const problem = newChargesProblem(fields, (n) => Boolean(ctx.refExists?.('Team', n)), ctx.isEstimation ?? null);
+      if (problem) throw new WriteRefused('charges', problem);
+    }
     out[col] = encodeCol(table, col, fields[col]);
   }
   return ['AddRecord', table, null, out];
@@ -1055,7 +1085,7 @@ export function createWriter({
   async function add(table, fields) {
     if (mode === 'off') throw new WriteRefused('off');
     if (blocked) throw new WriteRefused(blocked);
-    const action = buildAdd(table, fields, disabled);
+    const action = buildAdd(table, fields, disabled, { refExists: exists, isEstimation });
     if (addRefused.has(table)) throw new WriteRefused('ajout-refuse', table);
     if (!deferred([{ table, id: null, values: fields }])) checkItems([{ table, id: null, values: fields }]);
     const entry = {
