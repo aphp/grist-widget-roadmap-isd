@@ -90,6 +90,21 @@ test('Mes tâches : en retard (libellé écrit), sous-tâche, « Afficher plus �
   assert.doesNotMatch(more, /data-more=/);
 });
 
+test('Mes tâches : titre de tâche, de parent et de chantier contenant du HTML échappés (aucune balise injectée)', () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const r = feuille();
+  const t = r.tables.Tasks;
+  t.titre[t.id.indexOf(2010)] = evil;
+  const c = r.tables.Chantiers;
+  c.Nom_du_chantier[c.id.indexOf(201)] = `<script>alert(2)</script>`;
+  const out = myTasksHtml(buildModel(r), { me: 5, today }).toString();
+  assert.match(out, /<span class="mt__title">&lt;img src=x onerror=alert\(1\)&gt;<\/span>/);
+  assert.match(out, /&lt;script&gt;alert\(2\)&lt;\/script&gt;/);
+  assert.doesNotMatch(out, /<img/);
+  assert.doesNotMatch(out, /<script/);
+  assert.doesNotMatch(out, /onerror=alert\(1\)>/);
+});
+
 test('périmètre : contrôle segmenté Tout / Mes tâches / Mes chantiers, indisponible sans « Je suis… »', () => {
   const on = scopeHtml({ ...DEFAULT_FILTERS, scope: 'chantiers' }, false).toString();
   assert.match(on, /<fieldset/);
