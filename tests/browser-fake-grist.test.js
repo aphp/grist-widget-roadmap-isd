@@ -3236,10 +3236,12 @@ test(
     await until(`D.getElementById('btn-form-delete')`);
     await clickOn('#btn-form-delete');
     await until(`D.querySelector('dialog.cdlg[open] #del-close')`);
-    assert.match(
-      await w(`return D.getElementById('del-alert').textContent;`),
-      /déplacez ou supprimez d’abord ses 16 tâches/,
-    );
+    // Nombre attendu : tâches rattachées au chantier dans les données du faux Grist (jeu synthétique)
+    const expected = await w(`const id = Number(D.getElementById('chantier-form').dataset.chantierId);
+      const t = await W.grist.docApi.fetchTable('Tasks'); return t.Chantier.filter((c) => c === id).length;`);
+    assert.ok(expected > 1);
+    const alert = await w(`return D.getElementById('del-alert').textContent;`);
+    assert.equal(Number(/déplacez ou supprimez d’abord ses (\d+) tâches/.exec(alert)?.[1]), expected);
     assert.equal(await w(`return D.querySelectorAll('.cdlg__foot button').length;`), 1);
     await clickOn('#del-close');
     await until(`!D.querySelector('dialog.cdlg')`);
