@@ -292,7 +292,7 @@ export function buildModel(raw) {
     people,
     /** Domaine ISD (isdDomainOf), calculé une fois : équipe ISD, périmètre, sélecteurs, onglet Équipe. */
     isdDomain: isdName,
-    // Personne estimation (Team.aph = ESTIMATION_APH) : id seulement si elle est seule à porter cet APH
+    // Personnes estimation (Team.aph = ESTIMATION_APH, actives) : toutes exemptées de la borne de 1 ETP
     estimation: estimationOf(people.values()),
     projects,
     chantiers,

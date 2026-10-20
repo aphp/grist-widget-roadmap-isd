@@ -2215,7 +2215,9 @@ test(
     assert.equal(await w(`return D.querySelector('[data-aph="1"]').textContent.trim();`), 'APH 1000001');
     // Personne estimation : badge « Estimation » ; aucune autre personne ne le porte
     assert.match(await w(`return D.querySelector('[data-aph="19"]').textContent;`), /APH 9999999\s*Estimation/);
-    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 1);
+    // Plusieurs personnes estimation : toutes ont le badge (Estimation DE, Estimation DS)
+    assert.match(await w(`return D.querySelector('[data-aph="20"]').textContent;`), /APH 9999999\s*Estimation/);
+    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 2);
     await clickOn('[data-person="1"]');
     await until(`D.getElementById('btn-edit-open')`);
     assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*1000001/);
@@ -2283,8 +2285,14 @@ for (const [variant, opt] of [
       await type(`tf-ch-${est}`, '51');
       assert.match(await w(`return D.getElementById('tf-ch-${est}-msg').textContent;`), /50 ETP maximum/);
       await type(`tf-ch-${est}`, '3');
+      // Deuxième personne estimation (Estimation DS) : exemptée elle aussi
+      const est2 = await pick(`x.textContent.trim() === 'Estimation DS'`);
+      await until(`D.getElementById('tf-ch-${est2}')`);
+      assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est2}"] .est-badge'));`));
+      await type(`tf-ch-${est2}`, '3');
+      assert.equal(await w(`return D.getElementById('tf-ch-${est2}-msg').textContent.trim();`), '');
       // Une autre personne : 1 ETP au plus, sans badge
-      const other = await pick(`x.textContent.trim() !== 'Estimation DE'`);
+      const other = await pick(`!x.textContent.trim().startsWith('Estimation')`);
       await until(`D.getElementById('tf-ch-${other}')`);
       assert.equal(await w(`return Boolean(D.querySelector('[data-charge="${other}"] .est-badge'));`), false);
       await type(`tf-ch-${other}`, '3');
@@ -2301,6 +2309,7 @@ for (const [variant, opt] of [
       assert.deepEqual([name, table, rowId], ['UpdateRecord', 'Tasks', id]);
       assert.deepEqual(JSON.parse(cells.charges), [
         { teamId: est, heures: 210 },
+        { teamId: est2, heures: 210 },
         { teamId: other, heures: 70 },
       ]);
     },
@@ -2348,7 +2357,9 @@ test(
     assert.equal(await w(`return Boolean(D.querySelector('[data-aph="2"]'));`), false);
     // Personne estimation (nombre 9999999) : badge dans la liste et dans sa fiche
     assert.match(await w(`return D.querySelector('[data-aph="19"]').textContent;`), /APH 9999999\s*Estimation/);
-    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 1);
+    // Plusieurs personnes estimation : toutes ont le badge (Estimation DE, Estimation DS)
+    assert.match(await w(`return D.querySelector('[data-aph="20"]').textContent;`), /APH 9999999\s*Estimation/);
+    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 2);
     await clickOn('[data-person="19"]');
     await until(`D.getElementById('btn-edit-open')`);
     assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*9999999\s*Estimation/);

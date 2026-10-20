@@ -31,12 +31,14 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   adresse fixe, relu avant chaque envoi) peut tout couper. Délai maximal de 10 s sur chaque requête.
 - **Charges** : `Tasks.charges` = JSON `[{"teamId": n, "heures": h}]`, total d'heures sur la tâche. 1 ETP = 35 h par
   semaine de la tâche (jours calendaires), au plus 1 ETP par personne, ETP à une décimale, heures à 0,5 h près ;
-  entrées non touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : la personne estimation
-  (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer » pour estimer dans la roadmap), bornée à
-  `ESTIMATION_MAX_ETP` = 50 ETP sur la période (2 000 h sans dates), dans la saisie et dans le writer ; badge
-  « Estimation » à côté d'elle. Exemption seulement si EXACTEMENT UNE ligne porte cet APH (comparaison stricte après
-  `aphText` : '9999999' ou le nombre 9999999, `core/estimation.js`) ; aucune ou plusieurs : personne n'est exempté. Le widget ne pose ni ne retire jamais cet APH
-  (refus `aph-estimation` du writer, erreur du formulaire) : la personne estimation se désigne dans la Feuille.
+  entrées non touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : les personnes estimation
+  (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer », « Data Scientist »… une par profil pour
+  estimer dans la roadmap), bornées à `ESTIMATION_MAX_ETP` = 50 ETP sur la période (2 000 h sans dates), dans la
+  saisie et dans le writer ; badge « Estimation » à côté de chacune. TOUTE ligne ACTIVE qui porte cet APH est
+  exemptée, quel que soit leur nombre (`model.estimation.ids`, `estimationIdsOfTable` ; comparaison stricte après
+  `aphText` : '9999999' ou le nombre 9999999, `core/estimation.js`) ; une ligne inactive ne l'est pas. Le widget ne
+  pose ni ne retire jamais cet APH (refus `aph-estimation` du writer, erreur du formulaire) : les personnes
+  estimation se désignent dans la Feuille.
 - Aucune donnée, clé, capture ni identifiant de document dans le dépôt (un test cherche les identifiants).
   `config.yaml` (clé API, ids des documents) reste hors du dépôt.
 - Textes injectés : `html```, `sanitize()` ou `textContent`. CSP : même origine + `https://grist.numerique.gouv.fr`.

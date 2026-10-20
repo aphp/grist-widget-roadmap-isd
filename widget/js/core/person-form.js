@@ -130,8 +130,6 @@ export function validatePerson(draft, { model, personId = null, domaine = '', ap
   const held = personId === null ? '' : (model.people.get(personId)?.aph ?? '');
   if (isEstimationAph(held)) {
     if (draft.aph !== held) errors.aph = { key: 'person.error.aphEstimation' };
-    const n = model.estimation?.holders.length ?? 0;
-    if (n > 1) warnings.push({ field: 'aph', key: 'person.warn.aphEstimationMany', vars: { n } });
   } else if (aph === ESTIMATION_APH) errors.aph = { key: 'person.error.aphEstimation' };
   else if (aph && !validAph(aph)) errors.aph = { key: 'person.error.aph', vars: { max: APH_MAX_DIGITS } };
   else if (aph && aphType === 'Int' && aph.startsWith('0')) errors.aph = { key: 'person.error.aphZero' };

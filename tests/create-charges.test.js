@@ -136,16 +136,17 @@ test('création réelle : UN AddRecord avec assignés et charges, borne de 1 ETP
   assert.equal(e.sent, true);
   // Au-delà de 1 ETP pour une personne ordinaire : refusé, rien n'est envoyé
   assert.match(await reason(writer.add('Tasks', { ...DATED, assignees: [5], charges: ch([5, 140]) })), /^charges/);
-  // Personne estimation (titulaire unique de l'APH) : 3 ETP acceptés
+  // Personne estimation (ligne active qui porte l'APH) : 3 ETP acceptés
   await writer.add('Tasks', { ...DATED, assignees: [1], charges: ch([1, 210]) });
   assert.equal(g.batches.length, 2);
-  // Deuxième titulaire de l'APH : plus personne n'est exempté
+  // Deuxième titulaire actif de l'APH : exempté lui aussi, le premier le reste
   g.data.Team.aph[g.data.Team.id.indexOf(5)] = ESTIMATION_APH;
-  assert.match(await reason(writer.add('Tasks', { ...DATED, assignees: [1], charges: ch([1, 210]) })), /^charges/);
+  await writer.add('Tasks', { ...DATED, assignees: [1, 5], charges: ch([1, 210], [5, 210]) });
+  assert.equal(g.batches.length, 3);
   // Personne inconnue, charge sans assignation
   assert.match(await reason(writer.add('Tasks', { ...DATED, assignees: [99], charges: ch([99, 7]) })), /^charges/);
   assert.match(await reason(writer.add('Tasks', { ...DATED, charges: ch([2, 7]) })), /non assignée/);
-  assert.equal(g.batches.length, 2);
+  assert.equal(g.batches.length, 3);
 });
 
 test('création en mode essai avec charges : rien n’est envoyé, mêmes contrôles', async () => {

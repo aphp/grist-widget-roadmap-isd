@@ -24,7 +24,7 @@ export const MIN_HOURS = 0.25;
 export const MAX_ETP = 1;
 /** Sans période connue, borne de bon sens : 2 000 h par personne et par tâche. */
 export const MAX_HOURS = 2000;
-// Personne estimation (Team.aph, titulaire unique) : seule exemptée de la borne de 1 ETP, voir estimation.js
+// Personnes estimation (Team.aph, actives) : seules exemptées de la borne de 1 ETP, voir estimation.js
 export { ESTIMATION_APH, ESTIMATION_MAX_ETP, isEstimationAph, isEstimationPerson } from './estimation.js';
 
 /** Heures arrondies à 0,5 h près. */

@@ -8,13 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { feuille } from './fixtures/feuille.js';
 import { createFakeGrist, lookupOf } from './fixtures/fake-grist.js';
-import {
-  ESTIMATION_APH,
-  aphText,
-  estimationHoldersOfTable,
-  estimationIdOfTable,
-  isEstimationAph,
-} from '../widget/js/core/estimation.js';
+import { ESTIMATION_APH, aphText, estimationIdsOfTable, isEstimationAph } from '../widget/js/core/estimation.js';
 import {
   ALSO_ACCEPTED_TYPES,
   EXPECTED_TYPES,
@@ -98,15 +92,16 @@ test('modèle et decodeRow : colonne Int lue en texte de chiffres (0 = vide), es
   assert.equal(m.people.get(1).aph, ESTIMATION_APH);
   assert.equal(m.people.get(5).aph, '1234567');
   assert.equal(m.people.get(2).aph, '');
-  assert.deepEqual(m.estimation, { holders: [1], id: 1 });
+  assert.deepEqual(m.estimation, { ids: new Set([1]) });
   assert.equal(decodeRow(r.tables.Team, 'Team', 5).aph, '1234567');
   assert.equal(decodeRow(r.tables.Team, 'Team', 2).aph, '');
   assert.equal(decodeRow(r.tables.Team, 'Team', 1).aph, ESTIMATION_APH);
   // Table brute (lookup du writer) : nombre ou texte, même règle stricte
-  assert.deepEqual(estimationHoldersOfTable(r.tables.Team), [1]);
-  assert.equal(estimationIdOfTable(r.tables.Team), 1);
-  assert.deepEqual(estimationHoldersOfTable({ id: [1, 2, 3], aph: [9999999, '9999999', ' 9999999'] }), [1, 2]);
-  assert.equal(estimationIdOfTable({ id: [1, 2], aph: [9999999, '9999999'] }), null);
+  assert.deepEqual(estimationIdsOfTable(r.tables.Team), new Set([1]));
+  const t = { id: [1, 2, 3, 4], aph: [9999999, '9999999', ' 9999999', 9999999], actif: [true, true, true, false] };
+  assert.deepEqual(estimationIdsOfTable(t), new Set([1, 2]));
+  assert.deepEqual(estimationIdsOfTable({ id: [1], aph: [9999999] }), new Set());
+  assert.deepEqual(estimationIdsOfTable(null), new Set());
   assert.equal(isEstimationAph(9999999), true);
   assert.equal(isEstimationAph(99999990), false);
 });

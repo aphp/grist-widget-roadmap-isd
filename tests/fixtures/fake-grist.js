@@ -1,5 +1,5 @@
 import { decodeRow } from '../../widget/js/core/grist-writer.js';
-import { estimationIdOfTable } from '../../widget/js/core/estimation.js';
+import { estimationIdsOfTable } from '../../widget/js/core/estimation.js';
 
 /**
  * Faux Grist pour les tests Node : tables colonnaires en mémoire, lots enregistrés dans `batches`, actions
@@ -28,7 +28,7 @@ export function lookupOf(g) {
   const col = (c) => tasks()[c] ?? [];
   return {
     row: (t, id) => decodeRow(g.data[t], t, id),
-    estimationId: () => estimationIdOfTable(g.data.Team),
+    estimationIds: () => estimationIdsOfTable(g.data.Team),
     childIds: (id) => tasks().id.filter((_, i) => col('parentTask')[i] === id),
     chantierTasks: (id) => tasks().id.filter((_, i) => col('Chantier')[i] === id),
     referenced: (t, id) =>

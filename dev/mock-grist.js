@@ -17,8 +17,9 @@
 //   statut-vide     : la tâche n° 1 n'a pas de statut (menu de statut sans entrée cochée) ;
 //   capacite-donnee : Team.capaciteHebdo devient une colonne de données (comme après sa conversion dans Grist par un
 //                     responsable) ; sans cette option, elle reste la colonne vide de la Feuille, non modifiable.
-//   aph-donnee      : Team.aph devient une colonne de données ; avec le jeu synthétique, des APH inventés et une
-//                     personne estimation « Estimation DE » (APH 9999999). Sans cette option : formule vide.
+//   aph-donnee      : Team.aph devient une colonne de données ; avec le jeu synthétique, des APH inventés et des
+//                     personnes estimation (APH 9999999) : « Estimation DE », « Estimation DS », et « Estimation DA »
+//                     inactive (non exemptée). Sans cette option : formule vide.
 //   aph-entier      : comme aph-donnee, mais colonne Int (ce que Grist devine après une saisie de chiffres dans la
 //                     colonne vide) : APH en nombres, 0 = vide (la personne n° 2 du jeu synthétique).
 // En cours de session, window.__lectureEchoue = true fait échouer toute lecture de table (relecture avant l'envoi).

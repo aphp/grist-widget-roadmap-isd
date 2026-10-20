@@ -136,8 +136,8 @@ const ESTIMATION_APH = '9999999';
 /**
  * @param {Date} [today] jour de référence (les dates sont placées autour de lui)
  * @param {{aph?:boolean|'texte'|'entier'}} [opts] aph : Team.aph colonne de données (au lieu de la formule vide de
- *   la Feuille), avec des APH inventés et une personne estimation « Estimation DE » (APH 9999999), ajoutée en
- *   dernier : les tâches du jeu restent les mêmes. true ou 'texte' : colonne Text (APH en chaînes) ; 'entier' :
+ *   la Feuille), avec des APH inventés et des personnes estimation (APH 9999999) « Estimation DE » et
+ *   « Estimation DS », plus « Estimation DA » inactive, ajoutées en dernier : les tâches du jeu restent les mêmes. true ou 'texte' : colonne Text (APH en chaînes) ; 'entier' :
  *   colonne Int (APH en nombres, la personne n° 2 à 0 = vide, comme Grist pour une cellule non remplie)
  * @returns {Record<string, object>} tables colonnaires, dont _grist_Tables et _grist_Tables_column
  */
@@ -334,18 +334,24 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
     tags: null,
   });
   // Variante APH : la personne estimation (DE de l'ISD), sans tâche ; les tests lui ajoutent une charge
+  // Plusieurs personnes estimation (une par profil) : toutes exemptées ; la n° 21, inactive, ne l'est pas
   if (aph)
-    team.push({
-      id: team.length + 1,
-      nom: 'Estimation DE',
-      role: 'DE',
-      actif: true,
-      Domaine: ISD,
-      email: '',
-      aph: aphCell(ESTIMATION_APH),
-      capaciteHebdo: 0,
-      n_1: 12,
-    });
+    for (const [nom, role, actif] of [
+      ['Estimation DE', 'DE', true],
+      ['Estimation DS', 'DS', true],
+      ['Estimation DA', 'DA', false],
+    ])
+      team.push({
+        id: team.length + 1,
+        nom,
+        role,
+        actif,
+        Domaine: ISD,
+        email: '',
+        aph: aphCell(ESTIMATION_APH),
+        capaciteHebdo: 0,
+        n_1: 12,
+      });
 
   const dispos = [
     { id: 1, membre: 1, dateDebut: day(7), dateFin: day(11), dispo: 0, type: 'Congés' },

@@ -18,7 +18,7 @@
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
-import { aphText, estimationIdOfTable, isEstimationAph } from './estimation.js';
+import { aphText, estimationIdsOfTable, isEstimationAph } from './estimation.js';
 import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
@@ -746,7 +746,7 @@ export function lookupFromTables(tables, base = null) {
   return {
     choices: (k) => base?.choices?.(k) ?? null,
     row: (t, id) => (tables[t] ? decodeRow(tables[t], t, id) : (base?.row(t, id) ?? null)),
-    estimationId: () => (tables.Team ? estimationIdOfTable(tables.Team) : (base?.estimationId?.() ?? null)),
+    estimationIds: () => (tables.Team ? estimationIdsOfTable(tables.Team) : (base?.estimationIds?.() ?? new Set())),
     childIds: (id) => (tasks() ? ids((i) => col('parentTask')[i] === id) : (base?.childIds?.(id) ?? [])),
     chantierTasks: (id) => (tasks() ? ids((i) => col('Chantier')[i] === id) : (base?.chantierTasks?.(id) ?? [])),
   };
@@ -861,12 +861,9 @@ export function createWriter({
   const created = new Set(); // 'Table:id' créées dans la session (seules lignes supprimables, pour « Annuler »)
   const addRefused = new Set(); // tables où une règle d'accès refuse l'ajout
   const exists = refExists ?? (lookup ? (t, id) => Boolean(lookup.row(t, id)) : null);
-  // Personne estimation (titulaire UNIQUE de ESTIMATION_APH dans les données chargées, lookup.estimationId) : seule
-  // exemptée de la borne de 1 ETP ; sans lookup, sans titulaire ou avec plusieurs, personne ne l'est
-  const isEstimation = (n) => {
-    const id = lookup?.estimationId?.() ?? null;
-    return Number.isInteger(id) && n === id;
-  };
+  // Personnes estimation (lignes actives qui portent ESTIMATION_APH dans les données chargées, lookup.estimationIds) :
+  // seules exemptées de la borne de 1 ETP ; sans lookup, personne ne l'est
+  const isEstimation = (n) => Number.isInteger(n) && lookup?.estimationIds?.()?.has(n) === true;
   let seq = 0;
   let blocked = null; // refus sur tout le document : la session passe en lecture
   let undoing = false;
