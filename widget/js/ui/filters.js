@@ -234,8 +234,9 @@ export function createFilters(root, on, popovers) {
                   data-filter-check="isdOnly"
                   ${raw(f.isdOnly ? 'checked' : '')}
                 />
-                <label class="fr-label" for="f-isd-only" title="${label('filters.isdOnly.title')}">
+                <label class="fr-label" for="f-isd-only">
                   ${label('filters.isdOnly')}
+                  <span class="fr-hint-text">${label('filters.isdOnly.title')}</span>
                 </label>
               </div>
             </div>

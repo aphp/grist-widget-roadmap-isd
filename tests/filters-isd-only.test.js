@@ -146,7 +146,24 @@ test('ISD seulement : chantier sans ISD ni tâche ISD disparaît ; « (sans chan
   const before = names(applyFilters(mm, { ...DEFAULT_FILTERS }, DEFAULT_PREFS).tree);
   assert.ok(before.includes('(sans chantier)'));
   const r = applyFilters(mm, f, DEFAULT_PREFS);
-  assert.ok(r.taskIds.has(2001)); // charge d'Eve : le chantier virtuel reste
+  // Chantier 202 (responsable Dora) : l'ajout de tâches ISD le garderait ; ici aucune de ses tâches n'est ISD
+  const raw2 = feuille();
+  addRow(raw2.tables.Chantiers, { id: 202, Nom_du_chantier: 'Chantier sans ISD', Projets: L(20), Responsable: 4 });
+  addRow(raw2.tables.Tasks, {
+    id: 2100,
+    titre: 'T2100',
+    Chantier: 202,
+    projet: 20,
+    parentTask: 0,
+    statut: 'todo',
+    assignees: L(4),
+  });
+  const mm2 = buildModel(raw2);
+  const unfiltered = chantiersOf(applyFilters(mm2, { ...DEFAULT_FILTERS }, DEFAULT_PREFS).tree);
+  assert.ok(unfiltered.includes(202));
+  assert.ok(!chantiersOf(applyFilters(mm2, f, DEFAULT_PREFS).tree).includes(202));
+  assert.ok(names(r.tree).includes('(sans chantier)')); // gardé par 2001 (charge d'Eve)
+  assert.ok(r.taskIds.has(2001));
   assert.equal(r.taskIds.has(7000), false);
 });
 

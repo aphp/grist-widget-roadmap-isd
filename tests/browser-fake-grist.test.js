@@ -2511,6 +2511,12 @@ test(
     await w(`D.getElementById('f-isd-only').click(); return true;`);
     await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
     assert.equal(await w(`return ${count};`), '1 tâche');
+    // Retrait de la seule pastille : la case se décoche et la carte revient
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.querySelector('[data-remove="isdOnly"]') && ${cards} === 0`);
+    await w(`D.querySelector('[data-remove="isdOnly"]').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
+    assert.equal(await w(`return D.getElementById('f-isd-only').checked;`), false);
     // « Tout effacer » remet la case à faux
     await w(`D.getElementById('f-isd-only').click(); return true;`);
     await until(`D.getElementById('btn-clear') && ${cards} === 0`);
