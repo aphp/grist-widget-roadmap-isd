@@ -726,7 +726,9 @@ export function createTaskEditor(deps) {
         st.badDates.add(f);
       }
       // Q8 A : les heures (valeur stockée) sont conservées ; l'ETP et l'écart sont recalculés
-      people.render();
+      // Le bouton « Vider la date de clôture » suit la date : le formulaire est redessiné, focus gardé
+      if (f === 'dateCloture') render(t.id);
+      else people.render();
     } else if (f === 'type') {
       st.draft = setMilestone(st.draft, t.checked, st.originalType);
       render('tf-type');

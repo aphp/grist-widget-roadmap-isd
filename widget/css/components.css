@@ -52,8 +52,8 @@ input[type='radio']:focus ~ label::before,
 }
 
 /*
- * Le DSFR règle `box-sizing: inherit` sur tous les éléments, mais Chrome pose `content-box` sur le contenu d'un
- * <details> (::details-content, hors de `*`) : sans ceci, chaque champ à 100 % y déborde de son padding.
+ * Le DSFR règle `box-sizing: inherit` sur tous les éléments, mais les navigateurs qui gèrent ::details-content
+ * y posent `content-box` (pseudo-élément hors de `*`) : sans ceci, chaque champ à 100 % du <details> déborde.
  */
 details::details-content {
   box-sizing: inherit;

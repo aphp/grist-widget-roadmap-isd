@@ -3188,25 +3188,22 @@ test(
   'Fiche tâche : champs dans le panneau, bouton « Vider la date de clôture » à côté du champ, libellé « Rattachement » comme les autres',
   { skip: SKIP },
   async () => {
-    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
     try {
       for (const panel of [360, 480, 720]) {
-        await w(`D.getElementById('layout-probe')?.remove();
-          const s = D.createElement('style'); s.id = 'layout-probe';
+        await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+        await w(`const s = D.createElement('style'); s.id = 'layout-probe';
           s.textContent = '.drawer[data-mode=edit]{width:min(${panel}px,100vw)!important}'; D.head.append(s); return true;`);
-        // Une date de clôture donnée : le bouton « Vider » est affiché
         await w(`D.querySelector('.view [data-task]').click(); return true;`);
         await until(`D.getElementById('btn-edit-open')`);
         await w(`D.getElementById('btn-edit-open').click(); return true;`);
         await until(`D.getElementById('task-form')`);
-        await w(`D.getElementById('tf-more').open = true; return true;`);
-        if (!(await w(`return Boolean(D.querySelector('.tf-clear'));`))) {
-          await w(`const t = D.getElementById('tf-dateCloture'); t.value = '2025-10-20';
-            t.dispatchEvent(new W.Event('input', { bubbles: true })); t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
-          // Le bouton suit le brouillon au prochain rendu complet du formulaire (jalon coché puis décoché)
-          await w(`for (let i = 0; i < 2; i++) D.getElementById('tf-type').click(); return true;`);
-          await until(`D.querySelector('.tf-clear')`);
-        }
+        await w(`if (!D.getElementById('tf-more').open) D.querySelector('#tf-more > summary').click(); return true;`);
+        await until(`D.getElementById('tf-more').open`);
+        // Pas de date de clôture : pas de bouton ; la date donnée, il apparaît aussitôt, date de clôture conservée en vue
+        assert.equal(await w(`return D.querySelector('.tf-clear') === null;`), true);
+        await w(`const t = D.getElementById('tf-dateCloture'); t.value = '2025-10-20';
+          t.dispatchEvent(new W.Event('input', { bubbles: true })); t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+        await until(`D.querySelector('.tf-clear') && D.getElementById('tf-more').open`);
         const m =
           await w(`const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
           const body = D.querySelector('.drawer__body');
@@ -3217,7 +3214,7 @@ test(
             inputs: [...D.querySelectorAll('#task-form input:not([type=radio]):not([type=checkbox]), #task-form select, #task-form textarea')]
               .map((e) => ({ id: e.id, ...box(e) })),
             date: box(D.getElementById('tf-dateCloture')), clear: box(D.querySelector('.tf-clear')),
-            attachLabel: style(D.getElementById('tf-attach-label') || D.querySelector('.tf-attach dt')),
+            attachLabel: style(D.getElementById('tf-attach-label')),
             titleLabel: style(D.querySelector('label[for=tf-titre]')),
             path: box(path), move: box(D.getElementById('tf-move')),
           };`);
@@ -3247,13 +3244,13 @@ test(
             Math.abs((m.move.t + m.move.b) / 2 - (m.path.t + m.path.b) / 2) <= 14,
             `${at} : « Changer » mal aligné avec le chemin`,
           );
-        await w(
-          `D.getElementById('btn-form-cancel')?.click(); D.querySelector('.drawer__head [data-close], #drawer-close')?.click(); return true;`,
-        );
-        await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+        // Vider la date : le bouton disparaît aussitôt, la date est vide
+        await w(`D.querySelector('.tf-clear').click(); return true;`);
+        await until(`!D.querySelector('.tf-clear')`);
+        assert.equal(await w(`return D.getElementById('tf-dateCloture').value;`), '');
       }
     } finally {
-      await w(`D.getElementById('layout-probe')?.remove(); return true;`).catch(() => {});
+      await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
     }
     assert.equal(await w(`return W.__writes.length;`), 0);
   },
