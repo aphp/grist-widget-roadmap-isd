@@ -48,14 +48,26 @@ export function sanitizeHomeView(saved, me, tabs) {
   return me === null || me === undefined ? null : HOME_LAST;
 }
 
+/** Onglet d'arrivée du widget : le Gantt. */
+export const LANDING_VIEW = 'gantt';
+
 /**
- * Onglet ouvert au démarrage : la vue d'accueil si c'est un onglet, sinon la dernière vue, sinon le Kanban.
- * @param {{homeView:string|null, view:string}} prefs
+ * Onglet ouvert au démarrage : le paramètre d'adresse vue=<onglet> s'il nomme un onglet, sinon la vue d'accueil
+ * choisie dans les Préférences si c'est un onglet, sinon le Gantt. La dernière vue consultée n'est jamais
+ * restaurée (« Dernière vue » ouvre donc aussi le Gantt).
+ * @param {{homeView:string|null}} prefs
+ * @param {string|URLSearchParams|null|undefined} search chaîne de requête de la page du widget
  * @param {readonly string[]} tabs
  */
-export function openingView(prefs, tabs) {
-  if (tabs.includes(prefs.homeView)) return prefs.homeView;
-  return tabs.includes(prefs.view) ? prefs.view : 'kanban';
+export function initialView(prefs, search, tabs) {
+  let asked = '';
+  try {
+    asked = (new URLSearchParams(search ?? '').get('vue') ?? '').trim();
+  } catch {
+    asked = '';
+  }
+  if (tabs.includes(asked)) return asked;
+  return tabs.includes(prefs.homeView) ? prefs.homeView : LANDING_VIEW;
 }
 
 /**

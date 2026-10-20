@@ -21,7 +21,7 @@ import { captureScrolls, dataFingerprint, needsRender, restoreScrolls } from './
 import { estimationIdsOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
 import { dayInZone, monthKey, monthsFrom } from './core/dates.js';
-import { openingView, sanitizeHomeView } from './core/home-view.js';
+import { initialView, sanitizeHomeView } from './core/home-view.js';
 import { label } from './labels.js';
 import { createChrome } from './ui/chrome.js';
 import { TABS, THEMES } from './ui/kit.js';
@@ -92,7 +92,7 @@ function safeStorage() {
 }
 const storage = safeStorage();
 
-/** Préférences au démarrage : l'onglet ouvert est la vue d'accueil (P-UX-2), sinon la dernière vue. */
+/** Préférences au démarrage : l'onglet ouvert est vue= de l'adresse, la vue d'accueil (P-UX-2), sinon le Gantt. */
 function initialPrefs() {
   const p = loadPrefs(storage);
   const homeView = sanitizeHomeView(p.homeView, p.me, TABS);
@@ -100,7 +100,7 @@ function initialPrefs() {
     ...p,
     filters: { ...DEFAULT_FILTERS, ...p.filters },
     homeView,
-    view: openingView({ homeView, view: p.view }, TABS),
+    view: initialView({ homeView }, window.location.search, TABS),
     theme: THEMES.includes(p.theme) ? p.theme : 'auto',
   };
 }

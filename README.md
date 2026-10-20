@@ -20,6 +20,10 @@ personne : elle se désactive). Tout cela seulement si l'adresse de la page l'ou
   il est relu à chaque relecture des données et juste avant chaque enregistrement, les pages ouvertes passent en
   lecture seule sans rechargement. Absent ou illisible : édition coupée.
 
+Le widget s'ouvre toujours sur l'onglet Gantt (la dernière vue consultée n'est pas restaurée ; une vue d'accueil
+choisie dans les Préférences l'emporte) ; `?vue=<onglet>` (`mytasks`, `gantt`, `kanban`, `table`, `portfolio`, `stats`,
+`synthesis`, `team`) ouvre un autre onglet, une valeur inconnue est ignorée.
+
 La CSP n'autorise que la même origine et l'instance Grist `https://grist.numerique.gouv.fr`
 (`widget/js/config.js`), pour lire le niveau d'accès du compte.
 

@@ -37,7 +37,7 @@ export const DEFAULT_PREFS = Object.freeze({
   mePrompted: false,
   hiddenProjects: [],
   theme: 'auto',
-  view: 'kanban',
+  view: 'gantt',
   /** Vue d'accueil (onglet ouvert au démarrage) ou « last » (dernière vue) ; null tant qu'aucune personne n'a été choisie. */
   homeView: null,
   kanbanGroup: 'status',

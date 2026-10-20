@@ -117,12 +117,12 @@ async function loaded(url) {
 
 /** Ouvre le widget sur le faux Grist, toujours avec le jeu de données synthétique. */
 async function open(query) {
-  query = `${query || '?'}${query ? '&' : ''}donnees=synthetiques`;
+  query = `${query || '?'}${query ? '&' : ''}donnees=synthetiques&vue=kanban`;
   const host = `${BASE}/dev/host.html`;
   await send('Page.navigate', { url: host });
   await loaded(host);
   await send('Runtime.evaluate', {
-    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: 'kanban' }))`,
+    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true }))`,
   });
   await send('Page.navigate', { url: `${host}${query}` });
   await loaded(`${host}${query}`);
@@ -1797,17 +1797,38 @@ test(
   },
 );
 
+// ---------- Arrivée sur le Gantt ----------
+test('arrivée : le Gantt s’ouvre malgré une vue mémorisée ; vue= ouvre l’onglet demandé', { skip: SKIP }, async () => {
+  const host = `${BASE}/dev/host.html`;
+  const visit = async (q) => {
+    await send('Page.navigate', { url: host });
+    await loaded(host);
+    await send('Runtime.evaluate', {
+      expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: 'synthesis' }))`,
+    });
+    await send('Page.navigate', { url: `${host}${q}` });
+    await loaded(`${host}${q}`);
+  };
+  await visit('?donnees=synthetiques');
+  await until(`D.querySelector('#view-panel[data-view="gantt"]')`);
+  assert.equal(await w(`return D.getElementById('tab-gantt').getAttribute('aria-selected');`), 'true');
+  assert.equal(await w(`return D.getElementById('tab-synthesis').getAttribute('aria-selected');`), 'false');
+  await visit('?donnees=synthetiques&vue=table');
+  await until(`D.querySelector('#view-panel[data-view="table"]')`);
+  assert.equal(await w(`return D.getElementById('tab-table').getAttribute('aria-selected');`), 'true');
+});
+
 // ---------- Statut depuis la carte et la ligne (P-UX-6) ----------
 const EDIT = '?edition=1&doc=doc-dev-local&ecritures=memoire';
 
 /** Ouvre une vue avec « Je suis… » posé (Mes tâches), toujours sur le jeu synthétique. */
 async function openView(query, view, me = 5) {
   const host = `${BASE}/dev/host.html`;
-  const q = `${query}&donnees=synthetiques`;
+  const q = `${query}&donnees=synthetiques&vue=${view}`;
   await send('Page.navigate', { url: host });
   await loaded(host);
   await send('Runtime.evaluate', {
-    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: '${view}', me: ${me} }))`,
+    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, me: ${me} }))`,
   });
   await send('Page.navigate', { url: `${host}${q}` });
   await loaded(`${host}${q}`);

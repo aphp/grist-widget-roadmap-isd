@@ -6,11 +6,12 @@ import {
   defaultScope,
   firstChoicePrefs,
   HOME_LAST,
-  openingView,
+  initialView,
   profileOf,
   sanitizeHomeView,
   SCOPES,
 } from '../widget/js/core/home-view.js';
+import { DEFAULT_PREFS } from '../widget/js/core/filters.js';
 import { TABS } from '../widget/js/ui/kit.js';
 
 const de = { role: 'DE', roleText: 'DE' };
@@ -58,11 +59,17 @@ test('vue d’accueil enregistrée : onglet ou « dernière vue » gardés ; anc
   assert.equal(sanitizeHomeView('disparue', 4, TABS), HOME_LAST);
 });
 
-test('onglet à l’ouverture : vue d’accueil, sinon dernière vue, sinon Kanban', () => {
-  assert.equal(openingView({ homeView: 'mytasks', view: 'table' }, TABS), 'mytasks');
-  assert.equal(openingView({ homeView: HOME_LAST, view: 'table' }, TABS), 'table');
-  assert.equal(openingView({ homeView: null, view: 'gantt' }, TABS), 'gantt');
-  assert.equal(openingView({ homeView: null, view: 'disparue' }, TABS), 'kanban');
+test('onglet à l’ouverture : paramètre vue=, sinon vue d’accueil choisie, sinon Gantt (dernière vue jamais restaurée)', () => {
+  assert.equal(initialView({ homeView: null, view: 'gantt' }, '', TABS), 'gantt');
+  assert.equal(initialView({ homeView: null, view: 'synthesis' }, '', TABS), 'gantt');
+  assert.equal(initialView({ homeView: HOME_LAST, view: 'table' }, '', TABS), 'gantt');
+  assert.equal(initialView({ homeView: 'mytasks', view: 'table' }, '', TABS), 'mytasks');
+  assert.equal(initialView({ homeView: null, view: 'synthesis' }, '?vue=kanban', TABS), 'kanban');
+  assert.equal(initialView({ homeView: 'mytasks', view: 'table' }, '?edition=essai&vue=team', TABS), 'team');
+  assert.equal(initialView({ homeView: null, view: 'synthesis' }, '?vue=inconnue', TABS), 'gantt');
+  assert.equal(initialView({ homeView: null, view: 'synthesis' }, '?vue=', TABS), 'gantt');
+  assert.equal(initialView({ homeView: 'disparue', view: 'disparue' }, null, TABS), 'gantt');
+  assert.equal(DEFAULT_PREFS.view, 'gantt');
 });
 
 test('premier choix : vue d’accueil du profil ouverte ; ensuite rien d’imposé', () => {
