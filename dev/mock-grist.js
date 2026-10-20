@@ -19,6 +19,8 @@
 //                     responsable) ; sans cette option, elle reste la colonne vide de la Feuille, non modifiable.
 //   aph-donnee      : Team.aph devient une colonne de données ; avec le jeu synthétique, des APH inventés et une
 //                     personne estimation « Estimation DE » (APH 9999999). Sans cette option : formule vide.
+//   aph-entier      : comme aph-donnee, mais colonne Int (ce que Grist devine après une saisie de chiffres dans la
+//                     colonne vide) : APH en nombres, 0 = vide (la personne n° 2 du jeu synthétique).
 // En cours de session, window.__lectureEchoue = true fait échouer toute lecture de table (relecture avant l'envoi).
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
 (function () {
@@ -51,18 +53,27 @@
       const i = c.id.findIndex((_, k) => c.parentId[k] === team && c.colId[k] === 'capaciteHebdo');
       if (i >= 0) c.isFormula[i] = 0;
     }
-    if (has('aph-donnee')) {
+    if (has('aph-donnee') || has('aph-entier')) {
       const t = data._grist_Tables;
       const team = t.id[t.tableId.indexOf('Team')];
       const c = data._grist_Tables_column;
       const i = c.id.findIndex((_, k) => c.parentId[k] === team && c.colId[k] === 'aph');
       if (i >= 0) c.isFormula[i] = 0;
+      // Données réelles : conversion en Int comme Grist (chiffres → nombre, le reste → 0)
+      if (i >= 0 && has('aph-entier') && c.type[i] !== 'Int') {
+        c.type[i] = 'Int';
+        data.Team.aph = (data.Team.aph ?? data.Team.id.map(() => '')).map((v) =>
+          /^[0-9]{1,10}$/.test(String(v)) ? Number(v) : 0,
+        );
+      }
     }
     return data;
   };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const synthetic = async () =>
-    (await import('/dev/synthetic-snapshot.js')).syntheticSnapshot(undefined, { aph: has('aph-donnee') });
+    (await import('/dev/synthetic-snapshot.js')).syntheticSnapshot(undefined, {
+      aph: has('aph-entier') ? 'entier' : has('aph-donnee'),
+    });
   async function readSnapshot() {
     if (params.get('donnees') === 'synthetiques') return synthetic();
     const r = await fetch('/dev/data/snapshot.json');

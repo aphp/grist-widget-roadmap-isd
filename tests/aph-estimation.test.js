@@ -126,14 +126,15 @@ test('formulaire : APH nettoyé de ses espaces, invalide bloquant, longueur inha
   assert.equal('aph' in newPersonFields(draft('1234567'), { model: m, canAddField: (c) => c !== 'aph' }), false);
 });
 
-test('modèle et annuaire : APH lu tel quel (texte seulement), vide si la colonne manque', () => {
+test('modèle et annuaire : APH texte lu tel quel, entier lu en chiffres, vide si la colonne manque', () => {
   const r = raw();
   r.tables.Team.aph[1] = ' 7000001 ';
   r.tables.Team.aph[2] = 7000002;
   const m = buildModel(r);
   assert.equal(m.people.get(1).aph, ESTIMATION_APH);
   assert.equal(m.people.get(2).aph, ' 7000001 ');
-  assert.equal(m.people.get(3).aph, '');
+  assert.equal(m.people.get(3).aph, '7000002');
+  assert.equal(m.people.get(4).aph, '');
   assert.deepEqual(m.estimation, { holders: [1], id: 1 });
   const users = filterUsers(m);
   assert.equal(users.find((p) => p.id === 1).aph, ESTIMATION_APH);
@@ -251,7 +252,23 @@ test('estimation : le widget ne pose jamais l’APH d’estimation et ne le reti
 test('estimation : seul le texte exact 9999999 désigne la personne estimation (comparaison stricte)', () => {
   assert.equal(ESTIMATION_APH, '9999999');
   assert.equal(isEstimationAph('9999999'), true);
-  for (const no of [' 9999999 ', '9999999 ', 9999999, '', '999999', '99999999', '1234567', null, undefined, {}])
+  // Colonne Int : le nombre 9999999 compte aussi (aphText), jamais un autre nombre
+  assert.equal(isEstimationAph(9999999), true);
+  for (const no of [
+    ' 9999999 ',
+    '9999999 ',
+    '09999999',
+    9999999.5,
+    -9999999,
+    99999990,
+    '',
+    '999999',
+    '99999999',
+    '1234567',
+    null,
+    undefined,
+    {},
+  ])
     assert.equal(isEstimationAph(no), false, String(no));
   const m = buildModel(raw());
   assert.equal(isEstimationPerson(m, 1), true);

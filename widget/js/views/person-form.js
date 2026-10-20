@@ -2,7 +2,8 @@
  * Personnes de l'équipe ISD (lot 2d) : rendu seul (fragments h``) du formulaire de la fiche personne (tenu par
  * ui/task-editor.js), et des fenêtres « Ajouter une personne », « Indisponibilité » et « Désactiver » (tenues par
  * ui/person-dialog.js). Liste courte : nom, e-mail, APH, rôle (choix existants), capacité, N+1 ; Domaine en lecture.
- * L'APH n'est modifiable que si Team.aph est une colonne de données (sinon champ désactivé et raison affichée).
+ * L'APH n'est modifiable que si Team.aph est une colonne de données, Text ou Int (sinon champ désactivé et raison
+ * affichée).
  */
 import { APH_MAX_DIGITS, CAPACITY_MAX, isdDomainValue, n1Candidates, roleOptions } from '../core/person-form.js';
 import { NAME_MAX } from '../core/grist-writer.js';

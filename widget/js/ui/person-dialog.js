@@ -66,7 +66,8 @@ export function createPersonDialog(deps) {
   function validate() {
     const m = model();
     if (st.kind === 'off') st.validation = { errors: {}, warnings: [] };
-    else if (st.kind === 'add') st.validation = validatePerson(st.draft, { model: m });
+    else if (st.kind === 'add')
+      st.validation = validatePerson(st.draft, { model: m, aphType: writer()?.columnType?.('Team', 'aph') ?? null });
     else st.validation = validateUnav(st.draft);
     for (const f of st.bad) st.validation.errors[f] = { key: st.badKeys[f] };
     // Erreurs montrées : champs déjà touchés, ou toutes après une tentative d'envoi

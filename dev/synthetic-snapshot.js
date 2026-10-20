@@ -27,7 +27,8 @@ function columnar(rows, cols) {
 
 /**
  * Colonnes de chaque table : [colId, type, isFormula, choices?]. Formule vide pour Team.capaciteHebdo et Team.aph
- * (comme dans la Feuille) ; la variante { aph: true } fait de Team.aph une colonne de données.
+ * (comme dans la Feuille) ; la variante { aph: true } (ou 'texte') fait de Team.aph une colonne de données Text,
+ * la variante { aph: 'entier' } une colonne de données Int (conversion par Grist après une saisie dans la Feuille).
  */
 const SCHEMA = {
   Team: [
@@ -134,12 +135,15 @@ const ESTIMATION_APH = '9999999';
 
 /**
  * @param {Date} [today] jour de référence (les dates sont placées autour de lui)
- * @param {{aph?:boolean}} [opts] aph : Team.aph colonne de données (au lieu de la formule vide de la Feuille), avec
- *   des APH inventés et une personne estimation « Estimation DE » (APH 9999999), ajoutée en dernier : les tâches
- *   du jeu restent les mêmes
+ * @param {{aph?:boolean|'texte'|'entier'}} [opts] aph : Team.aph colonne de données (au lieu de la formule vide de
+ *   la Feuille), avec des APH inventés et une personne estimation « Estimation DE » (APH 9999999), ajoutée en
+ *   dernier : les tâches du jeu restent les mêmes. true ou 'texte' : colonne Text (APH en chaînes) ; 'entier' :
+ *   colonne Int (APH en nombres, la personne n° 2 à 0 = vide, comme Grist pour une cellule non remplie)
  * @returns {Record<string, object>} tables colonnaires, dont _grist_Tables et _grist_Tables_column
  */
 export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
+  const aphInt = aph === 'entier';
+  const aphCell = (s) => (aphInt ? (s === '' ? 0 : Number(s)) : s);
   const random = rng(20261020);
   const pick = (arr) => arr[Math.floor(random() * arr.length)];
   const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) / 1000;
@@ -158,7 +162,7 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
     actif,
     Domaine,
     email: `${slug(nom)}@exemple.fr`,
-    aph: aph ? String(1000001 + i) : '',
+    aph: aph ? aphCell(aphInt && i === 1 ? '' : String(1000001 + i)) : '',
     capaciteHebdo: 0,
     n_1: Domaine === ISD && role !== 'Management' ? 12 : 0,
   }));
@@ -338,7 +342,7 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
       actif: true,
       Domaine: ISD,
       email: '',
-      aph: ESTIMATION_APH,
+      aph: aphCell(ESTIMATION_APH),
       capaciteHebdo: 0,
       n_1: 12,
     });
@@ -376,7 +380,7 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
     SCHEMA[t].map(([colId, type, isFormula = 0, choices]) => ({
       parentId: ti + 1,
       colId,
-      type,
+      type: aphInt && t === 'Team' && colId === 'aph' ? 'Int' : type,
       isFormula: aph && t === 'Team' && colId === 'aph' ? 0 : isFormula,
       formula: '',
       widgetOptions: choices ? JSON.stringify({ choices }) : '',

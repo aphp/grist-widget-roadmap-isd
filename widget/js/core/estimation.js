@@ -8,14 +8,28 @@
 
 /** APH de la personne estimation (texte exact, sans espace : même règle que validAph du writer). */
 export const ESTIMATION_APH = '9999999';
+
+/**
+ * APH du modèle depuis une cellule Team.aph, toujours en texte. La colonne est en Text (texte tel quel, sans
+ * nettoyage) ou en Int (entier positif → ses chiffres, sans décimale ; 0, vide ou null → '') : saisir une valeur
+ * dans la colonne vide de la Feuille la convertit en colonne de données dont Grist devine le type (souvent Int).
+ * Tout autre contenu (nombre non entier ou négatif, liste, booléen, erreur) → '' : jamais affiché ni comparé.
+ */
+export function aphText(cell) {
+  if (typeof cell === 'string') return cell;
+  return Number.isSafeInteger(cell) && cell > 0 ? String(cell) : '';
+}
 /**
  * Borne de bon sens de la personne estimation : 50 ETP sur la période (sans dates : 2 000 h, comme pour tous),
  * pour qu'une faute de frappe (un zéro de trop) ne passe pas.
  */
 export const ESTIMATION_MAX_ETP = 50;
 
-/** L'APH est-il exactement celui de la personne estimation ? (comparaison stricte, aucun nettoyage) */
-export const isEstimationAph = (aph) => aph === ESTIMATION_APH;
+/**
+ * L'APH (texte du modèle ou cellule brute, Text ou Int) est-il exactement celui de la personne estimation ?
+ * Comparaison stricte après aphText : '9999999' et 9999999 comptent ; ' 9999999', '09999999' ou 9999999.5 non.
+ */
+export const isEstimationAph = (aph) => aphText(aph) === ESTIMATION_APH;
 
 /** Identifiants des lignes d'une table Team brute (colonnaire) qui portent ESTIMATION_APH. */
 export function estimationHoldersOfTable(team) {
@@ -32,7 +46,7 @@ export function estimationIdOfTable(team) {
 
 /**
  * Personne estimation du modèle (buildModel) : { holders, id } ; id null sans titulaire ou avec plusieurs.
- * @param {Iterable<{id:number, aph?:string}>} people
+ * @param {Iterable<{id:number, aph?:string|number}>} people
  */
 export function estimationOf(people) {
   const holders = [...people].filter((p) => isEstimationAph(p.aph)).map((p) => p.id);

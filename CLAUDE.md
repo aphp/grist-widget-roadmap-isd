@@ -19,7 +19,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
   fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun).
   Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`, `Team.aph`) jamais écrites. Team : `nom`,
-  `email`, `aph` (1 à 10 chiffres ou vide, `validAph`), `role`, `capaciteHebdo`, `actif`, `n_1` ; `Domaine`
+  `email`, `aph` (1 à 10 chiffres ou vide, `validAph` ; colonne Text ou Int, `ALSO_ACCEPTED_TYPES` : lue en texte par
+  `aphText`, 0 = vide, écrite selon son type relu, nombre pour Int sans zéro de tête ; Numeric refusée), `role`, `capaciteHebdo`, `actif`, `n_1` ; `Domaine`
   seulement à la création.
 - **Édition coupée par défaut** : seule l'adresse l'ouvre (`?edition=essai` = rien n'est envoyé ;
   `?edition=1&doc=<id>` = envoi seulement si `doc` est le document ouvert) et `flags.json` (`{ "edition": true }`,
@@ -29,8 +30,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   entrées non touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : la personne estimation
   (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer » pour estimer dans la roadmap), bornée à
   `ESTIMATION_MAX_ETP` = 50 ETP sur la période (2 000 h sans dates), dans la saisie et dans le writer ; badge
-  « Estimation » à côté d'elle. Exemption seulement si EXACTEMENT UNE ligne porte cet APH (comparaison stricte,
-  `core/estimation.js`) ; aucune ou plusieurs : personne n'est exempté. Le widget ne pose ni ne retire jamais cet APH
+  « Estimation » à côté d'elle. Exemption seulement si EXACTEMENT UNE ligne porte cet APH (comparaison stricte après
+  `aphText` : '9999999' ou le nombre 9999999, `core/estimation.js`) ; aucune ou plusieurs : personne n'est exempté. Le widget ne pose ni ne retire jamais cet APH
   (refus `aph-estimation` du writer, erreur du formulaire) : la personne estimation se désigne dans la Feuille.
 - Aucune donnée, clé, capture ni identifiant de document dans le dépôt (un test cherche les identifiants).
   `config.yaml` (clé API, ids des documents) reste hors du dépôt.
@@ -93,5 +94,5 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité,
   demandeur par chantier. Pas de création de rôle. `Team.capaciteHebdo` et `Team.aph` restent en lecture tant que
   ce sont des colonnes formules vides de la Feuille (`?ecritures=capacite-donnee` / `aph-donnee` simulent leur
-  conversion en dev).
+  conversion en dev ; `aph-entier` : Team.aph convertie en Int, comme Grist après une saisie de chiffres).
 - Production : page du widget dans la Feuille, servie depuis une adresse https, seulement après les tests.

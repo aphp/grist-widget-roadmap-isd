@@ -18,7 +18,7 @@
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
-import { estimationIdOfTable, isEstimationAph } from './estimation.js';
+import { aphText, estimationIdOfTable, isEstimationAph } from './estimation.js';
 import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
@@ -182,6 +182,17 @@ export const EXPECTED_TYPES = Object.freeze({
   'Disponibilites.commentaire': 'Text',
 });
 
+/**
+ * Types acceptés en plus du type attendu, pour une colonne que la Feuille peut avoir convertie. Team.aph : saisir
+ * une valeur dans sa colonne vide la convertit en colonne de données dont Grist devine le type, Text ou Int. Int
+ * est accepté (valeur du modèle toujours en texte, aphText ; écrite en nombre, encodeAph). Numeric, Choice et les
+ * autres types restent refusés (raison 'type', champ en lecture) : décimales possibles, aller-retour non exact.
+ */
+export const ALSO_ACCEPTED_TYPES = Object.freeze({ 'Team.aph': Object.freeze(['Int']) });
+
+/** Le type relu d'une colonne de la liste blanche est-il accepté ? */
+const acceptedType = (k, type) => type === EXPECTED_TYPES[k] || Boolean(ALSO_ACCEPTED_TYPES[k]?.includes(type));
+
 /** Colonnes dont les options (choix) pourraient être gérées : aucune avant le lot 2g (gestion des tags). */
 export const CHOICE_COLUMNS = Object.freeze([]);
 
@@ -261,21 +272,50 @@ const key = (table, col) => `${table}.${col}`;
  */
 export function checkColumns(columns) {
   const out = new Map();
-  for (const [k, expected] of Object.entries(EXPECTED_TYPES)) {
+  for (const k of Object.keys(EXPECTED_TYPES)) {
     const c = columns?.[k];
     if (!columns) out.set(k, 'meta');
     else if (!c) out.set(k, 'absente');
     // Colonne « vide » (formule sans formule) : l'écrire la convertirait en colonne de données (structure)
     else if (c.isFormula) out.set(k, c.empty ? 'vide' : 'formule');
-    else if (c.type !== expected) out.set(k, 'type');
+    else if (!acceptedType(k, c.type)) out.set(k, 'type');
   }
   return out;
 }
 
+/**
+ * Type d'écriture d'une colonne : son type relu s'il est accepté (ALSO_ACCEPTED_TYPES), sinon le type attendu
+ * (une colonne d'un autre type est de toute façon retirée de la liste blanche par checkColumns).
+ * @param {Record<string,{type:string}>|null} [columns] métadonnées lues
+ */
+export function columnTypeOf(columns, table, col) {
+  const k = key(table, col);
+  const type = columns?.[k]?.type;
+  return type && acceptedType(k, type) ? type : (EXPECTED_TYPES[k] ?? null);
+}
+
+/**
+ * Cellule Team.aph depuis la valeur du modèle (texte de 1 à 10 chiffres, ou vide), selon le type de la colonne.
+ * Text : la chaîne telle quelle (vide → ''). Int : le nombre (vide → null) ; un zéro de tête est refusé (Int le
+ * perdrait : la valeur relue ne serait plus celle saisie). Jamais l'APH d'estimation (refus 'aph-estimation').
+ */
+export function encodeAph(type, value) {
+  if (isEstimationAph(value)) throw new WriteRefused('aph-estimation');
+  if (type === 'Text') return encodeValue('Text', value);
+  if (type !== 'Int') throw new EncodeError(`type de colonne non pris en charge : ${type}`);
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') throw new EncodeError('APH en texte attendu');
+  if (!validAph(value)) throw new WriteRefused('aph', 'Team.aph');
+  if (value.startsWith('0')) throw new WriteRefused('aph-zero', 'Team.aph');
+  return Number(value);
+}
+
 /** Valeur encodée d'une colonne de la liste blanche (WriteRefused 'encodage' si impossible). */
-function encodeCol(table, col, value) {
+function encodeCol(table, col, value, columns = null) {
+  const type = columnTypeOf(columns, table, col);
   try {
-    return encodeValue(EXPECTED_TYPES[key(table, col)], value);
+    if (key(table, col) === 'Team.aph') return encodeAph(type, value);
+    return encodeValue(type, value);
   } catch (e) {
     if (e instanceof EncodeError) throw new WriteRefused('encodage', `${key(table, col)} : ${e.message}`);
     throw e;
@@ -294,7 +334,8 @@ function encodeCol(table, col, value) {
  *   before : valeurs d'avant (les entrées de charges conservées telles quelles ne sont pas recontrôlées) ;
  *   refExists : existence d'une ligne (teamId des charges dans Team) ; restoring : colonnes remises à leur
  *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle) ; current : ligne
- *   lue par le writer lui-même (cellule de tags illisible, contrôlée même pour « Annuler »).
+ *   lue par le writer lui-même (cellule de tags illisible, contrôlée même pour « Annuler ») ; columns : métadonnées
+ *   lues (type d'écriture d'une colonne au type accepté en plus, columnTypeOf : Team.aph en Int).
  * @returns {['UpdateRecord', string, number, Record<string,*>]}
  */
 export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) {
@@ -330,7 +371,7 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
       const problem = tagsWriteProblem(changes[col], ctx.before?.[col] ?? []);
       if (problem) throw new WriteRefused(problem === 'trop' ? 'tags-trop' : 'tags', problem);
     }
-    fields[col] = encodeCol(table, col, changes[col]);
+    fields[col] = encodeCol(table, col, changes[col], ctx.columns);
   }
   return ['UpdateRecord', table, id, fields];
 }
@@ -344,7 +385,7 @@ const isBlank = (v) =>
  * des colonnes obligatoires et de l'encodage. Fonction pure.
  * @returns {['AddRecord', string, null, Record<string,*>]}
  */
-export function buildAdd(table, fields, disabled = new Map()) {
+export function buildAdd(table, fields, disabled = new Map(), columns = null) {
   if (typeof table !== 'string' || table.startsWith('_grist')) throw new WriteRefused('table', String(table));
   const allowed = has(WRITABLE, table) ? WRITABLE[table].add : null;
   if (!allowed) throw new WriteRefused('table', table);
@@ -355,7 +396,7 @@ export function buildAdd(table, fields, disabled = new Map()) {
   for (const col of cols) {
     if (!allowed.includes(col)) throw new WriteRefused('colonne', key(table, col));
     if (disabled.has(key(table, col))) throw new WriteRefused('colonne-retiree', key(table, col));
-    out[col] = encodeCol(table, col, fields[col]);
+    out[col] = encodeCol(table, col, fields[col], columns);
   }
   return ['AddRecord', table, null, out];
 }
@@ -470,8 +511,12 @@ export function decodeRow(tableData, table, id) {
   const i = tableData?.id?.indexOf(id) ?? -1;
   if (i < 0) return null;
   const out = {};
+  // Team.aph : texte, que la colonne soit Text ou Int (aphText : 0 ou vide → '')
   for (const col of [...(WRITABLE[table]?.update ?? []), ...(READ_ALSO[table] ?? [])])
-    out[col] = decodeValue(EXPECTED_TYPES[key(table, col)], tableData[col]?.[i]);
+    out[col] =
+      key(table, col) === 'Team.aph'
+        ? aphText(tableData[col]?.[i])
+        : decodeValue(EXPECTED_TYPES[key(table, col)], tableData[col]?.[i]);
   // Cellule de tags illisible (texte, ['E', …], éléments non textuels) : son contenu, pour ne jamais l'écraser en
   // silence ; null si elle est lisible (toujours présente : un ancien signalement ne survit pas à une relecture)
   if ('tags' in out) {
@@ -776,6 +821,8 @@ export function createWriter({
 }) {
   if (!MODES.includes(mode)) throw new WriteRefused('mode', String(mode));
   const disabled = checkColumns(columns);
+  // Métadonnées des colonnes (type d'écriture de Team.aph, Text ou Int), remplacées à chaque relecture lisible
+  let meta = columns;
   const journal = [];
   const created = new Set(); // 'Table:id' créées dans la session (seules lignes supprimables, pour « Annuler »)
   const addRefused = new Set(); // tables où une règle d'accès refuse l'ajout
@@ -1000,9 +1047,12 @@ export function createWriter({
       days,
       isEstimation,
       replaceTags: opts.replaceTags,
+      columns: meta,
     });
     const also = opts.also ?? [];
-    const derived = also.map((r) => buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before }));
+    const derived = also.map((r) =>
+      buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before, columns: meta }),
+    );
     const items = [{ table, id, values: ch }, ...also.map((r) => ({ table: r.table, id: r.id, values: r.changes }))];
     if (new Set(items.map((x) => `${x.table}:${x.id}`)).size !== items.length)
       throw new WriteRefused('identifiant', 'ligne en double dans le lot');
@@ -1055,7 +1105,7 @@ export function createWriter({
   async function add(table, fields) {
     if (mode === 'off') throw new WriteRefused('off');
     if (blocked) throw new WriteRefused(blocked);
-    const action = buildAdd(table, fields, disabled);
+    const action = buildAdd(table, fields, disabled, meta);
     if (addRefused.has(table)) throw new WriteRefused('ajout-refuse', table);
     if (!deferred([{ table, id: null, values: fields }])) checkItems([{ table, id: null, values: fields }]);
     const entry = {
@@ -1242,6 +1292,8 @@ export function createWriter({
     can,
     canAdd,
     canAddField,
+    /** Type d'écriture de la colonne (columnTypeOf) : 'Int' pour un Team.aph converti en entier, sinon le type attendu. */
+    columnType: (table, col) => columnTypeOf(meta, table, col),
     update,
     add,
     undoLast,
@@ -1262,6 +1314,7 @@ export function createWriter({
      */
     recheckColumns: (cols) => {
       if (!cols) return;
+      meta = cols;
       for (const [k, r] of checkColumns(cols)) if (!disabled.has(k)) disabled.set(k, r);
     },
   };

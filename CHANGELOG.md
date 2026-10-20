@@ -16,8 +16,15 @@
   The widget never sets that APH nor changes it away: the estimation person is chosen in the Feuille.
 - Writer: column metadata is re-checked on every reload; a column that turned back into a formula is no longer
   written (columns are never re-enabled during a session).
+- Team: `Team.aph` is accepted as a **Text or Int** data column (typing a value in the empty formula column makes Grist
+  convert it, often to Int, which left the field read-only and hid the value). Read as a digit string (`aphText`:
+  Int without decimals, 0 or null = empty), so the Team rows, the person card and the estimation rule (`9999999`
+  as text or number) work for both. Written by the column's actual type: a number for Int (null when empty, a
+  leading zero refused since Int would drop it), the string for Text. Numeric and other types stay refused
+  (read-only). The writer still never sets or removes `9999999`, as text or number.
 - Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs and an
   "Estimation DE" person).
+  `?ecritures=aph-entier` makes it an Int data column (numbers, 0 = empty).
 - Tags: assign and remove existing tags on tasks and chantiers in their forms (searchable, keyboard-accessible chip
   picker). A new name can be assigned without being declared in the sheet (column options are never changed) and is
   marked "non déclaré". Tags shown in the detail panel, an optional "Tags" column in the Table and a "Tag" filter
