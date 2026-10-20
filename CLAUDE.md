@@ -17,7 +17,7 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   (ligne relue identique, aucune référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
-  fusion par champ, pour `charges` par personne et, pour `tags`, en ensemble (ajouts et retraits de chacun). Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`)
+  fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun). Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`)
   jamais écrites.
 - **Édition coupée par défaut** : seule l'adresse l'ouvre (`?edition=essai` = rien n'est envoyé ;
   `?edition=1&doc=<id>` = envoi seulement si `doc` est le document ouvert) et `flags.json` (`{ "edition": true }`,
@@ -60,7 +60,11 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
   (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
   seulement, nouveaux tags sans espaces de bord ni caractère de contrôle, 80 caractères au plus, aucun doublon ajouté,
-  30 tags au plus ; valeurs d'avant recopiées telles quelles.
+  30 tags au plus (fusion comprise) ; valeurs d'avant recopiées telles quelles (chaîne vide comprise). Fusion en
+  multi-ensemble (retirer un exemplaire d'un doublon tient), refaite sur la ligne relue à l'envoi, y compris après la
+  fenêtre de conflit (`tagsSeen`). Cellule illisible (texte, `['E', …]`, non-texte) : montrée, champ bloqué, remplacée
+  seulement après confirmation de ce contenu (`replaceTags`, contrôlé par le writer). « Enregistrer sans vérifier »
+  prévient que les tags remplacent toute la liste.
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
 - Lots suivants : statut depuis la carte, glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
