@@ -1290,6 +1290,49 @@ async function press(key, shift = false) {
 }
 
 test(
+  'fiche en édition : Tab suit l’ordre natif (champ désactivé sauté, un arrêt par groupe radio) et boucle',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    // Colonne non modifiable simulée : le champ titre est désactivé, comme le rend attrs()
+    await w(`D.getElementById('tf-titre').disabled = true; D.getElementById('btn-detail-close').focus(); return true;`);
+    const where = `const a = D.activeElement; return { id: a.id, name: a.type === 'radio' ? a.name : '', inside: Boolean(a.closest('#app-detail')), disabled: Boolean(a.disabled) };`;
+    const seen = [];
+    for (let i = 0; i < 200; i++) {
+      await press('Tab');
+      const at = await w(where);
+      seen.push(at);
+      if (at.id === 'btn-detail-close') break;
+    }
+    const trace = seen.map((x) => x.id || x.name).join(',');
+    assert.equal(seen.at(-1).id, 'btn-detail-close', `pas de retour à « Fermer » : ${trace}`);
+    assert.ok(seen.length > 3, trace);
+    assert.ok(
+      seen.every((x) => x.inside && !x.disabled),
+      trace,
+    );
+    assert.ok(!seen.some((x) => x.id === 'tf-titre'), trace);
+    // Jamais bloqué sur place (un champ date garde le focus le temps de ses segments jour, mois, année), et un seul
+    // arrêt par groupe de boutons radio (priorité, unité des charges)
+    let run = 1;
+    for (let i = 1; i < seen.length; i++) {
+      run = seen[i].id === seen[i - 1].id ? run + 1 : 1;
+      assert.ok(run <= 4, trace);
+    }
+    const radios = seen.filter((x) => x.name).map((x) => x.name);
+    assert.ok(radios.includes('tf-priorite'), trace);
+    assert.equal(new Set(radios).size, radios.length, trace);
+    // Maj+Tab depuis « Fermer » : dernier arrêt de la fiche, sans sortir
+    await press('Tab', true);
+    const last = await w(where);
+    assert.ok(last.inside && last.id !== 'btn-detail-close', JSON.stringify(last));
+    await press('Tab');
+    assert.equal((await w(where)).id, 'btn-detail-close');
+  },
+);
+
+test(
   'fiche ouverte : le bouton « Annuler » du message est atteignable au Tab, la fiche reste modale',
   { skip: SKIP },
   async () => {
