@@ -266,3 +266,20 @@ test('avertissement de dates : seulement les charges laissées telles quelles', 
     false,
   );
 });
+
+test('fiche : date de planification au-delà de la borne = erreur, sauf valeur déjà là', () => {
+  const MAX = dayOfIso('2027-12-31');
+  const draftWith = (x) => ({ ...draftFrom(base(2010)), ...x });
+  const v = (x, ctx = {}) => validateTask(draftWith(x), { model, taskId: 2010, maxDay: MAX, ...ctx });
+  const e = v({ dateDebut: MAX - 5, dateEcheance: MAX + 1 }).errors.dateEcheance;
+  assert.equal(e.key, 'form.error.dateMax');
+  assert.equal(e.vars.date, '31 déc. 2027');
+  assert.equal(v({ dateDebut: MAX + 1, dateEcheance: MAX + 2 }).errors.dateDebut.key, 'form.error.dateMax');
+  assert.equal(v({ dateDebut: MAX - 5, dateEcheance: MAX }).errors.dateEcheance, undefined);
+  // L'ordre garde la priorité
+  assert.equal(v({ dateDebut: MAX + 5, dateEcheance: MAX + 1 }).errors.dateEcheance.key, 'form.error.endBeforeStart');
+  // Valeur d'une ligne ancienne laissée telle quelle : pas d'erreur
+  const old = { dateDebut: MAX + 3, dateEcheance: MAX + 9 };
+  assert.deepEqual(v(old, { base: old }).errors, {});
+  assert.equal(validateTask(draftWith(old), { model, taskId: 2010 }).errors.dateEcheance, undefined);
+});

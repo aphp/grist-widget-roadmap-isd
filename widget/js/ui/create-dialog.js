@@ -67,7 +67,7 @@ const OK = Object.freeze({ ok: true, reason: 'ok' });
  * @param {{getModel():object, getWriter():object|null, getPrefs():object, storage:Storage, toast:{show:Function},
  *   onWritten(entry:object):void, onUndo():void, openForm(ref:object):void, onSessionReadOnly(reason:string):void,
  *   afterMove(ref:object):void, afterCreate(entry:object):void, fetchRow(table:string, id:number):Promise<object|null>,
- *   onUnknown():void, timeoutMs():number, onAddRefused?():void, readTable?(table:string):Promise<object>}} deps
+ *   onUnknown():void, timeoutMs():number, maxDay?():number, onAddRefused?():void, readTable?(table:string):Promise<object>}} deps
  */
 export function createCreateDialog(deps) {
   let st = null;
@@ -95,9 +95,13 @@ export function createCreateDialog(deps) {
         { none: 'form.error.chantierRequired', same: 'move.error.same' }[plan.error] ?? `move.error.${plan.error}`;
       st.validation = { errors: plan.error ? { cible: { key } } : {}, warnings: [] };
     } else if (st.kind === 'chantier')
-      st.validation = validateNewChantier(st.draft, { model: m, statuses: m.statuses.chantiers });
+      st.validation = validateNewChantier(st.draft, {
+        model: m,
+        statuses: m.statuses.chantiers,
+        maxDay: deps.maxDay?.(),
+      });
     else {
-      st.validation = validateNewTask(st.draft, { model: m, statuses: m.statuses.tasks });
+      st.validation = validateNewTask(st.draft, { model: m, statuses: m.statuses.tasks, maxDay: deps.maxDay?.() });
       // Charges au-dessus de la borne (dates changées après la saisie) : lignes signalées et focalisables
       st.overCap = new Set(overCapTeamIds(st.draft, m));
     }

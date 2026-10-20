@@ -11,8 +11,10 @@ import {
   classifyError,
   createWriter,
   decodeRow,
+  integrityProblem,
   planUndo,
 } from '../widget/js/core/grist-writer.js';
+import { dayOfIso } from '../widget/js/core/dates.js';
 import { docIdFromBaseUrl, flagsAllowEdition, readEditMode, resolveEditState } from '../widget/js/core/edit-switch.js';
 
 /** Métadonnées conformes à la Feuille pour toutes les colonnes de la liste blanche. */
@@ -370,4 +372,40 @@ test('mode essai : ni arrêt d’urgence relu, ni envoi ; périmètre contrôlé
   );
   const ok = createWriter({ docApi: null, mode: 'dry-run', columns: META, preflight: async () => assert.fail() });
   assert.equal((await ok.update('Tasks', 1, { titre: 'x' })).sent, false);
+});
+
+test('dates bornées : refusées au-delà de maxDay, seulement si la colonne est écrite, ordre prioritaire', async () => {
+  const max = dayOfIso('2027-12-31');
+  const rows = {
+    Projects: { 1: { id: 1 } },
+    Tasks: { 1: { dateDebut: max - 10, dateEcheance: max + 20, titre: 'x' } },
+  };
+  const look = { row: (t, id) => rows[t]?.[id] ?? null, maxDay: () => max };
+  const p = (items) => integrityProblem(items, look);
+  assert.equal(p([{ table: 'Tasks', id: 1, values: { dateEcheance: max + 1 } }]), 'date-max');
+  assert.equal(p([{ table: 'Tasks', id: 1, values: { dateEcheance: max } }]), null);
+  assert.equal(p([{ table: 'Tasks', id: 1, values: { titre: 'y' } }]), null);
+  assert.equal(p([{ table: 'Tasks', id: 1, values: { dateEcheance: max + 1, dateDebut: max + 2 } }]), 'dates');
+  assert.equal(p([{ table: 'Tasks', id: 1, values: { dateEcheance: max + 1 }, restoring: ['dateEcheance'] }]), null);
+  const chantier = { Nom_du_chantier: 'c', Projets: [1], Fin: max + 1 };
+  assert.equal(p([{ table: 'Chantiers', id: null, values: chantier }]), 'date-max');
+  assert.equal(
+    integrityProblem([{ table: 'Tasks', id: 1, values: { dateEcheance: max + 1 } }], { row: look.row }),
+    null,
+  );
+});
+
+test('dates bornées : le writer refuse, et « Annuler » peut remettre une ancienne date', async () => {
+  const max = dayOfIso('2027-12-31');
+  const doc = fakeDoc();
+  const w = createWriter({ docApi: doc, mode: 'on', columns: META, maxDay: () => max });
+  await assert.rejects(
+    () => w.update('Tasks', 3, { dateEcheance: max + 1 }, { before: { dateEcheance: null } }),
+    (e) => e instanceof WriteRefused && e.reason === 'date-max',
+  );
+  assert.equal(doc.sent.length, 0);
+  await w.update('Tasks', 3, { dateEcheance: max - 5 }, { before: { dateEcheance: max + 30 } });
+  const r = await w.undoLast(async () => ({ dateEcheance: max - 5 }));
+  assert.equal(r.reason, undefined);
+  assert.ok(r.undoEntry);
 });

@@ -18,6 +18,7 @@
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
+import { overMaxDay } from './dates.js';
 import { aphText, estimationIdsOfTable, isEstimationAph } from './estimation.js';
 import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
@@ -587,17 +588,29 @@ export function planUndo(entry, fresh) {
   return { changes, skipped };
 }
 
+/** Colonnes de dates de planification écrites (hors « Annuler » qui remet la valeur d'avant) au-delà de la borne. */
+function overMaxColumns(it, cols, after, maxDay) {
+  return cols.some((c) => c in it.values && !it.restoring?.includes(c) && overMaxDay(after[c], maxDay));
+}
+
+/** Colonnes de dates bornées de chaque table. */
+const MAX_COLUMNS = Object.freeze({ Tasks: ['dateDebut', 'dateEcheance'], Chantiers: ['Debut', 'Fin'] });
+
 /**
  * Contrôle strict d'un lot (création ou mise à jour d'une ou plusieurs lignes), sur les valeurs du modèle.
  * Seules les règles qui portent sur des colonnes du lot sont contrôlées (une ligne déjà incohérente dans la Feuille
  * reste modifiable sur ses autres colonnes). Fonction pure.
- * @param {{table:string, id:number|null, values:object}[]} items id null : création
+ * @param {{table:string, id:number|null, values:object, restoring?:string[]}[]} items id null : création ;
+ *   restoring : colonnes remises à leur valeur d'avant (« Annuler »), hors borne des dates
  * @param {{row(table:string, id:number):object|null, childIds?(taskId:number):number[],
- *          chantierTasks?(chantierId:number):number[]}} lookup valeurs actuelles (decodeRow des données lues),
- *   sous-tâches directes d'une tâche, tâches portant le chantier
+ *          chantierTasks?(chantierId:number):number[], maxDay?():number|null}} lookup valeurs actuelles
+ *   (decodeRow des données lues), sous-tâches directes d'une tâche, tâches portant le chantier, dernier jour de
+ *   planification
  * @returns {string|null} raison du refus
  */
 export function integrityProblem(items, lookup) {
+  const maxDay = lookup.maxDay?.() ?? null;
+  const overMax = (it, cols, after) => overMaxColumns(it, cols, after, maxDay);
   const overlay = new Map();
   const touched = new Map();
   const rk = (t, id) => `${t}:${id}`;
@@ -655,6 +668,7 @@ export function integrityProblem(items, lookup) {
         }
       if (touches('dateDebut', 'dateEcheance') && after.dateDebut && after.dateEcheance)
         if (after.dateEcheance < after.dateDebut) return 'dates';
+      if (overMax(it, ['dateDebut', 'dateEcheance'], after)) return 'date-max';
       if (touches('assignees') && (after.assignees ?? []).some((p) => !exists('Team', p))) return 'reference';
       if (touches('dependDe') && (after.dependDe ?? []).some((t) => !current('Tasks', t))) return 'reference';
       if (!add && ch.has('dependDe')) {
@@ -683,6 +697,7 @@ export function integrityProblem(items, lookup) {
           }
       }
       if (touches('Debut', 'Fin') && after.Debut && after.Fin && after.Fin < after.Debut) return 'dates';
+      if (overMax(it, ['Debut', 'Fin'], after)) return 'date-max';
       if (touches('Contributeurs') && (after.Contributeurs ?? []).some((p) => !exists('Team', p))) return 'reference';
     } else if (it.table === 'Team') {
       const problem = personProblem(it, after, touches, add, lookup, nameBad);
@@ -837,7 +852,9 @@ const SCOPE_COLUMNS = Object.freeze({
  *          readTable?:(table:string) => Promise<object>,
  *          tempId?:(table:string) => number,
  *          periodOf?:(table:string, id:number) => {start:number|null, end:number|null}|null,
- *          preflight?:() => Promise<boolean>}} opts
+ *          preflight?:() => Promise<boolean>, maxDay?:() => number|null}} opts
+ *   maxDay : dernier jour de planification (Tasks.dateDebut / dateEcheance, Chantiers.Debut / Fin écrites : refus
+ *   'date-max' au-delà ; dateCloture et Disponibilites hors borne) ;
  *   lookup.choices(cle) : choix de la colonne 'Table.colonne' lus dans la Feuille (rôle et Domaine d'une personne) ;
  *   canWriteRow : règle de périmètre (Q15 B, Q14 A) d'une ligne existante, contrôlée ici aussi, pas seulement dans
  *   l'interface ; canWriteValues : la même règle sur les valeurs d'une ligne créée ou rattachée ailleurs ;
@@ -860,6 +877,7 @@ export function createWriter({
   periodOf = null,
   preflight = null,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  maxDay: maxDayOf = null,
 }) {
   if (!MODES.includes(mode)) throw new WriteRefused('mode', String(mode));
   const disabled = checkColumns(columns);
@@ -944,8 +962,16 @@ export function createWriter({
     );
     if (needsLookup && !look) throw new WriteRefused('verification');
     if (look) {
-      const problem = integrityProblem(items, look);
+      const problem = integrityProblem(
+        items,
+        maxDayOf && !look.maxDay ? Object.create(look, { maxDay: { value: maxDayOf } }) : look,
+      );
       if (problem) throw new WriteRefused(problem);
+    } else if (maxDayOf) {
+      // Sans lignes lues, seule la borne des dates se contrôle (elle ne dépend que des valeurs écrites)
+      const max = maxDayOf() ?? null;
+      if (items.some((it) => overMaxColumns(it, MAX_COLUMNS[it.table] ?? [], it.values, max)))
+        throw new WriteRefused('date-max');
     }
     items.forEach((it, i) => {
       // Ligne dérivée ajoutée par d'autres après le chargement : inconnue du modèle, elle n'est admise que si la
@@ -1092,7 +1118,10 @@ export function createWriter({
     const derived = also.map((r) =>
       buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before, columns: meta }),
     );
-    const items = [{ table, id, values: ch }, ...also.map((r) => ({ table: r.table, id: r.id, values: r.changes }))];
+    const items = [
+      { table, id, values: ch, restoring },
+      ...also.map((r) => ({ table: r.table, id: r.id, values: r.changes })),
+    ];
     if (new Set(items.map((x) => `${x.table}:${x.id}`)).size !== items.length)
       throw new WriteRefused('identifiant', 'ligne en double dans le lot');
     // « Annuler » compris : contrôle strict et périmètre (une annulation ne doit pas laisser de données incohérentes)

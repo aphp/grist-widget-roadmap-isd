@@ -6,6 +6,7 @@
  * listes d'identifiants (RefList), textes et nombre (progression).
  */
 import { chargeRows, mergeCharges, periodDays, readChargesCell, sameCharges } from './charges-edit.js';
+import { dateMaxError, overMaxDay } from './dates.js';
 import { chantierInScope } from './chantier-form.js';
 import { safeLink } from './detail-data.js';
 import { personInScope } from './person-form.js';
@@ -264,14 +265,15 @@ export function editAvailability(model, ref, edit) {
  * Règles du formulaire. Les erreurs bloquent l'enregistrement ; les avertissements non.
  * @param {object} draft brouillon
  * @param {{model:object, taskId:number, statuses?:string[], priorities?:string[],
- *   base?:{dateDebut:number|null, dateEcheance:number|null}, keptOver?:Set<number>}} ctx base : période de la
+ *   base?:{dateDebut:number|null, dateEcheance:number|null}, keptOver?:Set<number>, maxDay?:number}} ctx maxDay :
+ *   dernier jour de planification (une date plus tardive est refusée, sauf valeur d'origine) ; base : période de la
  *   tâche à l'ouverture ; keptOver : personnes dont les heures n'ont pas été recalculées après un changement de
  *   dates (au-dessus de la borne), signalées si les dates diffèrent de la base
  * @returns {{errors:Record<string,{key:string, vars?:object}>, warnings:{field:string, key:string, vars?:object}[]}}
  */
 export function validateTask(
   draft,
-  { model, taskId, statuses = [], priorities = [], base = null, keptOver = new Set() },
+  { model, taskId, statuses = [], priorities = [], base = null, keptOver = new Set(), maxDay },
 ) {
   const errors = {};
   const warnings = [];
@@ -280,6 +282,13 @@ export function validateTask(
   else if (title.length > TITLE_MAX) errors.titre = { key: 'form.error.titleLong', vars: { max: TITLE_MAX } };
   if (draft.dateDebut !== null && draft.dateEcheance !== null && draft.dateEcheance < draft.dateDebut)
     errors.dateEcheance = { key: 'form.error.endBeforeStart' };
+  else {
+    const orig = base ?? model.tasks.get(taskId);
+    if (overMaxDay(draft.dateDebut, maxDay, orig?.dateDebut ?? orig?.start ?? null))
+      errors.dateDebut = dateMaxError(maxDay);
+    if (overMaxDay(draft.dateEcheance, maxDay, orig?.dateEcheance ?? orig?.end ?? null))
+      errors.dateEcheance = dateMaxError(maxDay);
+  }
   const link = String(draft.Lien_utile ?? '').trim();
   if (link && !safeLink(link)) errors.Lien_utile = { key: 'form.error.link' };
   if (

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { dayOfIso } from '../widget/js/core/dates.js';
 import { feuille } from './fixtures/feuille.js';
 import { buildModel } from '../widget/js/core/model.js';
 import {
@@ -262,4 +263,17 @@ test('changement de chantier : la tâche et toutes ses sous-tâches ; refus d’
   assert.equal(movePlan(model, 1000, 400, 40).error, 'scope');
   assert.equal(movePlan(model, 1000, 100, 10).error, 'same');
   assert.equal(movePlan(model, 2010, 201, 30).count, 0);
+});
+
+test('créations : dates au-delà de la borne = erreur sur le champ', () => {
+  const MAX = dayOfIso('2027-12-31');
+  const t = newTaskDraft(model, { chantierId: 100, me: 1 });
+  const vt = (d) => validateNewTask({ ...t, titre: 'T', ...d }, { model, statuses: model.statuses.tasks, maxDay: MAX });
+  assert.equal(vt({ dateDebut: MAX - 1, dateEcheance: MAX + 1 }).errors.dateEcheance.key, 'form.error.dateMax');
+  assert.equal(vt({ dateDebut: MAX - 1, dateEcheance: MAX }).errors.dateEcheance, undefined);
+  const c = { ...newChantierDraft(model, {}), Nom_du_chantier: 'C', Projets: [20] };
+  const vc = (d) => validateNewChantier({ ...c, ...d }, { model, statuses: [], maxDay: MAX });
+  assert.equal(vc({ Debut: MAX + 1 }).errors.Debut.key, 'form.error.dateMax');
+  assert.equal(vc({ Debut: MAX - 3, Fin: MAX + 2 }).errors.Fin.vars.date, '31 déc. 2027');
+  assert.equal(vc({ Debut: MAX - 3, Fin: MAX }).errors.Fin, undefined);
 });

@@ -29,6 +29,24 @@ export function dayOfIso(s) {
   return Math.floor(Date.parse(`${s}T00:00:00Z`) / DAY_MS);
 }
 
+/** Dernier jour de planification permis : le 31 décembre de l'année (UTC) de `today` + 1. */
+export function maxPlanDay(today) {
+  return dayOfIso(`${new Date(today * DAY_MS).getUTCFullYear() + 1}-12-31`);
+}
+
+/**
+ * Une date de planification dépasse-t-elle la borne ? Une valeur déjà présente (`unchanged`) n'est pas une saisie.
+ * @param {number|null} value
+ * @param {number|null|undefined} maxDay borne (absente : aucune)
+ * @param {number|null} [unchanged] valeur d'origine de la colonne
+ */
+export function overMaxDay(value, maxDay, unchanged = null) {
+  return typeof maxDay === 'number' && value !== null && value > maxDay && value !== unchanged;
+}
+
+/** Erreur de formulaire d'une date au-delà de la borne (clé de labels.js et variables). */
+export const dateMaxError = (maxDay) => ({ key: 'form.error.dateMax', vars: { date: formatDateFr(maxDay) } });
+
 export function monthKey(d) {
   return isoOfDay(d).slice(0, 7);
 }

@@ -66,7 +66,7 @@ const SPECS = Object.freeze({
     draftFrom,
     rebase: rebaseDraft,
     focus: 'tf-titre',
-    validate: (st, model) =>
+    validate: (st, model, maxDay) =>
       validateTask(st.draft, {
         model,
         taskId: st.ref.id,
@@ -74,6 +74,7 @@ const SPECS = Object.freeze({
         priorities: model.choices?.['Tasks.priorite'] ?? [],
         base: st.base,
         keptOver: st.chargesKeptOver ?? new Set(),
+        maxDay,
       }),
     body: (st, model) => taskFormBody(st, model),
   },
@@ -83,8 +84,8 @@ const SPECS = Object.freeze({
     draftFrom: chantierDraftFrom,
     rebase: rebaseChantier,
     focus: 'tf-Nom_du_chantier',
-    validate: (st, model) =>
-      validateChantier(st.draft, { model, chantierId: st.ref.id, statuses: model.statuses.chantiers }),
+    validate: (st, model, maxDay) =>
+      validateChantier(st.draft, { model, chantierId: st.ref.id, statuses: model.statuses.chantiers, maxDay }),
     body: (st, model) => chantierFormBody(st, model),
   },
   // Lot 2d : fiche personne (équipe ISD) ; l'actif se change par « Désactiver » / « Réactiver »
@@ -110,6 +111,7 @@ const MORE_KEY = 'roadmap-isd.formMore';
 /**
  * @param {{root:HTMLElement, chrome:object, getModel():object, getBase(table:string, id:number):object|null,
  *   getWriter():object|null, fetchRow(table:string, id:number):Promise<object|null>, today():number,
+ *   maxDay?():number,
  *   storage:Storage, toast:{show:Function}, kindOf(ref):*, titleOf(ref):string, currentRef():object|null,
  *   showRead(ref):void, onWritten(entry:object):void, onUndo():void, onSessionReadOnly(reason:string):void,
  *   onCreate?(data:object):void, onMove?(ref:object):void}} deps
@@ -132,7 +134,7 @@ export function createTaskEditor(deps) {
       : [];
 
   function validate() {
-    const v = spec(st).validate(st, model());
+    const v = spec(st).validate(st, model(), deps.maxDay?.());
     for (const f of st.badDates) v.errors[f] = { key: 'form.error.date' };
     if (st.badNumber) v.errors.progression = { key: 'form.error.progression' };
     if (st.badCapacity) v.errors.capaciteHebdo = { key: 'person.error.capacity', vars: { max: CAPACITY_MAX } };

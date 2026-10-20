@@ -10,6 +10,7 @@ import {
   taskLinksFromModel,
   validateChantier,
 } from './chantier-form.js';
+import { dateMaxError, overMaxDay } from './dates.js';
 import { chargeRows, isEstimationPerson, maxHours, periodDays, readChargesCell } from './charges-edit.js';
 import { TITLE_MAX, chantierOf } from './task-form.js';
 
@@ -152,7 +153,7 @@ export function setNewMilestone(draft, on) {
  * Règles de la fenêtre « Nouvelle tâche » (ou « Sous-tâche »). Erreurs bloquantes, avertissements non bloquants.
  * @returns {{errors:Record<string,{key:string, vars?:object}>, warnings:{field:string, key:string, vars?:object}[]}}
  */
-export function validateNewTask(draft, { model, statuses = [] }) {
+export function validateNewTask(draft, { model, statuses = [], maxDay }) {
   const errors = {};
   const warnings = [];
   const title = String(draft.titre ?? '').trim();
@@ -174,6 +175,10 @@ export function validateNewTask(draft, { model, statuses = [] }) {
     errors.parentTask = { key: 'form.error.parentChantier' };
   if (draft.dateDebut !== null && draft.dateEcheance !== null && draft.dateEcheance < draft.dateDebut)
     errors.dateEcheance = { key: 'form.error.endBeforeStart' };
+  else {
+    if (overMaxDay(draft.dateDebut, maxDay)) errors.dateDebut = dateMaxError(maxDay);
+    if (overMaxDay(draft.dateEcheance, maxDay)) errors.dateEcheance = dateMaxError(maxDay);
+  }
   if (draft.Responsable !== null && !model.people.has(draft.Responsable))
     errors.Responsable = { key: 'form.error.missingRef' };
   if (draft.assignees.some((a) => !model.people.has(a))) errors.assignees = { key: 'form.error.missingRef' };
@@ -300,8 +305,8 @@ export function newChantierDraft(model, ctx = {}) {
 }
 
 /** Règles de la fenêtre « Nouveau chantier » (celles de la fiche chantier, sans chantier existant). */
-export function validateNewChantier(draft, { model, statuses = [] }) {
-  return validateChantier(draft, { model, chantierId: null, statuses });
+export function validateNewChantier(draft, { model, statuses = [], maxDay }) {
+  return validateChantier(draft, { model, chantierId: null, statuses, maxDay });
 }
 
 /** Valeurs du chantier à créer (writer.add('Chantiers', …)) : seules les valeurs renseignées sont envoyées. */

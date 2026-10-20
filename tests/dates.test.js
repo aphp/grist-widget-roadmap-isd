@@ -9,6 +9,7 @@ import {
   monthsFrom,
   weekday,
   formatDateFr,
+  maxPlanDay,
 } from '../widget/js/core/dates.js';
 
 const utc = (y, m, d, h = 0) => Date.UTC(y, m - 1, d, h) / 1000;
@@ -41,4 +42,10 @@ test('weekday et format français', () => {
   assert.equal(weekday(dayOfIso('2026-10-19')), 1); // lundi
   assert.equal(formatDateFr(dayOfIso('2026-10-05')), '5 oct. 2026');
   assert.equal(formatDateFr(null), '—');
+});
+
+test('maxPlanDay : 31 décembre de l’année suivante', () => {
+  assert.equal(isoOfDay(maxPlanDay(dayOfIso('2026-10-20'))), '2027-12-31');
+  assert.equal(isoOfDay(maxPlanDay(dayOfIso('2026-12-31'))), '2027-12-31');
+  assert.equal(isoOfDay(maxPlanDay(dayOfIso('2027-01-01'))), '2028-12-31');
 });

@@ -6,6 +6,7 @@
  * Le brouillon contient les valeurs du modèle des colonnes modifiables : jours (Debut, Fin), identifiants
  * (Responsable), listes d'identifiants (Projets, Contributeurs) et textes.
  */
+import { dateMaxError, overMaxDay } from './dates.js';
 import { mergeTags } from './tags-edit.js';
 import { sameValue } from './write-encode.js';
 
@@ -172,10 +173,11 @@ export function reattachPlan(model, chantierId, projets, target) {
 /**
  * Règles du formulaire chantier (fiche et création). Les erreurs bloquent l'enregistrement ; les avertissements non.
  * @param {object} draft brouillon
- * @param {{model:object, chantierId?:number|null, statuses?:string[]}} ctx chantierId null : création
+ * @param {{model:object, chantierId?:number|null, statuses?:string[], maxDay?:number}} ctx chantierId null : création ;
+ *   maxDay : dernier jour de planification (date plus tardive refusée, sauf valeur d'origine)
  * @returns {{errors:Record<string,{key:string, vars?:object}>, warnings:{field:string, key:string, vars?:object}[]}}
  */
-export function validateChantier(draft, { model, chantierId = null, statuses = [] }) {
+export function validateChantier(draft, { model, chantierId = null, statuses = [], maxDay }) {
   const errors = {};
   const warnings = [];
   const name = String(draft.Nom_du_chantier ?? '').trim();
@@ -188,6 +190,11 @@ export function validateChantier(draft, { model, chantierId = null, statuses = [
   else if (!projets.some((p) => model.projects.get(p).inScope)) errors.Projets = { key: 'form.error.projectScope' };
   if (draft.Debut !== null && draft.Fin !== null && draft.Fin < draft.Debut)
     errors.Fin = { key: 'form.error.finBeforeDebut' };
+  else {
+    const orig = model.chantiers.get(chantierId);
+    if (overMaxDay(draft.Debut, maxDay, orig?.start ?? null)) errors.Debut = dateMaxError(maxDay);
+    if (overMaxDay(draft.Fin, maxDay, orig?.end ?? null)) errors.Fin = dateMaxError(maxDay);
+  }
   if (draft.Responsable !== null && !model.people.has(draft.Responsable))
     errors.Responsable = { key: 'form.error.missingRef' };
   if ((draft.Contributeurs ?? []).some((p) => !model.people.has(p)))

@@ -20,7 +20,7 @@ import { buildModel } from './core/model.js';
 import { captureScrolls, dataFingerprint, needsRender, restoreScrolls } from './core/reload-state.js';
 import { estimationIdsOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
-import { dayInZone, monthKey, monthsFrom } from './core/dates.js';
+import { dayInZone, maxPlanDay, monthKey, monthsFrom } from './core/dates.js';
 import { openingView, sanitizeHomeView } from './core/home-view.js';
 import { label } from './labels.js';
 import { createChrome } from './ui/chrome.js';
@@ -109,6 +109,9 @@ function initialPrefs() {
 function todayDay() {
   return dayInZone(new Date());
 }
+
+/** Dernier jour de planification : le 31 décembre de l'année prochaine (jour courant à Paris). */
+const planMaxDay = () => maxPlanDay(todayDay());
 
 const state = { model: null, raw: null, problems: [], prefs: initialPrefs(), loaded: false };
 
@@ -603,6 +606,7 @@ const editor = createTaskEditor({
   fetchRow: (table, id) => gateway.fetchRow(table, id),
   readTable: (table) => gateway.fetchTableRaw(table),
   today: () => parisToday(),
+  maxDay: planMaxDay,
   storage,
   toast,
   kindOf: (ref) => detailContent(state.model, ref, todayDay()).kind,
@@ -631,6 +635,7 @@ function openForm(ref) {
 const createDialog = createCreateDialog({
   getModel: () => state.model,
   getWriter: () => writer,
+  maxDay: planMaxDay,
   storage,
   toast,
   onWritten,
@@ -837,6 +842,7 @@ async function setupEdit(columns) {
     lookup,
     tempId,
     periodOf,
+    maxDay: planMaxDay,
     readTable: (table) => gateway.fetchTableRaw(table),
     preflight: flagsCheck,
     timeoutMs,
