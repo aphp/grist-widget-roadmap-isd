@@ -57,7 +57,7 @@ function alertHtml(st) {
       : f.kind === 'session'
         ? label(`form.fail.session.${f.message === 'viewer' ? 'viewer' : 'flags'}`)
         : label(
-            `create.fail.${['acl', 'unknown', 'changed', 'missing', 'reread'].includes(f.kind) ? f.kind : 'other'}`,
+            `create.fail.${['acl', 'unknown', 'changed', 'missing', 'reread', 'people'].includes(f.kind) ? f.kind : 'other'}`,
           );
   return h`<div class="fr-alert fr-alert--error fr-alert--sm tf-alert" role="alert" id="cf-alert" tabindex="-1">
     <p>${text}</p>

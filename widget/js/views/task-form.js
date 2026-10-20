@@ -304,7 +304,7 @@ function personLineHtml(st, model, l, ctx) {
       ctx.readable
         ? h`<span class="tf-charge__value">
       <label class="fr-sr-only" for="${px}-ch-${id}">${label('form.people.inputLabel', { nom: name, unite: unit })}</label>
-      <input type="text" inputmode="decimal" id="${px}-ch-${id}" class="fr-input tf-num tf-charge__input" value="${typed ?? value}" placeholder="—" data-charge-input="${id}" autocomplete="off" aria-describedby="${px}-ch-${id}-msg" ${raw(blocked ? 'disabled' : '')} ${raw(err ? 'aria-invalid="true"' : '')}>
+      <input type="text" inputmode="decimal" id="${px}-ch-${id}" class="fr-input tf-num tf-charge__input" value="${typed ?? value}" placeholder="—" data-charge-input="${id}" autocomplete="off" aria-describedby="${px}-ch-${id}-msg ${px}-charges-msgs" ${raw(blocked ? 'disabled' : '')} ${raw(err || st.overCap?.has(id) ? 'aria-invalid="true"' : '')}>
       <span class="tf-charge__unit">${unit}</span>
       <span class="tf-charge__eq" id="${px}-ch-${id}-eq">${l.charged ? chargeEqText(st, l.heures, ctx.days) : ''}</span>
     </span>`

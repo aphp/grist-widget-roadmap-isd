@@ -7,11 +7,13 @@
  */
 import {
   creePar,
+  droppedPeople,
   movePlan,
   newChantierDraft,
   newChantierFields,
   newTaskDraft,
   newTaskFields,
+  overCapTeamIds,
   parseTarget,
   setNewMilestone,
   validateNewChantier,
@@ -93,7 +95,11 @@ export function createCreateDialog(deps) {
       st.validation = { errors: plan.error ? { cible: { key } } : {}, warnings: [] };
     } else if (st.kind === 'chantier')
       st.validation = validateNewChantier(st.draft, { model: m, statuses: m.statuses.chantiers });
-    else st.validation = validateNewTask(st.draft, { model: m, statuses: m.statuses.tasks });
+    else {
+      st.validation = validateNewTask(st.draft, { model: m, statuses: m.statuses.tasks });
+      // Charges au-dessus de la borne (dates changées après la saisie) : lignes signalées et focalisables
+      st.overCap = new Set(overCapTeamIds(st.draft, m));
+    }
     for (const f of st.badDates) st.validation.errors[f] = { key: 'form.error.date' };
     // Charge saisie invalide sur une ligne du bloc « Personnes » : signalée tout de suite, bloque la création
     if (st.chargeErrors?.size) {
@@ -149,10 +155,42 @@ export function createCreateDialog(deps) {
       else ctl.removeAttribute('aria-invalid');
       ctl.closest('.tf-field')?.classList.toggle('fr-input-group--error', Boolean(st.validation.errors[f]));
     }
+    // Section « Personnes » (data-field="charges") : bordure d'erreur et lignes invalides mises à jour pendant la frappe
+    const box = document.getElementById('cf-people');
+    box?.classList.toggle(
+      'fr-input-group--error',
+      Boolean(st.validation.errors.charges || st.validation.errors.assignees),
+    );
+    for (const input of box?.querySelectorAll('[data-charge-input]') ?? []) {
+      const teamId = Number(input.dataset.chargeInput);
+      if (st.chargeErrors?.has(teamId) || st.overCap?.has(teamId)) input.setAttribute('aria-invalid', 'true');
+      else input.removeAttribute('aria-invalid');
+    }
     const chFoot = document.getElementById('cf-charges-foot');
     if (chFoot) chFoot.innerHTML = chargesFootHtml(st, model()).toString();
+    refreshFoot();
+  }
+
+  /**
+   * Pied mis à jour sur place : la région « aria-live » #cf-pending garde son nœud (seul son contenu change), les
+   * boutons gardent le leur. Pied reconstruit seulement si sa forme change (confirmation d'abandon).
+   */
+  function refreshFoot() {
     const foot = dlg.root.querySelector('.cdlg__foot');
-    if (foot) foot.innerHTML = dialogFoot(st, errorCount()).toString();
+    if (!foot) return;
+    const next = document.createElement('div');
+    next.innerHTML = dialogFoot(st, errorCount()).toString();
+    const pending = foot.querySelector('#cf-pending');
+    const fresh = next.querySelector('#cf-pending');
+    if (!pending || !fresh) {
+      foot.innerHTML = next.innerHTML;
+      return;
+    }
+    pending.innerHTML = fresh.innerHTML;
+    for (const b of next.querySelectorAll('button[id]')) {
+      const old = foot.querySelector(`#${b.id}`);
+      if (old) old.disabled = b.disabled;
+    }
   }
 
   /**
@@ -287,13 +325,20 @@ export function createCreateDialog(deps) {
     return { kind: k === 'acl' ? 'acl' : 'other', message: String(result.error?.message ?? ''), copy };
   }
 
+  /** Première charge invalide (saisie refusée, sinon au-dessus de la borne) si son champ est modifiable, sinon le titre du bloc. */
+  function chargesFocus() {
+    const teamId = [...(st.chargeErrors?.keys() ?? []), ...(st.overCap ?? [])][0];
+    const input = teamId === undefined ? null : document.getElementById(`cf-ch-${teamId}`);
+    return input && !input.disabled ? input.id : FOCUS.charges;
+  }
+
   async function submit(andOpen) {
     if (!st || st.busy || st.locked) return;
     st.tried = true;
     validate();
     if (errorCount()) {
       const first = ORDER.find((f) => st.validation.errors[f]);
-      return render(first ? (FOCUS[first] ?? `cf-${first}`) : undefined);
+      return render(first === 'charges' ? chargesFocus() : first ? (FOCUS[first] ?? `cf-${first}`) : undefined);
     }
     const w = writer();
     // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
@@ -303,6 +348,17 @@ export function createCreateDialog(deps) {
       // Saisie toujours copiable si un échec précédent l'avait proposée
       st.fail = { ...rightFailure(allowed.reason), copy: st.fail?.copy ?? '' };
       return render('cf-alert');
+    }
+    // Assignés ou charges saisis que le writer ne permet plus à la création : on bloque, rien n'est perdu en silence
+    if (st.kind === 'task' || st.kind === 'subtask') {
+      const opt = (c) => w.canAddField(st.table, c);
+      const dropped = droppedPeople(st.draft, newTaskFields(st.draft, { canAddField: opt }), {
+        assigneesTouched: st.touched.has('assignees'),
+      });
+      if (dropped.charges || dropped.assignees) {
+        st.fail = { kind: 'people', copy: copyText(newTaskFields(st.draft, { creePar: creePar(model(), st.me) })) };
+        return render('cf-alert');
+      }
     }
     const cur = st;
     cur.busy = true;

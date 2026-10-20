@@ -8,6 +8,9 @@ import { chargeRows, isEstimationPerson, mergeDuplicates, periodDays, readCharge
 import { addPersonLine, assignPerson, lineInput, removePersonLine } from '../core/task-people.js';
 import { chargeEqText, chargeRowMsgs, peopleBlockHtml, peopleCtx } from '../views/task-form.js';
 
+/** Régions « aria-live » du bloc (suffixes d'identifiants), conservées d'un rendu à l'autre. */
+const LIVE = ['charges-foot', 'assignees-msgs', 'charges-msgs'];
+
 /** Unité de saisie mémorisée dans le navigateur (même choix dans la fiche et les fenêtres de création). */
 export const UNIT_KEY = 'roadmap-isd.chargesUnit';
 
@@ -42,11 +45,35 @@ export function createPeopleBlock(deps) {
   const id = (suffix) => `${st().prefix ?? 'tf'}-${suffix}`;
   const el = (suffix) => document.getElementById(id(suffix));
 
+  /**
+   * Redessine le bloc dans son conteneur en gardant en place les régions « aria-live » (pied, messages des
+   * assignés et des charges) : leur contenu change, elles ne sont pas recréées, donc l'erreur bloquante apparue
+   * après un changement de dates est annoncée.
+   */
+  function patch(box, html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const fresh = tpl.content.firstElementChild;
+    const live = new Set(LIVE.map(id));
+    const kept = new Map([...box.children].filter((c) => live.has(c.id)).map((c) => [c.id, c]));
+    box.className = fresh.className;
+    for (const c of [...box.children]) if (!kept.has(c.id)) c.remove();
+    let cursor = null;
+    for (const f of [...fresh.children]) {
+      const old = kept.get(f.id);
+      if (old) old.innerHTML = f.innerHTML;
+      const node = old ?? f;
+      if (!old) cursor ? cursor.after(node) : box.prepend(node);
+      cursor = node;
+    }
+    for (const [k, c] of kept) if (!fresh.querySelector(`:scope > #${k}`)) c.remove();
+  }
+
   /** Redessine le seul bloc (dates, unité ou lignes changées), sans toucher au reste du formulaire. */
   function render(focusId) {
     deps.validate();
     const box = el('people');
-    if (box) box.outerHTML = peopleBlockHtml(st(), model(), deps.blockOpts?.() ?? {}).toString();
+    if (box) patch(box, peopleBlockHtml(st(), model(), deps.blockOpts?.() ?? {}).toString());
     deps.refresh();
     if (focusId) document.getElementById(focusId)?.focus();
   }

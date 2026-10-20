@@ -2528,4 +2528,107 @@ test('nouvelle tâche en mode essai : personnes et charges notées, rien n’est
   await until(`!D.querySelector('dialog.cdlg')`);
   assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Mode essai/);
   assert.equal(await w(`return W.__writes.length;`), 0);
+  // Le journal de l'essai note les assignés et les charges saisies (actions exactes du panneau)
+  await clickOn('#btn-edit-pill');
+  await until(`D.querySelector('.edit-panel__json pre')`);
+  const noted = await w(
+    `return JSON.parse(D.querySelector('.edit-panel__json pre').textContent).flat().find((x) => x[0] === 'AddRecord')[3];`,
+  );
+  assert.equal(noted.titre, 'Essai avec charges');
+  assert.deepEqual(noted.assignees, ['L', 5, b]);
+  assert.equal(noted.charges, JSON.stringify([{ teamId: 5, heures: 10 }]));
 });
+
+test(
+  'sous-tâche : bloc « Personnes » dans la fenêtre (dates du parent), retrait, fusion, remplacement, Ctrl+Entrée et annonces',
+  { skip: SKIP },
+  async () => {
+    await openView(EDIT, 'kanban', 5);
+    await w(`try { localStorage.setItem('roadmap-isd.chargesUnit', 'heures'); } catch {} return true;`);
+    // Tâche parente datée (14 jours : 70 h = 1 ETP), créée puis ouverte
+    await clickOn('#btn-new-task');
+    await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
+    await typeIn('#cf-titre', 'Parente datée');
+    await change('#cf-cible', await firstOption('#cf-cible'));
+    await change('#cf-dateDebut', '2026-11-02');
+    await change('#cf-dateEcheance', '2026-11-15');
+    await clickOn('#cf-create-open');
+    await until(`D.getElementById('task-form') && W.__writes.length === 1`);
+    const parentId = await w(`return Number(D.getElementById('task-form').dataset.taskId);`);
+    // Fenêtre « Sous-tâche » : dates du parent prérenseignées, « Je suis… » assignée, champ de charge actif
+    await clickOn('#task-form [data-create="subtask"]');
+    await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
+    assert.equal(await w(`return D.getElementById('cf-dateDebut').value;`), '2026-11-02');
+    assert.equal(await w(`return D.getElementById('cf-dateEcheance').value;`), '2026-11-15');
+    assert.deepEqual(
+      await w(`return [...D.querySelectorAll('#cf-people [data-charge]')].map((l) => Number(l.dataset.charge));`),
+      [5],
+    );
+    assert.equal(await w(`return D.getElementById('cf-ch-5').disabled;`), false);
+    // Champs reliés aux messages du bloc (ligne et messages des charges)
+    assert.match(await w(`return D.getElementById('cf-ch-5').getAttribute('aria-describedby');`), /cf-charges-msgs/);
+    await typeIn('#cf-titre', 'Sous-tâche avec personnes');
+    const b = await otherPerson(5);
+    await change('#cf-assignees', String(b));
+    await until(`D.getElementById('cf-ch-${b}')`);
+    await typeIn('#cf-ch-5', '10');
+    await typeIn(`#cf-ch-${b}`, '20');
+    assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 30 h/);
+    // Retrait de la seconde personne : ligne, assignation et charge disparaissent, le focus revient à l'ajout
+    await clickOn(`#cf-person-${b}-remove`);
+    await until(`!D.getElementById('cf-ch-${b}')`);
+    assert.equal(await w(`return D.activeElement.id;`), 'cf-assignees');
+    assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 10 h/);
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '10');
+    // Fusion et remplacement : états inaccessibles depuis la fenêtre (cellule neuve), donc boutons posés comme le
+    // ferait le rendu, pour exercer les branches du contrôleur partagé avec la fiche
+    await w(
+      `const f = D.createElement('div'); f.innerHTML = '<button type="button" data-charge-merge="5" id="cf-probe-merge">m</button>'; D.getElementById('cf-people').append(f); return true;`,
+    );
+    await clickOn('#cf-probe-merge');
+    await until(`D.activeElement.id === 'cf-ch-5'`);
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '10');
+    await w(
+      `const f = D.createElement('div'); f.innerHTML = '<button type="button" data-charges="replace-confirm" id="cf-probe-replace">r</button>'; D.getElementById('cf-people').append(f); return true;`,
+    );
+    await clickOn('#cf-probe-replace');
+    await until(`D.activeElement.id === 'cf-assignees' && D.getElementById('cf-ch-5').value === ''`);
+    // Charge à nouveau saisie, puis dates raccourcies : 60 h au-dessus de la borne de 35 h (7 jours)
+    await typeIn('#cf-ch-5', '60');
+    await w(`D.getElementById('cf-charges-msgs').__live = 1; D.getElementById('cf-pending').__live = 1; return true;`);
+    await change('#cf-dateEcheance', '2026-11-08');
+    await until(`D.getElementById('cf-create').disabled`);
+    assert.match(await w(`return D.getElementById('cf-charges-msgs').textContent;`), /dépasse la borne/);
+    // Les régions annoncées gardent leur nœud (contenu changé sur place) ; la ligne est marquée invalide
+    assert.equal(
+      await w(
+        `return D.getElementById('cf-charges-msgs').__live === 1 && D.getElementById('cf-pending').__live === 1;`,
+      ),
+      true,
+    );
+    assert.equal(await w(`return D.getElementById('cf-ch-5').getAttribute('aria-invalid');`), 'true');
+    assert.equal(await w(`return D.getElementById('cf-people').classList.contains('fr-input-group--error');`), true);
+    // Ctrl+Entrée depuis le titre : rien n'est envoyé et le focus va à la première charge invalide
+    await w(
+      `D.getElementById('cf-titre').dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); return true;`,
+    );
+    await until(`D.activeElement.id === 'cf-ch-5'`);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+    // En saisissant une valeur dans la borne, la bordure d'erreur et l'état invalide suivent aussitôt
+    await typeIn('#cf-ch-5', '30');
+    assert.equal(await w(`return D.getElementById('cf-people').classList.contains('fr-input-group--error');`), false);
+    assert.equal(await w(`return D.getElementById('cf-ch-5').hasAttribute('aria-invalid');`), false);
+    await typeIn('#cf-ch-5', '60');
+    assert.equal(await w(`return D.getElementById('cf-people').classList.contains('fr-input-group--error');`), true);
+    assert.equal(await w(`return D.getElementById('cf-ch-5').getAttribute('aria-invalid');`), 'true');
+    await typeIn('#cf-ch-5', '30');
+    await until(`!D.getElementById('cf-create').disabled`);
+    await clickOn('#cf-create');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 2`);
+    const cells = (await writes())[1][0][3];
+    assert.equal(cells.parentTask, parentId);
+    assert.deepEqual(cells.assignees, ['L', 5]);
+    assert.equal(cells.charges, JSON.stringify([{ teamId: 5, heures: 30 }]));
+    assert.equal(cells.dateEcheance, cfDay(2026, 11, 8));
+  },
+);

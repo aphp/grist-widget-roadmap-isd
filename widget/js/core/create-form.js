@@ -212,11 +212,40 @@ export function newChargesError(draft, model) {
     rows.some((r) => r.count > 1 || !model.people.has(r.teamId) || !draft.assignees.includes(r.teamId))
   )
     return { key: 'form.error.charges' };
+  const over = overCapRows(draft, model)[0];
+  return over ? { key: 'create.error.chargesOver', vars: { h: over.max } } : null;
+}
+
+/** Lignes de charge au-dessus de la borne sur la période saisie : {teamId, max (h)}. */
+function overCapRows(draft, model) {
+  const cell = readChargesCell(draft.charges);
+  if (!cell.ok) return [];
   const days = periodDays(draft.dateDebut, draft.dateEcheance);
-  const over = rows.find((r) => r.heures > maxHours(days, isEstimationPerson(model, r.teamId)));
-  return over
-    ? { key: 'create.error.chargesOver', vars: { h: maxHours(days, isEstimationPerson(model, over.teamId)) } }
-    : null;
+  return chargeRows(cell.entries)
+    .rows.map((r) => ({ teamId: r.teamId, heures: r.heures, max: maxHours(days, isEstimationPerson(model, r.teamId)) }))
+    .filter((r) => r.heures > r.max)
+    .map(({ teamId, max }) => ({ teamId, max }));
+}
+
+/** Personnes dont la charge dépasse la borne (champs à signaler et à focaliser dans la fenêtre). */
+export const overCapTeamIds = (draft, model) => overCapRows(draft, model).map((r) => r.teamId);
+
+/**
+ * Saisie « Personnes » que newTaskFields n'enverrait pas (colonne non permise à la création par le writer) :
+ * charges saisies, ou assignés choisis (touchés) par l'utilisateur. Sert à bloquer l'envoi plutôt que de perdre
+ * la saisie sans le dire.
+ * @param {object} draft
+ * @param {object} fields résultat de newTaskFields (avec canAddField)
+ * @param {{assigneesTouched?:boolean}} [opts]
+ * @returns {{charges:boolean, assignees:boolean}}
+ */
+export function droppedPeople(draft, fields, opts = {}) {
+  const cell = readChargesCell(draft.charges);
+  const charged = cell.ok && cell.entries.length > 0;
+  return {
+    charges: charged && !('charges' in fields),
+    assignees: Boolean(opts.assigneesTouched) && draft.assignees.length > 0 && !('assignees' in fields),
+  };
 }
 
 /**
