@@ -47,6 +47,14 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   reste visible quand la personne ciblée y est impliquée : « Je suis… » avec « Mes chantiers » (voir ci-dessous),
   ou le filtre Personne ; ce dernier est un filtre de tâche, il ne garde donc que les projets où cette personne a
   une tâche retenue (pas ceux dont elle n'est que sponsor ou responsable sans tâche).
+- **« ISD seulement »** : à l'intérieur des projets affichés, masque les chantiers et les tâches où personne de
+  l'équipe ISD (Management ISD compris, personnes actives) n'intervient. Une tâche reste si un assigné, son
+  responsable ou une personne chargée en fait partie, ou si une de ses sous-tâches (à toute profondeur) en est ; le
+  parent reste alors pour garder l'arbre, sans les sous-tâches sans ISD. Un chantier reste s'il garde une tâche ou si
+  son responsable ou un contributeur est de l'équipe ISD (il apparaît vide dans le Gantt et le Portfolio). Un projet
+  sans rien de gardé disparaît des vues centrées tâches et ne reste dans le Gantt et le Portfolio que s'il est porté
+  par l'ISD (responsable, sponsor ou contributeur clé). Se combine avec les autres filtres, « Mes chantiers » et
+  « Hors périmètre ISD aussi » ; sans effet sur « Mes tâches » et « Équipe » (vues non filtrées).
 - **Périmètre « Tout / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint rien ;
   « Mes chantiers » garde les chantiers dont je suis responsable ou contributeur, ou qui portent une tâche non
   terminée où je suis assigné, responsable ou chargé, et tous les chantiers des projets dont je suis responsable,

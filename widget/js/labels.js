@@ -75,6 +75,8 @@ const FR = Object.freeze({
     'Chantiers dont je suis responsable ou contributeur, ou où j’ai une tâche, et chantiers des projets que je porte (responsable, sponsor, contributeur clé), avec toutes leurs tâches',
   'filters.scope.disabled': 'Choisissez d’abord qui vous êtes dans « Je suis… ».',
   'filters.outOfScope': 'Hors périmètre ISD aussi',
+  'filters.isdOnly': 'ISD seulement',
+  'filters.isdOnly.title': 'Masque les chantiers et les tâches où personne de l’équipe ISD n’intervient.',
   'filters.active': 'Filtres actifs',
   'filters.clear': 'Tout effacer',
   'chip.remove': 'Retirer le filtre {filtre}',

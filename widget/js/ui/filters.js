@@ -25,6 +25,8 @@ export function chipsFor(filters, model) {
         return { field: c.field, label: label(`filters.scope.${filters.scope}`) };
       case 'includeOutOfScope':
         return { field: c.field, label: label('filters.outOfScope') };
+      case 'isdOnly':
+        return { field: c.field, label: label('filters.isdOnly') };
       default:
         return { field: c.field, label: label(`chip.${c.field}`, { valeur: c.label }) };
     }
@@ -224,6 +226,17 @@ export function createFilters(root, on, popovers) {
                   ${raw(f.includeOutOfScope ? 'checked' : '')}
                 />
                 <label class="fr-label" for="f-scope">${label('filters.outOfScope')}</label>
+              </div>
+              <div class="fr-checkbox-group fr-checkbox-group--sm">
+                <input
+                  type="checkbox"
+                  id="f-isd-only"
+                  data-filter-check="isdOnly"
+                  ${raw(f.isdOnly ? 'checked' : '')}
+                />
+                <label class="fr-label" for="f-isd-only" title="${label('filters.isdOnly.title')}">
+                  ${label('filters.isdOnly')}
+                </label>
               </div>
             </div>
             <button

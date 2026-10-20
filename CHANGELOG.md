@@ -11,6 +11,13 @@
   and add "Chantier : <title>". Small-screen list and PDF export follow (light hues, adapted legend). A `ganttColorBy`
   saved as `phase` before this version was the old default, not a choice: it becomes `chantier` once
   (`ganttColorByV: 2` marker); `status` is kept.
+- New "ISD seulement" filter (checkbox next to "Hors périmètre ISD aussi", removable chip, saved with the other
+  filters as `isdOnly`): inside the shown projects, hides the chantiers and tasks where nobody from the ISD team
+  intervenes. A task is kept if an assignee, its responsable or a person in its `charges` is an active ISD team member,
+  or if one of its subtasks (any depth) is; a chantier is kept if it keeps a task or if its responsable or a
+  contributor is ISD (shown empty). The rule is shared with the ISD scope (`taskInvolvesIsd`, `chantierInvolvesIsd`,
+  `projectInvolvesIsd` in `core/model.js`). Applies to every filtered view, not to "Mes tâches" and "Équipe".
+  Synthetic data: one added task with no ISD person.
 - The widget always opens on the Gantt tab: the last viewed tab is no longer restored at load (`DEFAULT_PREFS.view`
   is now `gantt`; other preferences are kept). The first "Je suis…" no longer sets a profile home view (Management
   used to land on Synthèse); home views saved before this are reset once (`homeViewV: 2` marker in the prefs). A home

@@ -2489,6 +2489,37 @@ test(
   },
 );
 
+test(
+  '« ISD seulement » : une carte sans personne ISD disparaît du Kanban, le compteur baisse, la pastille apparaît',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    // Recherche sur la tâche inventée sans personne ISD (colonnes paginées : elle ne serait pas toujours visible)
+    await w(
+      `const s = D.getElementById('f-search'); s.value = 'externe sans ISD'; s.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`,
+    );
+    const cards = `D.querySelectorAll('#view-panel[data-view="kanban"] .kcard').length`;
+    const count = `D.querySelector('.task-count').textContent.trim()`;
+    await until(`${cards} === 1`);
+    assert.equal(await w(`return ${count};`), '1 tâche');
+    assert.equal(await w(`return D.getElementById('chip-isdOnly') === null;`), true);
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.getElementById('chip-isdOnly') && ${cards} === 0`);
+    assert.match(await w(`return D.getElementById('chip-isdOnly').textContent;`), /ISD seulement/);
+    assert.equal(await w(`return ${count};`), 'Aucune tâche');
+    // Décochée : la carte revient
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
+    assert.equal(await w(`return ${count};`), '1 tâche');
+    // « Tout effacer » remet la case à faux
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.getElementById('btn-clear') && ${cards} === 0`);
+    await w(`D.getElementById('btn-clear').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && D.getElementById('f-isd-only').checked === false`);
+    assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
+  },
+);
+
 test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio', { skip: SKIP }, async () => {
   await open('');
   await w(

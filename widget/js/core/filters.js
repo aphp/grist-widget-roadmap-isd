@@ -5,6 +5,7 @@ import { COLOR_BY, DEFAULT_LEVEL, GANTT_LEVELS, MAX_EXPANDED, SCALES, sanitizeLa
 import { PORTFOLIO_MONTHS, PORTFOLIO_TABS } from './portfolio-data.js';
 import { dayOfIso, isoOfDay } from './dates.js';
 import { normalize } from './text.js';
+import { chantierInvolvesIsd, projectInvolvesIsd, taskInvolvesIsd } from './model.js';
 import { defaultScope, firstChoicePrefs, SCOPES } from './home-view.js';
 
 export { normalize };
@@ -21,6 +22,8 @@ export const DEFAULT_FILTERS = Object.freeze({
   /** Périmètre : « all » (tout) ou « chantiers » (Mes chantiers) ; sans effet sans « Je suis… ». */
   scope: 'all',
   includeOutOfScope: false,
+  /** Masque les chantiers et les tâches où personne de l'équipe ISD n'intervient (dans les projets affichés). */
+  isdOnly: false,
   /**
    * Filtres repliés sous « + Filtres » : responsable (projet, chantier ou tâche), demandeur (projet) et tag (de la
    * tâche ou de son chantier).
@@ -186,6 +189,40 @@ function myChantierMatcher(model, me) {
 }
 
 /**
+ * Mémorise, pour une application des filtres, les tâches qui impliquent l'ISD (règle partagée du modèle) :
+ * chaque tâche n'est évaluée qu'une fois, que ce soit pour l'élagage de l'arbre ou pour les tâches retenues.
+ */
+function isdTaskTester(model) {
+  const memo = new Map();
+  return (taskId) => {
+    if (!memo.has(taskId)) memo.set(taskId, taskInvolvesIsd(model.tasks.get(taskId), model.people));
+    return memo.get(taskId);
+  };
+}
+
+/**
+ * « ISD seulement » : élague un projet de l'arbre. Une tâche ou sous-tâche reste si elle implique l'ISD ou si un de
+ * ses descendants l'implique (le parent garde l'arbre) ; un chantier reste s'il garde une tâche ou si son
+ * responsable ou un contributeur est de l'équipe ISD (alors éventuellement vide) ; « (sans chantier) » suit ses
+ * tâches ; le projet reste s'il garde un chantier ou s'il est porté par l'ISD par lui-même (sans tâche).
+ * @returns {object|null} le projet élagué, ou null s'il ne reste rien
+ */
+function isdOnlyProject(model, project, involvesIsd) {
+  const task = (n) => {
+    const children = n.children.map(task).filter(Boolean);
+    return involvesIsd(n.taskId) || children.length ? { ...n, children } : null;
+  };
+  const chantier = (n) => {
+    const children = n.children.map(task).filter(Boolean);
+    const row = n.ref?.table === 'Chantiers' ? model.chantiers.get(n.ref.id) : null;
+    return children.length || (row && chantierInvolvesIsd(row, model.people)) ? { ...n, children } : null;
+  };
+  const children = project.children.map(chantier).filter(Boolean);
+  const own = projectInvolvesIsd(model.projects.get(project.projectId), model.people);
+  return children.length || own ? { ...project, children } : null;
+}
+
+/**
  * Arbre filtré (catégorie → projet → chantier → tâche → sous-tâche) et tâches retenues.
  * @returns {{tree:object[], taskIds:Set<number>}}
  */
@@ -209,7 +246,9 @@ export function applyFilters(model, f, prefs) {
   const taskLevel = Boolean(f.person || f.profile || f.statuses.length || f.responsable || f.tag);
   const chantierOk = f.chantier ? chantierMatcher(model, f.chantier) : null;
 
+  const involvesIsd = f.isdOnly ? isdTaskTester(model) : null;
   const taskOk = (task, respHit, onlyMine, tagHit) => {
+    if (involvesIsd && !involvesIsd(task.id)) return false;
     if (f.responsable && !respHit) return false;
     if (f.tag && !tagHit) return false;
     const who = involved(task);
@@ -271,6 +310,8 @@ export function applyFilters(model, f, prefs) {
         .map((p) => (chantierOk ? { ...p, children: p.children.filter(chantierOk) } : p))
         .filter((p) => !chantierOk || p.children.length)
         .map((p) => (chantierMine ? mine(p) : p))
+        .filter(Boolean)
+        .map((p) => (involvesIsd ? isdOnlyProject(model, p, involvesIsd) : p))
         .filter(Boolean)
         .map((p) => prune(p, catHit(cat)))
         .filter(Boolean);
@@ -400,6 +441,7 @@ export function activeFilterChips(f, model) {
   if (f.statuses.length) chips.push({ field: 'statuses', label: f.statuses.join(', ') });
   if (f.scope === 'chantiers') chips.push({ field: 'scope', label: 'Mes chantiers' });
   if (f.includeOutOfScope) chips.push({ field: 'includeOutOfScope', label: 'Hors périmètre ISD inclus' });
+  if (f.isdOnly) chips.push({ field: 'isdOnly', label: 'ISD seulement' });
   return chips;
 }
 
@@ -542,6 +584,7 @@ function sanitizePrefs(saved) {
       // couvre aussi les chantiers où l'on a une tâche (les tâches personnelles sont dans l'onglet « Mes tâches »)
       scope: SCOPES.includes(f.scope) ? f.scope : f.scope === 'tasks' || f.mine === true ? 'chantiers' : 'all',
       includeOutOfScope: f.includeOutOfScope === true,
+      isdOnly: f.isdOnly === true,
       responsable: idOrNull(f.responsable),
       demandeur: textOr(f.demandeur, '').trim(),
       tag: textOr(f.tag, ''),

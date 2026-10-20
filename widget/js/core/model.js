@@ -24,6 +24,37 @@ export function isdDomainOf(people, choices = []) {
   return (Array.isArray(choices) ? choices : []).find((d) => typeof d === 'string' && ISD_DOMAIN.test(d)) ?? null;
 }
 
+/** Vrai si l'identifiant désigne un membre actif de l'équipe ISD (`isdTeam`, Management ISD compris). */
+export const isIsdId = (people, id) => people.get(id)?.isdTeam === true;
+
+/**
+ * Vrai si la tâche implique l'ISD : un assigné, le responsable ou une personne chargée est membre actif de
+ * l'équipe ISD. Règle du périmètre ISD (buildModel) et du filtre « ISD seulement ».
+ * @param {{assignees:number[], responsable:number|null, charges:{personId:number}[]}} task
+ * @param {Map<number, object>} people
+ */
+export function taskInvolvesIsd(task, people) {
+  const isd = (id) => isIsdId(people, id);
+  return task.assignees.some(isd) || isd(task.responsable) || task.charges.some((c) => isd(c.personId));
+}
+
+/** Vrai si le responsable ou un contributeur du chantier est membre actif de l'équipe ISD. */
+export function chantierInvolvesIsd(chantier, people) {
+  const isd = (id) => isIsdId(people, id);
+  return isd(chantier.responsable) || chantier.contributeurs.some(isd);
+}
+
+/**
+ * Vrai si le projet est porté par l'ISD par lui-même : responsable membre de l'équipe ISD, sponsor ou contributeur
+ * clé profil ISD (DE, DA, DS, PO ; pas le Management, pour qu'un Management ISD sponsor d'un projet d'une autre
+ * équipe ne l'y fasse pas entrer).
+ */
+export function projectInvolvesIsd(project, people) {
+  const isd = (id) => isIsdId(people, id);
+  const profile = (id) => people.get(id)?.isd === true;
+  return isd(project.responsable) || project.sponsor.some(profile) || project.contributeursCles.some(profile);
+}
+
 /** Vrai si la personne fait partie de l'équipe ISD : profil ISD (DE, DA, DS, PO Data) ou Domaine ISD. */
 export function inIsdTeam(person, isd) {
   return Boolean(person.role) || (isd !== null && person.domaine === isd);
@@ -267,10 +298,7 @@ export function buildModel(raw) {
   // (Management ISD compris). Sponsor ou contributeur clé : profils ISD seulement, pour qu'un Management ISD
   // sponsor du projet d'une autre équipe ne le fasse pas entrer dans le périmètre (il reste visible dans « Mes
   // chantiers », non modifiable).
-  const isd = (id) => people.get(id)?.isdTeam === true;
-  const profile = (id) => people.get(id)?.isd === true;
-  const taskTouches = (task) =>
-    task.assignees.some(isd) || isd(task.responsable) || task.charges.some((c) => isd(c.personId));
+  const taskTouches = (task) => taskInvolvesIsd(task, people);
   const subtreeTasks = (n, acc = []) => {
     if (n.taskId) acc.push(tasks.get(n.taskId));
     n.children.forEach((c) => subtreeTasks(c, acc));
@@ -280,10 +308,8 @@ export function buildModel(raw) {
     const projNode = nodes.get(`P${p.id}`);
     const chs = [...chantiers.values()].filter((c) => c.projectIds.includes(p.id));
     p.inScope =
-      isd(p.responsable) ||
-      p.sponsor.some(profile) ||
-      p.contributeursCles.some(profile) ||
-      chs.some((c) => isd(c.responsable) || c.contributeurs.some(isd)) ||
+      projectInvolvesIsd(p, people) ||
+      chs.some((c) => chantierInvolvesIsd(c, people)) ||
       subtreeTasks(projNode).some(taskTouches);
   }
 

@@ -59,6 +59,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   Domaine ISD = nom contenant « ISD » (personnes, sinon choix de Team.Domaine), calculé une fois (`model.isdDomain`),
   jamais de repli sur un autre Domaine (il fixe les écritures). Périmètre : responsable du projet, rôles de chantier
   et de tâche pour toute l'équipe ; sponsor et contributeur clé pour les profils ISD seulement.
+  La règle (`taskInvolvesIsd`, `chantierInvolvesIsd`, `projectInvolvesIsd` de model.js) sert aussi au filtre « ISD seulement »
+  (`isdOnly`), qui masque chantiers et tâches sans personne ISD dans les projets affichés.
   Les sélecteurs d'ajout ne proposent que l'équipe ISD ; les personnes hors ISD déjà saisies dans la Feuille restent
   affichées et conservées. Personne : `isdTeam` = membre actif de l'équipe ISD (périmètre ISD, `inScope`, écritures) ;
   `isd` = profil ISD actif seul (DE, DA, DS, PO). Profils affichés (filtre Profil, charge et capacité du Portfolio,
