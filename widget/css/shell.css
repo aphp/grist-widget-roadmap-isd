@@ -396,6 +396,13 @@ body {
 .filters__checks .fr-label {
   white-space: nowrap;
 }
+/* Aide de « ISD seulement » : texte d'aide DSFR, petit et sur une ligne qui peut passer à la suivante */
+.filters__checks .fr-hint-text {
+  max-width: 22rem;
+  white-space: normal;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
 /* Périmètre « Tout / Mes chantiers » : légende à gauche du contrôle segmenté, sur la ligne des filtres */
 .filters__scope {
   flex: none;

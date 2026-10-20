@@ -2,11 +2,47 @@
 
 ## [Unreleased]
 
+- Delete from the edit form: a "Supprimer" button (tertiary, left of the form footer, task and chantier forms, shown
+  only with the delete right and inside the ISD scope) deletes a task with all its subtasks (any depth) or an empty
+  chantier, in one `applyUserActions` batch of `RemoveRecord`. A confirmation dialog names the item and lists the
+  subtasks (10 at most, then "et n autres"); a chantier that still holds tasks is refused before anything is sent
+  ("déplacez ou supprimez d'abord ses n tâches"), so is a batch another task or chantier depends on (`dependDe`).
+  The writer re-reads Tasks and Chantiers just before sending, recomputes the batch, refuses if it changed since the
+  confirmation, checks the scope of every row and keeps a snapshot of every data column (formulas excluded). "Annuler"
+  recreates the rows with the same ids and values (`AddRecord` with a fixed id, parents first), refused if an id is
+  in use again; the fixed-id `AddRecord` is accepted only when it reproduces a snapshot of the session. Essai mode
+  logs everything and sends nothing. Never on Team, Projects or Disponibilites. Deletion is also refused when the
+  re-read row lacks a data column known to the metadata (partial snapshot) or when another table references Tasks
+  or Chantiers through a data column; "Annuler" is refused, naming the row, when a recreated row would point to a
+  row that no longer exists (parent, chantier, project, dependencies, chantier projects; Projects re-read in real
+  mode). A delete or restore without answer is kept when the re-read shows it happened; a delete still unknown keeps
+  its snapshot so a later "Annuler" can restore the rows if they did disappear.
+- Gantt: new "Chantier" color mode, now the default ("Couleur par": Étape · Statut · Chantier). Each chantier gets one
+  of 7 hues (`--viz-ch-1..7`, light and dark themes, with a darker `-deep` edge and a 7 % `-band` row tint), assigned
+  per project over all its chantiers sorted by title, recycled after 7 (`chantierSlots`, `chantierTone` in
+  `core/gantt-data.js`), so a filter never changes a color. Dot before the chantier name, colored stroke before its
+  task names, light band on its rows, task bars in its hue, chantier bar in the deep hue, done tasks faded; projects,
+  categories and "(sans chantier)" stay neutral. No phase text in bars; tooltip and accessible name keep the phase
+  and add "Chantier : <title>". Small-screen list and PDF export follow (light hues, adapted legend). A `ganttColorBy`
+  saved as `phase` before this version was the old default, not a choice: it becomes `chantier` once
+  (`ganttColorByV: 2` marker); `status` is kept.
+- New "ISD seulement" filter (checkbox next to "Hors périmètre ISD aussi", removable chip, saved with the other
+  filters as `isdOnly`): inside the shown projects, hides the chantiers and tasks where nobody from the ISD team
+  intervenes. A task is kept if an assignee, its responsable or a person in its `charges` is an active ISD team member,
+  or if one of its subtasks (any depth) is; a chantier is kept if it keeps a task or if its responsable or a
+  contributor is ISD (shown empty). The rule is shared with the ISD scope (`taskInvolvesIsd`, `chantierInvolvesIsd`,
+  `projectInvolvesIsd` in `core/model.js`). Applies to every filtered view, not to "Mes tâches" and "Équipe".
+  Synthetic data: one added task with no ISD person.
+- The widget always opens on the Gantt tab: the last viewed tab is no longer restored at load (`DEFAULT_PREFS.view`
+  is now `gantt`; other preferences are kept). The first "Je suis…" no longer sets a profile home view (Management
+  used to land on Synthèse); home views saved before this are reset once (`homeViewV: 2` marker in the prefs). A home
+  view chosen afterwards in the Preferences still wins ("Dernière vue consultée" is now "Gantt (par défaut)",
+  same stored value), and the page address parameter `vue=<tab>` (`mytasks`, `gantt`, `kanban`, `table`,
+  `portfolio`, `stats`, `synthesis`, `team`) wins over everything; an unknown value is ignored.
 - Gantt: resizable name column. Drag handle on the right edge of the "Élément" header (`role="separator"`, arrows
-  ±16 px, Shift ±64 px, Home/End, double-click resets the default width) and a "Largeur des noms" range slider in
-  the controls bar, kept in sync. Width between 160 px and 60 % of the view, saved in the `ganttLabelWidth` pref
-  (absent or invalid: default width), kept across re-renders and used by the PDF export. Full name in the title
-  of each row name. Medium-screen default width is now 256 px (on the 16 px step).
+  ±16 px, Shift ±64 px, Home/End, double-click resets the default width). Width between 160 px and 60 % of the view, saved in the
+  `ganttLabelWidth` pref (absent or invalid: default width), kept across re-renders and used by the PDF export.
+  Full name in the title of each row name. Medium-screen default width is now 256 px (on the 16 px step).
 - Fix: scroll positions jumped back to the top or left while other people edited the Feuille. Every `onRecords`
   re-read redrew the whole view, which only restored the page and the Kanban/Table scroll (not the Gantt, Portfolio,
   load plan, Stats or Synthesis areas), and focus restoration scrolled a focused card or row back into view. Now a

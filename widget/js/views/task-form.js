@@ -134,6 +134,13 @@ export function field(st, f, control, opts = {}) {
   </div>`;
 }
 
+/** Bouton « Vider la date de clôture » : présent seulement si une date est donnée et modifiable. */
+export function closureClearHtml(st) {
+  return st.draft.dateCloture !== null && st.can('dateCloture').ok
+    ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tf-clear" data-form="clear-closure" ${raw(st.busy ? 'disabled' : '')}>${label('form.field.dateCloture.clear')}</button>`
+    : '';
+}
+
 /** Attributs communs des contrôles : désactivé si la colonne n'est pas modifiable, description, état d'erreur. */
 export function attrs(st, f, help = false) {
   const off = !st.can(f).ok || st.busy;
@@ -482,13 +489,15 @@ export function taskFormBody(st, model) {
   if (d.parentTask !== null && !parents.includes(d.parentTask)) parents.unshift(d.parentTask);
   const tref = (i) => ({ table: 'Tasks', id: i });
   const subs = task.childIds.filter((i) => model.tasks.has(i)).map(tref);
-  const date = (f, labelKey = null) =>
-    field(
+  const date = (f, labelKey = null, after = null) => {
+    const input = h`<input type="date" id="tf-${f}" class="fr-input" min="${MIN_YEAR}-01-01" max="${MAX_YEAR}-12-31" value="${inputFromDay(d[f])}" data-input="${f}" ${attrs(st, f)}>`;
+    return field(
       st,
       f,
-      h`<input type="date" id="tf-${f}" class="fr-input" min="${MIN_YEAR}-01-01" max="${MAX_YEAR}-12-31" value="${inputFromDay(d[f])}" data-input="${f}" ${attrs(st, f)}>`,
+      after !== null ? h`<div class="tf-inline">${input}${after}</div>` : input,
       labelKey ? { labelText: label(labelKey) } : {},
     );
+  };
   return h`<form class="tf" id="task-form" novalidate aria-describedby="tf-legend" data-task-id="${st.ref.id}">
     ${alertHtml(st, model)}
     <p class="tf-legend" id="tf-legend">${label('form.legend')}</p>
@@ -528,8 +537,9 @@ export function taskFormBody(st, model) {
         ${personGroups(model, d.Responsable === null ? [] : [d.Responsable])}
       </select>`,
     )}
-    <dl class="dt-fields tf-readonly">
-      <div class="dt-field tf-attach"><dt>${label('form.field.rattachement')}</dt><dd>
+    <div class="tf-field tf-attach" role="group" aria-labelledby="tf-attach-label">
+      <p class="fr-label tf-label" id="tf-attach-label">${label('form.field.rattachement')}</p>
+      <div class="tf-attach__body">
         <span class="tf-attach__path" id="tf-attach-path">${path.length ? path.map((c) => c.title || label('common.untitled')).join(' › ') : label('edit.empty')}</span>
         ${
           st.canMove
@@ -538,8 +548,8 @@ export function taskFormBody(st, model) {
               ? h`<span class="tf-hint tf-attach__hint">${label('move.followsParent')}</span>`
               : ''
         }
-      </dd></div>
-    </dl>
+      </div>
+    </div>
     ${tagsFieldHtml(st, model, field, attrs)}
     ${peopleBlockHtml(st, model)}
     <details class="tf-more" id="tf-more" ${raw(st.moreOpen ? 'open' : '')}>
@@ -576,10 +586,7 @@ export function taskFormBody(st, model) {
           <div id="tf-dep-results" aria-live="polite">${depResultsHtml(st, model)}</div>`,
           { legend: true, wide: true },
         )}
-        <div class="tf-row">
-          ${date('dateCloture')}
-          ${d.dateCloture !== null && st.can('dateCloture').ok ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tf-clear" data-form="clear-closure" ${raw(st.busy ? 'disabled' : '')}>${label('form.field.dateCloture.clear')}</button>` : ''}
-        </div>
+        ${date('dateCloture', null, closureClearHtml(st))}
       </div>
     </details>
     ${section(
@@ -600,6 +607,16 @@ export function pendingText(n) {
 export function errorSummary(n) {
   if (!n) return '';
   return n === 1 ? label('form.error.summary') : label('form.error.summaryMany', { n });
+}
+
+/**
+ * « Supprimer » (fiche tâche ou chantier en édition) : bouton tertiaire à gauche du pied, jamais le bouton principal ;
+ * absent sans droit de suppression ou hors périmètre (st.canDelete, posé à l'ouverture).
+ */
+function deleteButton(st) {
+  if (!st.canDelete) return '';
+  const title = label(st.ref.table === 'Chantiers' ? 'delete.button.chantier' : 'delete.button.task');
+  return h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline fr-icon-delete-line fr-btn--icon-left tf-foot__delete" data-form="delete" id="btn-form-delete" title="${title}" ${raw(st.busy ? 'disabled' : '')}>${label('delete.button')}</button>`;
 }
 
 /** Pied fixe du formulaire. */
@@ -623,6 +640,7 @@ export function taskFormFoot(st, changes, errorCount) {
   const n = Object.keys(changes).length;
   const saveText = st.busy ? label('form.saving') : label(st.mode === 'dry-run' ? 'form.save.dry' : 'form.save');
   return h`<div class="tf-foot">
+    ${deleteButton(st)}
     <p class="tf-foot__text" id="tf-pending" aria-live="polite">
       <span class="tf-foot__count">${pendingText(n)}</span>
       ${errorCount ? h`<span class="tf-foot__error">${errorSummary(errorCount)}</span>` : h`<span class="tf-foot__hint">${label('form.shortcut')}</span>`}

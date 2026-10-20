@@ -9,10 +9,57 @@ const lightBlock = tokens.slice(tokens.indexOf(':root {'), tokens.indexOf(':root
 
 test('palette imprimée = variables --viz-* du thème clair de tokens.css', () => {
   for (const [name, hex] of Object.entries(VIZ_PRINT)) {
+    if (Array.isArray(hex)) continue; // teintes de chantier : test suivant
     const m = lightBlock.match(new RegExp(`--viz-${name}:\\s*(#[0-9a-fA-F]{6})`));
     assert.ok(m, `--viz-${name} absent de tokens.css`);
     assert.equal(m[1].toLowerCase(), hex.toLowerCase(), name);
   }
+});
+
+// ---------- Teintes de chantier (mode « Chantier » du Gantt) ----------
+const CH = {
+  clair: {
+    fill: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'],
+    deep: ['#1c5cab', '#b84a1d', '#127a55', '#9a6800', '#b8476f', '#005c00', '#4535a8'],
+  },
+  sombre: {
+    fill: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9'],
+    deep: ['#86b6ef', '#f09a75', '#6fd0ab', '#f2c85c', '#f0a3c0', '#63c463', '#c0b8f5'],
+  },
+};
+const tok = (block, name) => block.match(new RegExp(`--${name}:\\s*([^;]+);`))?.[1].trim();
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+test('teintes de chantier : 7 remplissages et 7 teintes foncées par thème, bande à 7 %', () => {
+  for (const [theme, block] of [
+    ['clair', lightBlock],
+    ['sombre', darkBlock],
+  ])
+    for (let i = 0; i < 7; i++) {
+      const n = i + 1;
+      assert.equal(tok(block, `viz-ch-${n}`)?.toLowerCase(), CH[theme].fill[i], `--viz-ch-${n} (${theme})`);
+      assert.equal(tok(block, `viz-ch-${n}-deep`)?.toLowerCase(), CH[theme].deep[i], `--viz-ch-${n}-deep (${theme})`);
+      // Bande en rgba explicite (html2canvas ne lit pas color-mix) : même teinte que le remplissage, 7 %
+      assert.equal(
+        tok(block, `viz-ch-${n}-band`),
+        `rgba(${rgbOf(CH[theme].fill[i]).join(', ')}, 0.07)`,
+        `bande ${n} (${theme})`,
+      );
+    }
+});
+
+test('palette imprimée des chantiers = teintes claires de tokens.css', () => {
+  assert.deepEqual(VIZ_PRINT.chantier, CH.clair.fill);
+  assert.deepEqual(VIZ_PRINT.chantierDeep, CH.clair.deep);
+});
+
+test('teintes foncées des chantiers ≥ 3:1 sur la carte (liseré des barres, barre du chantier)', () => {
+  for (const [theme, surface] of [
+    ['clair', '#ffffff'],
+    ['sombre', '#1e293b'],
+  ])
+    for (const hex of CH[theme].deep)
+      assert.ok(ratio(hex, surface) >= 3, `${hex} sur ${surface} (${theme}) : ${ratio(hex, surface).toFixed(2)}`);
 });
 
 for (const f of [

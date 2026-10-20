@@ -195,5 +195,12 @@ export function createDrawer(root, on) {
   function detachTrap() {
     document.removeEventListener('keydown', trapTab, true);
   }
-  return { open, close, isOpen: () => root.dataset.open === 'true', root };
+  return {
+    open,
+    close,
+    isOpen: () => root.dataset.open === 'true',
+    /** Élément qui avait le focus à l'ouverture de la fiche (focus rendu à la vue après une suppression). */
+    opener: () => (opener?.isConnected ? opener : openerId ? document.getElementById(openerId) : null),
+    root,
+  };
 }

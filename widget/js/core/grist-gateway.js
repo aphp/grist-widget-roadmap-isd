@@ -98,7 +98,8 @@ export function accessRefused(problems) {
 
 /**
  * Métadonnées des colonnes, lues dans _grist_Tables_column : choix déclarés des colonnes Choice/ChoiceList,
- * et type de chaque colonne ('Table.colonne' → {type, isFormula}), contrôlé par le writer au chargement.
+ * et type de chaque colonne ('Table.colonne' → {type, isFormula, summary?}), contrôlé par le writer au chargement ;
+ * summary : colonne d'une table de résumé (_grist_Tables.summarySourceTable), recalculée par Grist.
  */
 async function fetchColumnMeta(docApi) {
   const [tables, cols] = await Promise.all([
@@ -106,6 +107,8 @@ async function fetchColumnMeta(docApi) {
     docApi.fetchTable('_grist_Tables_column'),
   ]);
   const tableId = new Map(tables.id.map((id, i) => [id, tables.tableId[i]]));
+  // Tables de résumé (summarySourceTable non nul) : colonnes recalculées par Grist, marquées summary
+  const summaryOf = new Set(tables.id.filter((_, i) => Number(tables.summarySourceTable?.[i]) > 0));
   const out = {};
   const columns = {};
   cols.id.forEach((_, i) => {
@@ -117,6 +120,7 @@ async function fetchColumnMeta(docApi) {
       columns[`${t}.${cols.colId[i]}`] = {
         type: cols.type[i],
         isFormula: formula,
+        ...(summaryOf.has(cols.parentId[i]) ? { summary: true } : {}),
         ...(formula && cols.formula && !String(cols.formula[i] ?? '').trim() ? { empty: true } : {}),
       };
     let choices;

@@ -4,7 +4,7 @@ import { normalize } from './text.js';
 import { label } from '../labels.js';
 
 export const SCALES = Object.freeze(['week', 'month', 'year', '2y']);
-export const COLOR_BY = Object.freeze(['phase', 'status']);
+export const COLOR_BY = Object.freeze(['phase', 'status', 'chantier']);
 export const PHASES = Object.freeze(['instruction', 'realisation', 'mep']);
 /** Statuts colorés en mode « statut » ; tout autre statut prend la couleur neutre « autre ». */
 export const STATUS_COLORS = Object.freeze(['todo', 'inprogress', 'review', 'done']);
@@ -62,7 +62,7 @@ export const GANTT_LEVELS = Object.freeze(['projet', 'chantier', 'tache', 'sous-
 export const DEFAULT_LEVEL = 'chantier';
 
 /**
- * Largeur de la colonne des noms (px), réglable à la poignée et au curseur « Largeur des noms » : bornes, pas au
+ * Largeur de la colonne des noms (px), réglable à la poignée seule : bornes, pas au
  * clavier (Maj : grand pas), part maximale de la largeur de la vue. Sans réglage, largeur par défaut de la
  * largeur d'écran (identique au CSS : 320 px, 256 px sous 1280 px).
  */
@@ -75,7 +75,7 @@ export function defaultLabelWidth(windowWidth) {
   return windowWidth > 0 && windowWidth < 1280 ? LABEL_WIDTH.medium : LABEL_WIDTH.wide;
 }
 
-/** Largeur posée sur la grille des pas (minimum + n × pas), comme le curseur de type range. */
+/** Largeur posée sur la grille des pas (minimum + n × pas), comme le pas de la poignée. */
 const onStep = (w) => LABEL_WIDTH.min + Math.round((w - LABEL_WIDTH.min) / LABEL_WIDTH.step) * LABEL_WIDTH.step;
 
 /**
@@ -353,11 +353,67 @@ export function isMilestone(model, node) {
 /**
  * Clé de couleur d'un nœud : étape (instruction, realisation, mep) ou statut connu ; sinon « other ».
  * @param {object} node
- * @param {'phase'|'status'} colorBy
+ * @param {'phase'|'status'|'chantier'} colorBy (« chantier » : voir chantierTone)
  */
 export function colorKey(node, colorBy) {
   if (colorBy === 'status') return STATUS_COLORS.includes(node.status) ? node.status : 'other';
   return phaseOf(node.title) ?? 'other';
+}
+
+// ---------- Couleur par chantier ----------
+/** Nombre de teintes de chantier (--viz-ch-1 à --viz-ch-7) : au-delà, les teintes se recyclent. */
+export const CHANTIER_SLOTS = 7;
+const collator = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+
+/**
+ * Teinte de chaque chantier dans chaque projet : TOUS les chantiers du projet (modèle entier, pas l'arbre
+ * filtré : un filtre ne change jamais une couleur), triés par titre puis par id, rang modulo 7. Un chantier
+ * de deux projets a une teinte par projet. Calculé une fois par rendu.
+ * @param {{projects: Map<number, object>, chantiers: Map<number, {id:number, title:string, projectIds:number[]}>}} model
+ * @returns {Map<number, Map<number, number>>} projectId → chantierId → teinte (0 à 6)
+ */
+export function chantierSlots(model) {
+  const byProject = new Map();
+  for (const c of model.chantiers.values())
+    for (const p of c.projectIds) {
+      if (!byProject.has(p)) byProject.set(p, []);
+      byProject.get(p).push(c);
+    }
+  const out = new Map();
+  for (const [p, list] of byProject) {
+    list.sort((a, b) => collator.compare(a.title ?? '', b.title ?? '') || a.id - b.id);
+    out.set(p, new Map(list.map((c, i) => [c.id, i % CHANTIER_SLOTS])));
+  }
+  return out;
+}
+
+/**
+ * Teinte d'une ligne en mode « chantier » : celle du chantier affiché au-dessus (ou du chantier lui-même),
+ * dans le projet de la ligne. Projet, catégorie, « (sans chantier) » et ses tâches : null (couleur neutre).
+ * @param {{nodes: Map<string, object>}} model
+ * @param {object} node nœud de l'arbre
+ * @param {Map<number, Map<number, number>>} slots résultat de chantierSlots
+ * @returns {{slot:number, title:string}|null}
+ */
+export function chantierTone(model, node, slots) {
+  let n = node;
+  while (n && n.kind !== 'chantier')
+    n = n.kind === 'tache' || n.kind === 'sous-tache' ? model.nodes.get(n.parentKey) : null;
+  if (!n?.ref) return null;
+  const slot = slots.get(n.projectId)?.get(n.ref.id);
+  return slot === undefined ? null : { slot, title: n.title };
+}
+
+/** Couleur #rrggbb posée sur du blanc à l'opacité donnée (barre délavée de la légende du PDF). */
+export function fadedOnWhite(hex, opacity) {
+  const ch = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `#${ch
+    .map((c) =>
+      Math.round(255 - (255 - c) * opacity)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`;
 }
 
 /** Nom du fichier PDF d'une vue pour un jour du modèle. */

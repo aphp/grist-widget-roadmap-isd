@@ -333,6 +333,25 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
     Description: 'Chantier fictif sans tâche.',
     tags: null,
   });
+  // Tâche où personne de l'équipe ISD n'intervient (assignée et chargée à des personnes hors ISD), dans le premier
+  // chantier d'un projet du périmètre : masquée par le filtre « ISD seulement ». Ajoutée en dernier, les autres
+  // identifiants ne bougent pas
+  tasks.push({
+    id: taskId++,
+    titre: 'Tâche externe sans ISD',
+    statut: 'todo',
+    dateDebut: day(5),
+    dateEcheance: day(12),
+    projet: 1,
+    Chantier: 1,
+    parentTask: 0,
+    assignees: ['L', outsiders[1]],
+    Responsable: outsiders[1],
+    charges: JSON.stringify([{ teamId: outsiders[1], heures: 14 }]),
+    type: 'tache',
+    progression: 0,
+    Cree_par: 'createur.fictif',
+  });
   // Variante APH : la personne estimation (DE de l'ISD), sans tâche ; les tests lui ajoutent une charge
   // Plusieurs personnes estimation (une par profil) : toutes exemptées ; la n° 21, inactive, ne l'est pas
   if (aph)

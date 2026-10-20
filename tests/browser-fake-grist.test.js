@@ -117,12 +117,12 @@ async function loaded(url) {
 
 /** Ouvre le widget sur le faux Grist, toujours avec le jeu de données synthétique. */
 async function open(query) {
-  query = `${query || '?'}${query ? '&' : ''}donnees=synthetiques`;
+  query = `${query || '?'}${query ? '&' : ''}donnees=synthetiques&vue=kanban`;
   const host = `${BASE}/dev/host.html`;
   await send('Page.navigate', { url: host });
   await loaded(host);
   await send('Runtime.evaluate', {
-    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: 'kanban' }))`,
+    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true }))`,
   });
   await send('Page.navigate', { url: `${host}${query}` });
   await loaded(`${host}${query}`);
@@ -2068,17 +2068,42 @@ test(
   },
 );
 
+// ---------- Arrivée sur le Gantt ----------
+test(
+  'arrivée : le Gantt s’ouvre malgré une vue mémorisée et une ancienne vue d’accueil (Synthèse) ; vue= ouvre l’onglet demandé',
+  { skip: SKIP },
+  async () => {
+    const host = `${BASE}/dev/host.html`;
+    const visit = async (q) => {
+      await send('Page.navigate', { url: host });
+      await loaded(host);
+      await send('Runtime.evaluate', {
+        expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, me: 5, view: 'synthesis', homeView: 'synthesis' }))`,
+      });
+      await send('Page.navigate', { url: `${host}${q}` });
+      await loaded(`${host}${q}`);
+    };
+    await visit('?donnees=synthetiques');
+    await until(`D.querySelector('#view-panel[data-view="gantt"]')`);
+    assert.equal(await w(`return D.getElementById('tab-gantt').getAttribute('aria-selected');`), 'true');
+    assert.equal(await w(`return D.getElementById('tab-synthesis').getAttribute('aria-selected');`), 'false');
+    await visit('?donnees=synthetiques&vue=table');
+    await until(`D.querySelector('#view-panel[data-view="table"]')`);
+    assert.equal(await w(`return D.getElementById('tab-table').getAttribute('aria-selected');`), 'true');
+  },
+);
+
 // ---------- Statut depuis la carte et la ligne (P-UX-6) ----------
 const EDIT = '?edition=1&doc=doc-dev-local&ecritures=memoire';
 
 /** Ouvre une vue avec « Je suis… » posé (Mes tâches), toujours sur le jeu synthétique. */
 async function openView(query, view, me = 5) {
   const host = `${BASE}/dev/host.html`;
-  const q = `${query}&donnees=synthetiques`;
+  const q = `${query}&donnees=synthetiques&vue=${view}`;
   await send('Page.navigate', { url: host });
   await loaded(host);
   await send('Runtime.evaluate', {
-    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, view: '${view}', me: ${me} }))`,
+    expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, me: ${me} }))`,
   });
   await send('Page.navigate', { url: `${host}${q}` });
   await loaded(`${host}${q}`);
@@ -2735,6 +2760,43 @@ test(
   },
 );
 
+test(
+  '« ISD seulement » : une carte sans personne ISD disparaît du Kanban, le compteur baisse, la pastille apparaît',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    // Recherche sur la tâche inventée sans personne ISD (colonnes paginées : elle ne serait pas toujours visible)
+    await w(
+      `const s = D.getElementById('f-search'); s.value = 'externe sans ISD'; s.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`,
+    );
+    const cards = `D.querySelectorAll('#view-panel[data-view="kanban"] .kcard').length`;
+    const count = `D.querySelector('.task-count').textContent.trim()`;
+    await until(`${cards} === 1`);
+    assert.equal(await w(`return ${count};`), '1 tâche');
+    assert.equal(await w(`return D.getElementById('chip-isdOnly') === null;`), true);
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.getElementById('chip-isdOnly') && ${cards} === 0`);
+    assert.match(await w(`return D.getElementById('chip-isdOnly').textContent;`), /ISD seulement/);
+    assert.equal(await w(`return ${count};`), 'Aucune tâche');
+    // Décochée : la carte revient
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
+    assert.equal(await w(`return ${count};`), '1 tâche');
+    // Retrait de la seule pastille : la case se décoche et la carte revient
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.querySelector('[data-remove="isdOnly"]') && ${cards} === 0`);
+    await w(`D.querySelector('[data-remove="isdOnly"]').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && ${cards} === 1`);
+    assert.equal(await w(`return D.getElementById('f-isd-only').checked;`), false);
+    // « Tout effacer » remet la case à faux
+    await w(`D.getElementById('f-isd-only').click(); return true;`);
+    await until(`D.getElementById('btn-clear') && ${cards} === 0`);
+    await w(`D.getElementById('btn-clear').click(); return true;`);
+    await until(`!D.getElementById('chip-isdOnly') && D.getElementById('f-isd-only').checked === false`);
+    assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
+  },
+);
+
 test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio', { skip: SKIP }, async () => {
   await open('');
   await w(
@@ -3177,33 +3239,26 @@ test(
   },
 );
 
-// ---------- Gantt : largeur de la colonne des noms (poignée et curseur « Largeur des noms ») ----------
+// ---------- Gantt : largeur de la colonne des noms (poignée) ----------
 
-/** Largeur de la colonne des noms : cellule affichée, poignée, curseur et préférence enregistrée. */
+/** Largeur de la colonne des noms : cellule affichée, poignée et préférence enregistrée. */
 async function labelWidth() {
-  return w(`const h = D.getElementById('gantt-resizer'); const r = D.getElementById('gantt-width');
+  return w(`const h = D.getElementById('gantt-resizer');
     return {
       cell: Math.round(D.querySelector('.grow__label').getBoundingClientRect().width),
       now: Number(h.getAttribute('aria-valuenow')),
       text: h.getAttribute('aria-valuetext'),
-      slider: Number(r.value),
-      sliderText: r.getAttribute('aria-valuetext'),
-      output: D.getElementById('gantt-width-value').textContent,
       pref: JSON.parse(W.localStorage.getItem('roadmap-isd:prefs') || '{}').ganttLabelWidth ?? null,
     };`);
 }
 
 function assertWidth(actual, px, pref, what) {
   assert.ok(Math.abs(actual.cell - px) <= 1, `${what} : colonne de ${actual.cell} px au lieu de ${px}`);
-  assert.deepEqual(
-    [actual.now, actual.text, actual.slider, actual.sliderText, actual.output, actual.pref],
-    [px, `${px} px`, px, `${px} px`, `${px} px`, pref],
-    what,
-  );
+  assert.deepEqual([actual.now, actual.text, actual.pref], [px, `${px} px`, pref], what);
 }
 
 test(
-  'Gantt : la colonne des noms s’élargit à la poignée, au clavier et au curseur, et la largeur est gardée',
+  'Gantt : la colonne des noms s’élargit à la poignée et au clavier, sans curseur, et la largeur est gardée',
   { skip: SKIP },
   async () => {
     await open('');
@@ -3212,10 +3267,10 @@ test(
     assertWidth(await labelWidth(), 320, null, 'largeur par défaut');
     const sep = await w(`const h = D.getElementById('gantt-resizer');
       return { role: h.getAttribute('role'), o: h.getAttribute('aria-orientation'), min: h.getAttribute('aria-valuemin'),
-        max: Number(h.getAttribute('aria-valuemax')), tab: h.tabIndex, label: D.querySelector('label[for="gantt-width"]').textContent };`);
+        max: Number(h.getAttribute('aria-valuemax')), tab: h.tabIndex, slider: !!D.getElementById('gantt-width'), sliderLabel: !!D.querySelector('.gantt__width') };`);
     assert.deepEqual(
-      [sep.role, sep.o, sep.min, sep.tab, sep.label],
-      ['separator', 'vertical', '160', 0, 'Largeur des noms'],
+      [sep.role, sep.o, sep.min, sep.tab, sep.slider, sep.sliderLabel],
+      ['separator', 'vertical', '160', 0, false, false],
     );
     assert.ok(sep.max >= 592, `maximum ${sep.max}`);
     // Les noms gardent leur nom complet en infobulle
@@ -3275,17 +3330,12 @@ test(
     });
     assertWidth(await labelWidth(), 368, 368, 'Maj+flèche gauche');
 
-    // Curseur « Largeur des noms » : la poignée suit, même préférence
-    await w(`const r = D.getElementById('gantt-width'); r.value = '256';
-      r.dispatchEvent(new W.Event('input', { bubbles: true })); r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
-    assertWidth(await labelWidth(), 256, 256, 'curseur');
-
     // Largeur gardée après un rechargement de la page
     const host = `${BASE}/dev/host.html?donnees=synthetiques`;
     await send('Page.navigate', { url: host });
     await loaded(host);
     await until(`D.getElementById('gantt-resizer') && D.querySelector('.grow__label')`);
-    assertWidth(await labelWidth(), 256, 256, 'après rechargement');
+    assertWidth(await labelWidth(), 368, 368, 'après rechargement');
 
     // Double-clic : largeur par défaut, préférence effacée
     const at2 = await w(`const r = D.getElementById('gantt-resizer').getBoundingClientRect();
@@ -3384,5 +3434,434 @@ test(
       ),
       /Flèches gauche et droite/,
     );
+  },
+);
+
+// ---------- Suppression depuis la fiche : tâche avec ses sous-tâches, chantier vide ; « Annuler » au même numéro ----------
+
+/** Ouvre la fiche puis le formulaire d'une tâche du Kanban (par son identifiant). */
+async function openTaskForm(id) {
+  await until(`D.querySelector('.view [data-task="${id}"]')`);
+  await clickOn(`.view [data-task="${id}"]`);
+  await until(`D.getElementById('btn-edit-open')`);
+  await clickOn('#btn-edit-open');
+  await until(`D.getElementById('task-form') && D.getElementById('btn-form-delete')`);
+}
+
+/** Ouvre la fiche puis le formulaire d'un chantier (fil d'Ariane de la fiche d'une tâche du Kanban). */
+async function openChantierForm(taskId) {
+  await until(`D.querySelector('.view [data-task="${taskId}"]')`);
+  await clickOn(`.view [data-task="${taskId}"]`);
+  await until(`D.querySelector('.dt-crumbs [data-ref-table="Chantiers"]')`);
+  await clickOn('.dt-crumbs [data-ref-table="Chantiers"]');
+  await until(`D.getElementById('btn-edit-open')`);
+  await clickOn('#btn-edit-open');
+  await until(`D.getElementById('chantier-form')`);
+}
+
+/** Ouvre le formulaire d'un chantier par son identifiant (fiche ouverte depuis la vue, faute de carte). */
+async function openChantierFormById(id) {
+  await w(`D.getElementById('tab-gantt').click(); return true;`);
+  const row = `[...D.querySelectorAll('#view-panel[data-view="gantt"] .grow--chantier')].find((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`;
+  await until(row);
+  await w(`const t = ${row}.querySelector('[data-open]'); t.click(); return true;`);
+  await until(`D.getElementById('btn-edit-open')`);
+  await clickOn('#btn-edit-open');
+  await until(`D.getElementById('chantier-form') && D.getElementById('btn-form-delete')`);
+  assert.equal(
+    await w(`return D.getElementById('detail-title').textContent.includes('Chantier sans tâche');`),
+    true,
+    id,
+  );
+}
+
+test(
+  'suppression : tâche et ses 2 sous-tâches dans un lot, disparues de la vue ; « Annuler » les recrée aux mêmes numéros',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openTaskForm(2);
+    // Bouton tertiaire à gauche du pied, jamais le bouton principal
+    assert.equal(await w(`return D.querySelector('.tf-foot').firstElementChild.id;`), 'btn-form-delete');
+    assert.match(await w(`return D.getElementById('btn-form-delete').className;`), /fr-btn--tertiary/);
+    await clickOn('#btn-form-delete');
+    await until(`D.querySelector('dialog.cdlg[open] #del-confirm')`);
+    assert.match(
+      await w(`return D.getElementById('cdlg-title').textContent;`),
+      /Supprimer la tâche « Tâche 002 · Modélisation » \?/,
+    );
+    assert.equal(await w(`return D.querySelectorAll('#del-list li').length;`), 2);
+    assert.match(await w(`return D.getElementById('del-hint').textContent;`), /Vous pourrez annuler juste après/);
+    // « Annuler » a le focus par défaut
+    assert.equal(await w(`return D.activeElement.id;`), 'del-cancel');
+    await clickOn('#del-confirm');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [
+      [
+        ['RemoveRecord', 'Tasks', 2],
+        ['RemoveRecord', 'Tasks', 3],
+        ['RemoveRecord', 'Tasks', 4],
+      ],
+    ]);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await until(`!D.querySelector('.view [data-task="2"]')`);
+    assert.match(
+      await w(`return D.querySelector('.toast__text').textContent;`),
+      /Tâche supprimée \(et ses 2 sous-tâches\)\./,
+    );
+    // Focus rendu à la vue, sur une carte voisine (pas au corps de la page)
+    assert.equal(await w(`return D.getElementById('view-panel').contains(D.activeElement);`), true);
+    assert.match(await w(`return D.activeElement.dataset.task ?? '';`), /^\d+$/);
+    // Journal de l'en-tête à jour
+    await w(`D.getElementById('btn-edit-pill').click(); return true;`);
+    await until(`!D.getElementById('edit-panel').hidden`);
+    assert.match(
+      await w(`return D.querySelector('.edit-panel__list').textContent;`),
+      /suppression de « Tâche 002 · Modélisation » et de ses 2 sous-tâches/,
+    );
+    await w(`D.getElementById('btn-edit-pill').click(); return true;`);
+    // « Annuler » : les trois lignes recréées à leur numéro, la tâche revient
+    await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+    await until(`W.__writes.length === 2`);
+    const restore = (await writes())[1];
+    assert.deepEqual(
+      restore.map((a) => [a[0], a[1], a[2]]),
+      [
+        ['AddRecord', 'Tasks', 2],
+        ['AddRecord', 'Tasks', 3],
+        ['AddRecord', 'Tasks', 4],
+      ],
+    );
+    assert.equal(restore[1][3].parentTask, 2);
+    assert.equal(restore[0][3].titre, 'Tâche 002 · Modélisation');
+    await until(`D.querySelector('.view [data-task="2"]')`);
+    await until(`/Suppression annulée/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+  },
+);
+
+test(
+  'suppression : chantier non vide refusé sans écriture ; « Annuler » de la fenêtre n’écrit rien',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openChantierForm(2);
+    await until(`D.getElementById('btn-form-delete')`);
+    await clickOn('#btn-form-delete');
+    await until(`D.querySelector('dialog.cdlg[open] #del-close')`);
+    // Nombre attendu : tâches rattachées au chantier dans les données du faux Grist (jeu synthétique)
+    const expected = await w(`const id = Number(D.getElementById('chantier-form').dataset.chantierId);
+      const t = await W.grist.docApi.fetchTable('Tasks'); return t.Chantier.filter((c) => c === id).length;`);
+    assert.ok(expected > 1);
+    const alert = await w(`return D.getElementById('del-alert').textContent;`);
+    assert.equal(Number(/déplacez ou supprimez d’abord ses (\d+) tâches/.exec(alert)?.[1]), expected);
+    assert.equal(await w(`return D.querySelectorAll('.cdlg__foot button').length;`), 1);
+    await clickOn('#del-close');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    // Fenêtre de la tâche fermée par « Annuler » : rien n'est écrit, le formulaire reste ouvert
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await openTaskForm(2);
+    await clickOn('#btn-form-delete');
+    await until(`D.querySelector('dialog.cdlg[open] #del-cancel')`);
+    await clickOn('#del-cancel');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    assert.equal(await w(`return Boolean(D.getElementById('task-form'));`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test('suppression : chantier vide supprimé puis restauré au même numéro', { skip: SKIP }, async () => {
+  await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+  await openChantierFormById(31);
+  await clickOn('#btn-form-delete');
+  await until(`D.querySelector('dialog.cdlg[open] #del-confirm')`);
+  assert.match(
+    await w(`return D.getElementById('cdlg-title').textContent;`),
+    /Supprimer le chantier « Chantier sans tâche du pilotage » \?/,
+  );
+  await clickOn('#del-confirm');
+  await until(`W.__writes.length === 1`);
+  assert.deepEqual(await writes(), [[['RemoveRecord', 'Chantiers', 31]]]);
+  await until(`/Chantier supprimé/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+  await until(
+    `![...D.querySelectorAll('.grow--chantier')].some((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`,
+  );
+  await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+  await until(`W.__writes.length === 2`);
+  const restore = (await writes())[1];
+  assert.deepEqual([restore.length, restore[0][0], restore[0][1], restore[0][2]], [1, 'AddRecord', 'Chantiers', 31]);
+  await until(
+    `[...D.querySelectorAll('.grow--chantier')].some((r) => r.textContent.includes('Chantier sans tâche du pilotage'))`,
+  );
+});
+
+test('suppression en mode essai : notée dans le journal, rien n’est envoyé', { skip: SKIP }, async () => {
+  await open('?edition=essai');
+  await openTaskForm(2);
+  await clickOn('#btn-form-delete');
+  await until(`D.querySelector('dialog.cdlg[open] #del-confirm')`);
+  assert.match(await w(`return D.getElementById('del-confirm').textContent;`), /essai/);
+  await clickOn('#del-confirm');
+  await until(`!D.querySelector('dialog.cdlg')`);
+  await until(`!D.querySelector('.view [data-task="2"]')`);
+  assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Mode essai/);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  await w(`D.getElementById('btn-edit-pill').click(); return true;`);
+  await until(`!D.getElementById('edit-panel').hidden`);
+  assert.match(
+    await w(`return D.querySelector('.edit-panel__list').textContent;`),
+    /suppression de « Tâche 002 · Modélisation » et de ses 2 sous-tâches/,
+  );
+  assert.match(await w(`return D.querySelector('.edit-panel__json').textContent;`), /RemoveRecord/);
+});
+
+for (const query of ['', '?edition=1&doc=doc-dev-local&ecritures=lecteur']) {
+  test(
+    `suppression : aucun bouton sans édition ou pour un lecteur (${query || 'édition coupée'})`,
+    { skip: SKIP },
+    async () => {
+      await open(query);
+      await clickOn('.view [data-task="2"]');
+      await until(`D.getElementById('app-detail').dataset.open === 'true'`);
+      assert.equal(await w(`return D.querySelectorAll('#btn-form-delete, #btn-edit-open').length;`), 0);
+      assert.equal(await w(`return W.__writes.length;`), 0);
+    },
+  );
+}
+
+// ---------- Gantt : couleur par chantier (mode par défaut) ----------
+test(
+  'Gantt : couleur par chantier par défaut (pastille, tâches de la teinte du chantier), bascule sur « Étape » mémorisée',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.querySelector('.grow--chantier .grow__chip')`);
+    assert.equal(await w(`return D.getElementById('gantt-color-chantier').checked;`), true);
+    // Deux chantiers voisins d'un même projet : teintes différentes, pastille devant le nom
+    const pair =
+      await w(`const rows = [...D.querySelectorAll('.grow--chantier')].filter((r) => r.querySelector('.grow__chip'));
+      for (let i = 0; i + 1 < rows.length; i++) {
+        const a = rows[i], b = rows[i + 1];
+        if (a.nextElementSibling === b) {
+          const c = (r) => getComputedStyle(r.querySelector('.grow__chip')).backgroundColor;
+          return { a: c(a), b: c(b), chipFirst: a.querySelector('.grow__label').firstElementChild.nextElementSibling.classList.contains('grow__chip') };
+        }
+      }
+      return null;`);
+    assert.ok(pair, 'deux chantiers voisins attendus au niveau « Chantiers »');
+    assert.notEqual(pair.a, pair.b);
+    assert.equal(pair.chipFirst, true);
+    // Une tâche a la couleur de son chantier (barre, trait), une ligne de projet n'a pas de bande
+    await w(`D.getElementById('gantt-level-tache').click(); return true;`);
+    await until(`D.querySelector('.grow--tache .gbar')`);
+    const same =
+      await w(`const t = [...D.querySelectorAll('.grow--tache.grow--ch')].find((r) => r.querySelector('.gbar:not(.gbar--deduced)'));
+      let c = t.previousElementSibling; while (!c.classList.contains('grow--chantier')) c = c.previousElementSibling;
+      const bar = getComputedStyle(t.querySelector('.gbar')).backgroundColor;
+      const chip = getComputedStyle(c.querySelector('.grow__chip')).backgroundColor;
+      const trait = getComputedStyle(t.querySelector('.grow__title')).borderLeftColor;
+      const proj = getComputedStyle(D.querySelector('.grow--projet > .grow__track')).backgroundImage;
+      const band = getComputedStyle(t.querySelector('.grow__track')).backgroundImage;
+      return { bar, chip, trait, proj, band, text: !!D.querySelector('.gbar__text'),
+        label: t.querySelector('.gbar').getAttribute('aria-label'), chantier: c.querySelector('.grow__title').textContent };`);
+    assert.equal(same.bar, same.chip);
+    assert.equal(same.trait, same.chip);
+    assert.equal(same.proj, 'none');
+    assert.notEqual(same.band, 'none');
+    assert.equal(same.text, false, 'pas de texte d’étape dans les barres en mode chantier');
+    assert.ok(same.label.includes(`Chantier : ${same.chantier}`), same.label);
+    // Bascule sur « Étape » : texte d'étape dans les barres, plus de pastille ; choix gardé au rechargement
+    // (étapes : titres des sous-tâches du jeu synthétique)
+    await w(`D.getElementById('gantt-level-sous-tache').click(); return true;`);
+    assert.equal(await w(`return D.querySelectorAll('.gbar__text').length;`), 0);
+    await w(`D.getElementById('gantt-color-phase').click(); return true;`);
+    await until(`D.querySelector('.gbar__text') && !D.querySelector('.grow__chip')`);
+    assert.equal(await w(`return JSON.parse(W.localStorage.getItem('roadmap-isd:prefs')).ganttColorBy;`), 'phase');
+    await send('Page.reload');
+    await until(`D.querySelector('.view [data-task]')`);
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.getElementById('gantt-color-phase')?.checked`);
+    assert.equal(await w(`return !!D.querySelector('.grow__chip');`), false);
+  },
+);
+
+// ---------- Fiche tâche : mise en page des lignes « Date de clôture » et « Rattachement » ----------
+
+test(
+  'Fiche tâche : champs dans le panneau, bouton « Vider la date de clôture » à côté du champ, libellé « Rattachement » comme les autres',
+  { skip: SKIP },
+  async () => {
+    try {
+      for (const panel of [360, 480, 720]) {
+        await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+        await w(`const s = D.createElement('style'); s.id = 'layout-probe';
+          s.textContent = '.drawer[data-mode=edit]{width:min(${panel}px,100vw)!important}'; D.head.append(s); return true;`);
+        await w(`D.querySelector('.view [data-task]').click(); return true;`);
+        await until(`D.getElementById('btn-edit-open')`);
+        await w(`D.getElementById('btn-edit-open').click(); return true;`);
+        await until(`D.getElementById('task-form')`);
+        await w(`if (!D.getElementById('tf-more').open) D.querySelector('#tf-more > summary').click(); return true;`);
+        await until(`D.getElementById('tf-more').open`);
+        // Pas de date de clôture : pas de bouton ; la date donnée, il apparaît aussitôt, date de clôture conservée en vue
+        assert.equal(await w(`return D.querySelector('.tf-clear') === null;`), true);
+        await w(`const t = D.getElementById('tf-dateCloture'); t.value = '2025-10-20';
+          t.dispatchEvent(new W.Event('input', { bubbles: true })); t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+        await until(`D.querySelector('.tf-clear') && D.getElementById('tf-more').open`);
+        const m =
+          await w(`const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
+          const body = D.querySelector('.drawer__body');
+          const style = (e) => { const c = W.getComputedStyle(e); return [c.fontWeight, c.color, c.fontSize].join('|'); };
+          const path = D.getElementById('tf-attach-path');
+          return {
+            body: box(body), hscroll: body.scrollWidth > body.clientWidth,
+            inputs: [...D.querySelectorAll('#task-form input:not([type=radio]):not([type=checkbox]), #task-form select, #task-form textarea')]
+              .map((e) => ({ id: e.id, ...box(e) })),
+            date: box(D.getElementById('tf-dateCloture')), clear: box(D.querySelector('.tf-clear')),
+            attachLabel: style(D.getElementById('tf-attach-label')),
+            titleLabel: style(D.querySelector('label[for=tf-titre]')),
+            path: box(path), move: box(D.getElementById('tf-move')),
+          };`);
+        const at = `panneau ${panel} px`;
+        assert.equal(m.hscroll, false, `${at} : défilement horizontal`);
+        for (const i of m.inputs)
+          assert.ok(
+            i.l >= m.body.l - 0.5 && i.r <= m.body.r + 0.5,
+            `${at} : ${i.id} déborde (${i.l}-${i.r} pour ${m.body.l}-${m.body.r})`,
+          );
+        assert.ok(
+          m.clear.l >= m.body.l - 0.5 && m.clear.r <= m.body.r + 0.5,
+          `${at} : bouton « Vider » hors du panneau`,
+        );
+        const apart = m.clear.l >= m.date.r - 0.5 || m.clear.t >= m.date.b - 0.5 || m.clear.b <= m.date.t + 0.5;
+        assert.ok(apart, `${at} : le bouton « Vider » chevauche le champ de date`);
+        assert.equal(m.attachLabel, m.titleLabel, `${at} : libellé « Rattachement » différent des autres libellés`);
+        assert.ok(
+          m.move.l >= m.body.l - 0.5 && m.move.r <= m.body.r + 0.5,
+          `${at} : bouton « Changer » hors du panneau`,
+        );
+        const same = m.move.l >= m.path.r - 0.5;
+        const below = m.move.t >= m.path.b - 0.5;
+        assert.ok(same || below, `${at} : « Changer » chevauche le chemin`);
+        if (same)
+          assert.ok(
+            Math.abs((m.move.t + m.move.b) / 2 - (m.path.t + m.path.b) / 2) <= 14,
+            `${at} : « Changer » mal aligné avec le chemin`,
+          );
+        // Vider la date : le bouton disparaît aussitôt, la date est vide
+        await w(`D.querySelector('.tf-clear').click(); return true;`);
+        await until(`!D.querySelector('.tf-clear')`);
+        assert.equal(await w(`return D.getElementById('tf-dateCloture').value;`), '');
+      }
+    } finally {
+      await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    }
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
+  'Fiche tâche : le panneau tient dans la fenêtre à 390 px, sans passer sous la barre de défilement',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    try {
+      await until(`D.documentElement.clientWidth <= 390`);
+      await openForm();
+      await sleep(400); // fin de la transition d'ouverture
+      const r = await w(`const d = D.querySelector('.drawer').getBoundingClientRect();
+        return { l: d.left, r: d.right, cw: D.documentElement.clientWidth };`);
+      assert.ok(r.l >= -0.5 && r.r <= r.cw + 0.5, `panneau ${r.l}-${r.r} pour une fenêtre de ${r.cw} px`);
+    } finally {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: 1440,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+    }
+  },
+);
+
+test(
+  'Fenêtre de création à 390 px : la feuille tient dans la fenêtre, sans passer sous la barre de défilement',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    try {
+      await until(`D.documentElement.clientWidth <= 390`);
+      await clickOn('#btn-new-task');
+      await until(`D.querySelector('dialog.cdlg[open]')`);
+      const r = await w(`const d = D.querySelector('dialog.cdlg[open]').getBoundingClientRect();
+        return { l: d.left, r: d.right, cw: D.documentElement.clientWidth };`);
+      assert.ok(r.l >= -0.5 && r.r <= r.cw + 0.5, `fenêtre ${r.l}-${r.r} pour ${r.cw} px`);
+    } finally {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: 1440,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+    }
+  },
+);
+
+test(
+  'Fiche tâche : la date de clôture saisie, un vrai clic sur « Enregistrer » pendant le blur n’est pas perdu',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    await w(`if (!D.getElementById('tf-more').open) D.querySelector('#tf-more > summary').click(); return true;`);
+    await until(`D.getElementById('tf-more').open`);
+    await type('tf-titre', 'Titre et clôture'); // le bouton est déjà actif : il est mis à jour sur place
+    await w(`const t = D.getElementById('tf-dateCloture'); t.focus(); t.value = '2025-10-20';
+      t.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`);
+    await sleep(400); // fin de la transition d'ouverture du panneau
+    const at = await w(`const r = D.getElementById('btn-form-save').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    // Le champ de date perd le focus au mousedown : son événement change part avant le relâchement
+    await w(`D.getElementById('tf-dateCloture').dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await until(`W.__writes.length === 1`);
+    assert.equal(await w(`return 'dateCloture' in W.__writes[0].args[0][0][3];`), true);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);
+
+test(
+  'Fiche tâche : « Vider la date de clôture » pressé pendant le blur de la date n’est pas détaché et vide la date',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    await w(`if (!D.getElementById('tf-more').open) D.querySelector('#tf-more > summary').click(); return true;`);
+    await until(`D.getElementById('tf-more').open`);
+    const setDate = (v) =>
+      w(`const t = D.getElementById('tf-dateCloture'); t.focus(); t.value = '${v}';
+        t.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`);
+    const change = () =>
+      w(`D.getElementById('tf-dateCloture').dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+    await setDate('2025-10-20');
+    await change();
+    await until(`D.querySelector('.tf-clear')`);
+    // Date de clôture existante modifiée : le bouton reste le même élément
+    await w(`D.querySelector('.tf-clear').dataset.mark = 'same'; return true;`);
+    await setDate('2025-10-21');
+    await w(`D.querySelector('.tf-clear').scrollIntoView({ block: 'center' }); return true;`);
+    await sleep(400);
+    const at = await w(`const r = D.querySelector('.tf-clear').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await change();
+    assert.equal(await w(`return D.querySelector('.tf-clear')?.dataset.mark ?? null;`), 'same');
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await until(`!D.querySelector('.tf-clear')`);
+    assert.equal(await w(`return D.getElementById('tf-dateCloture').value;`), '');
   },
 );

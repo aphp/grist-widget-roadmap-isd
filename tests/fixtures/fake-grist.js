@@ -46,7 +46,10 @@ export function createFakeGrist(tables, opts = {}) {
   const docId = opts.docId ?? 'doc-faux-test';
   const tokens = [];
 
-  /** Actions appliquées comme Grist : UpdateRecord, BulkUpdateRecord, AddRecord (id = max + 1), RemoveRecord. */
+  /**
+   * Actions appliquées comme Grist : UpdateRecord, BulkUpdateRecord, AddRecord (id = max + 1, ou identifiant fixe),
+   * RemoveRecord.
+   */
   function applyOne([name, table, id, fields]) {
     const t = data[table];
     if (!t) throw new Error(`KeyError: ${table}`);
@@ -71,7 +74,9 @@ export function createFakeGrist(tables, opts = {}) {
       return null;
     }
     if (name === 'AddRecord') {
-      const newId = Math.max(0, ...t.id) + 1;
+      // Identifiant fixe (restauration d'une ligne supprimée) : refusé s'il est déjà pris, comme Grist
+      if (Number.isInteger(id) && t.id.includes(id)) throw new Error(`Duplicate row id ${id}`);
+      const newId = Number.isInteger(id) && id > 0 ? id : Math.max(0, ...t.id) + 1;
       for (const c of Object.keys(t)) t[c].push(c === 'id' ? newId : null);
       set(t.id.length - 1, fields);
       return newId;

@@ -21,8 +21,15 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   et copie la saisie au lieu de la perdre en silence. Dates ajoutées ou changées ensuite (fiche, fenêtre de
   création) : ETP gardé, heures recalculées (`core/charges-rescale.js`) ; entrées au-dessus de la borne laissées telles
   quelles et signalées (dates remises à l'identique : texte d'origine recopié). Projects et catégories :
-  jamais. `RemoveRecord` seulement pour annuler une création de la session (ligne relue identique, aucune
-  référence), jamais sur Team (une personne se désactive).
+  jamais. `RemoveRecord` : pour annuler une création de la session (ligne relue identique, aucune référence), ou
+  pour supprimer depuis la fiche, après confirmation, une tâche avec toutes ses sous-tâches ou un chantier vide
+  (aucune tâche rattachée) ; refusé si une ligne hors du lot en dépend (dependDe d'une tâche ou d'un chantier) ;
+  suppression depuis la fiche jamais sur Team, Projects ni Disponibilites (`REMOVABLE`), et jamais aucune ligne de
+  Team (une personne se désactive). Lignes relues juste avant (toutes les colonnes de données), restaurables par
+  « Annuler » (AddRecord au même identifiant, valeurs relues, parents avant enfants), seule création qui porte des
+  colonnes hors de la liste de création. Refus aussi : colonne de données absente de la ligne relue (instantané
+  incomplet), autre table qui référence Tasks ou Chantiers par une colonne de données ; « Annuler » refusé si une
+  ligne recréée viserait une ligne disparue (parent, chantier, projet, dépendances, projets du chantier).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, dates de planification ≤ 31/12 de l'année suivante
   (`date-max`, colonnes écrites seulement, « Annuler » exempt), périmètre ISD, relecture des lignes avant l'envoi,
@@ -62,6 +69,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   Domaine ISD = nom contenant « ISD » (personnes, sinon choix de Team.Domaine), calculé une fois (`model.isdDomain`),
   jamais de repli sur un autre Domaine (il fixe les écritures). Périmètre : responsable du projet, rôles de chantier
   et de tâche pour toute l'équipe ; sponsor et contributeur clé pour les profils ISD seulement.
+  La règle (`taskInvolvesIsd`, `chantierInvolvesIsd`, `projectInvolvesIsd` de model.js) sert aussi au filtre « ISD seulement »
+  (`isdOnly`), qui masque chantiers et tâches sans personne ISD dans les projets affichés.
   Les sélecteurs d'ajout ne proposent que l'équipe ISD ; les personnes hors ISD déjà saisies dans la Feuille restent
   affichées et conservées. Personne : `isdTeam` = membre actif de l'équipe ISD (périmètre ISD, `inScope`, écritures) ;
   `isd` = profil ISD actif seul (DE, DA, DS, PO). Profils affichés (filtre Profil, charge et capacité du Portfolio,
@@ -87,7 +96,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   « Nouvelle tâche » / « Sous-tâche », un seul contrôleur `ui/people-block.js`, identifiants préfixés `tf-` / `cf-`),
   équipe ISD, statut depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
   `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte), tags affectés et
-  retirés (lot 2e, `core/tags-edit.js`).
+  retirés (lot 2e, `core/tags-edit.js`), suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide ;
+  `core/delete-plan.js` pour la fenêtre, `remove` du writer sur les tables relues, « Annuler » au même identifiant).
 - **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
   Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
   (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
@@ -101,7 +111,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   Les tags ne s'enregistrent jamais sans vérification : « Enregistrer sans vérifier » n'envoie que les autres champs
   et le dit. Annonces des tags dans `#drawer-live`, région persistante du panneau (hors du contenu redessiné).
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
-  relecture des valeurs écrites, coût des relectures, `check_writes.py`.
+  relecture des valeurs écrites, coût des relectures, `check_writes.py`, suppression et restauration au même
+  identifiant (AddRecord à identifiant fixe, colonnes de données recopiées, manualSort, refus d'un identifiant pris).
 - Lots suivants : glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
   d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité,

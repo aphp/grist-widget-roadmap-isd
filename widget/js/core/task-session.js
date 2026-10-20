@@ -285,6 +285,25 @@ export async function runCreate({ writer, table, fields }) {
 }
 
 /**
+ * Suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide) : le writer relit les tables, refait le
+ * contrôle et envoie un seul lot ; chaque requête y est limitée dans le temps (timeoutMs du writer). expect :
+ * identifiants listés dans la fenêtre de confirmation (lot changé entre-temps : refus, rien n'est envoyé). Sans
+ * réponse dans le délai et lignes encore là : résultat inconnu.
+ * @param {{writer:object, table:string, id:number, expect?:number[]}} snap
+ * @returns {Promise<{kind:'saved', entry:object}|{kind:'refused', reason:string, error:Error}|{kind:'unknown'}
+ *   |{kind:'failed', error:Error}>}
+ */
+export async function runDelete({ writer, table, id, expect }) {
+  try {
+    return { kind: 'saved', entry: await writer.remove(table, id, expect ? { expect } : {}) };
+  } catch (error) {
+    if (error instanceof WriteRefused) return { kind: 'refused', reason: error.reason, error };
+    if (error instanceof WriteFailed && error.kind === 'timeout') return { kind: 'unknown' };
+    return { kind: 'failed', error };
+  }
+}
+
+/**
  * Changement de chantier d'une tâche (plan de create-form.js:movePlan) : la tâche est relue ; si son rattachement a
  * changé ailleurs depuis l'ouverture, rien n'est envoyé. Sinon, la tâche et ses sous-tâches partent dans un lot.
  * @returns {Promise<{kind:'saved', entry:object}|{kind:'changed', fresh:object}|{kind:'missing'}

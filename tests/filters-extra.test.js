@@ -151,25 +151,17 @@ test('« Je suis… » : première personne choisie → périmètre « Mes chant
   assert.equal(start.me, null);
 });
 
-test('« Je suis… » : premier choix → vue d’accueil et périmètre du profil, une seule fois', () => {
-  const start = { ...DEFAULT_PREFS, filters: { ...DEFAULT_FILTERS } };
-  // DE, DA : onglet Mes tâches, périmètre Mes chantiers ; personne inconnue : pareil
+test('« Je suis… » : premier choix → périmètre du profil, aucune vue d’accueil posée, onglet inchangé', () => {
+  const start = { ...DEFAULT_PREFS, filters: { ...DEFAULT_FILTERS }, view: 'table' };
   for (const id of [1, 5, 999]) {
     const p = choosePerson(start, id, m.people.get(id));
-    assert.equal(p.homeView, 'mytasks');
-    assert.equal(p.view, 'mytasks');
-    assert.equal(p.filters.scope, 'chantiers');
+    assert.deepEqual([p.homeView, p.view, p.filters.scope], [null, 'table', 'chantiers']);
   }
-  // PO : Gantt au niveau des tâches, Mes chantiers
   const po = choosePerson(start, 2, m.people.get(2));
-  assert.deepEqual([po.homeView, po.view, po.ganttLevel, po.filters.scope], ['gantt', 'gantt', 'tache', 'chantiers']);
-  // Management : Synthèse, sans périmètre
+  assert.deepEqual([po.homeView, po.view, po.ganttLevel, po.filters.scope], [null, 'table', 'tache', 'chantiers']);
   const mg = choosePerson(start, 6, m.people.get(6));
-  assert.deepEqual([mg.homeView, mg.view, mg.filters.scope], ['synthesis', 'synthesis', 'all']);
-  // Vue d'accueil déjà choisie : ni elle ni l'onglet courant ne changent
-  const later = choosePerson({ ...po, view: 'table' }, 1, m.people.get(1));
-  assert.deepEqual([later.homeView, later.view], ['gantt', 'table']);
-  // Retour à « personne » puis nouveau choix : périmètre du profil reposé, vue d'accueil gardée
+  assert.deepEqual([mg.homeView, mg.view, mg.filters.scope], [null, 'table', 'all']);
+  // Retour à « personne » puis nouveau choix : périmètre du profil reposé
   const again = choosePerson(choosePerson(po, null), 1, m.people.get(1));
-  assert.deepEqual([again.homeView, again.filters.scope], ['gantt', 'chantiers']);
+  assert.deepEqual([again.homeView, again.filters.scope], [null, 'chantiers']);
 });

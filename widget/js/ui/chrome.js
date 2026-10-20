@@ -48,6 +48,7 @@ export function createChrome(el, on) {
     openDetail: drawer.open,
     closeDetail: drawer.close,
     isDetailOpen: drawer.isOpen,
+    detailOpener: drawer.opener,
     detailRoot: drawer.root,
     togglePopover: popovers.toggle,
   };

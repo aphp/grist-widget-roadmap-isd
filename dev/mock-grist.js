@@ -5,7 +5,8 @@
 // est journalisée dans window.__writes, puis traitée selon ?ecritures= :
 //   refus (défaut)  : refusée ;
 //   memoire         : appliquée à la copie en mémoire du snapshot (l'interface se met à jour), onRecords simulé ;
-//   acl:<Table>     : refus de type règle d'accès sur cette table (« Blocked by table update access rules ») ;
+//   acl:<Table>     : refus de type règle d'accès sur cette table (« Blocked by table update access rules »), toute
+//                     action comprise (mise à jour, création, suppression) ;
 //   acl-ajout:<Table> : la règle d'accès refuse seulement les créations dans cette table (« Blocked by table create access rules ») ;
 //   lecteur         : compte lecteur (access = viewers), toute écriture refusée ;
 //   acces-inconnu   : la lecture du niveau d'accès échoue (comme sous une CSP qui la bloque) ;
@@ -141,7 +142,9 @@
       return null;
     }
     if (name === 'AddRecord') {
-      const newId = Math.max(0, ...t.id) + 1;
+      // Identifiant fixe (« Annuler » une suppression : ligne recréée à son numéro) ; déjà pris : erreur, comme Grist
+      if (Number.isInteger(id) && t.id.includes(id)) throw new Error(`Duplicate row id ${id} in ${table}`);
+      const newId = Number.isInteger(id) && id > 0 ? id : Math.max(0, ...t.id) + 1;
       for (const c of Object.keys(t)) t[c].push(c === 'id' ? newId : null);
       set(t.id.length - 1, fields);
       return newId;

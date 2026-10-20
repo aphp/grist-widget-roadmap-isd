@@ -21,7 +21,7 @@ import { captureScrolls, dataFingerprint, needsRender, restoreScrolls } from './
 import { estimationIdsOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
 import { dayInZone, maxPlanDay, monthKey, monthsFrom } from './core/dates.js';
-import { openingView, sanitizeHomeView } from './core/home-view.js';
+import { initialView, sanitizeHomeView } from './core/home-view.js';
 import { label } from './labels.js';
 import { createChrome } from './ui/chrome.js';
 import { TABS, THEMES } from './ui/kit.js';
@@ -92,15 +92,15 @@ function safeStorage() {
 }
 const storage = safeStorage();
 
-/** Préférences au démarrage : l'onglet ouvert est la vue d'accueil (P-UX-2), sinon la dernière vue. */
+/** Préférences au démarrage : l'onglet ouvert est vue= de l'adresse, la vue d'accueil (P-UX-2), sinon le Gantt. */
 function initialPrefs() {
   const p = loadPrefs(storage);
-  const homeView = sanitizeHomeView(p.homeView, p.me, TABS);
+  const homeView = sanitizeHomeView(p.homeView, TABS);
   return {
     ...p,
     filters: { ...DEFAULT_FILTERS, ...p.filters },
     homeView,
-    view: openingView({ homeView, view: p.view }, TABS),
+    view: initialView({ homeView }, window.location.search, TABS),
     theme: THEMES.includes(p.theme) ? p.theme : 'auto',
   };
 }
@@ -322,6 +322,11 @@ const qsSelector = (k) => `[data-qs-focus="${CSS.escape(k)}"]`;
 function focusedSelector() {
   const a = document.activeElement;
   if (!a || !$('view-panel')?.contains(a)) return null;
+  return selectorOf(a);
+}
+
+/** Sélecteur stable d'un élément de la vue (data-qs-focus, id, data-qs-open, data-task, data-open), ou null. */
+function selectorOf(a) {
   if (a.dataset.qsFocus) return qsSelector(a.dataset.qsFocus);
   if (a.id) return `#${CSS.escape(a.id)}`;
   for (const [k, attr] of [
@@ -585,6 +590,13 @@ async function undoLast() {
     const names = r.skipped.map((c) => label(`form.field.${c}`)).join(', ');
     if (r.entry.kind === 'add')
       return toast.show(label(r.undoEntry ? 'toast.undoneAdd' : `toast.undoAdd.${r.reason ?? 'modifiee'}`));
+    if (r.entry.kind === 'delete') {
+      // Ligne visée par une ligne à recréer et disparue entre-temps : nommée dans le message
+      const ligne = r.missing ? label(`delete.ref.${r.missing.table}`, { id: r.missing.id }) : '';
+      return toast.show(
+        label(r.undoEntry ? 'toast.undoneDelete' : `toast.undoDelete.${r.reason ?? 'relecture'}`, { ligne }),
+      );
+    }
     toast.show(
       !r.undoEntry
         ? label('toast.undoNone')
@@ -620,7 +632,43 @@ const editor = createTaskEditor({
   timeoutMs: () => timeoutMs,
   onCreate: (data) => openCreate(data),
   onMove: (ref) => createDialog.open('move', { taskId: ref.id }),
+  canWriteRow,
+  onDeleted,
 });
+
+/**
+ * Après une suppression depuis la fiche : fiche fermée, modèle corrigé (journal de l'en-tête à jour), focus rendu à
+ * la vue sur l'élément voisin de celui qui avait ouvert la fiche (sinon le panneau de la vue), sans faire défiler.
+ */
+function onDeleted(_ref, entry) {
+  const targets = deleteFocusTargets();
+  detailHistory.length = 0;
+  detailCurrent = null;
+  chrome.closeDetail();
+  // Le focus revenu sur l'élément supprimé ne doit pas être « restauré » par le rendu qui suit
+  if ($('view-panel')?.contains(document.activeElement)) document.activeElement.blur();
+  onWritten(entry);
+  if (targets?.length) restoreViewFocus({ selectors: targets, reveal: false });
+  if (!document.activeElement || document.activeElement === document.body)
+    $('view-panel')?.focus({ preventScroll: true });
+}
+
+/**
+ * Éléments à focaliser après une suppression, par ordre de préférence : l'élément qui avait ouvert la fiche (une
+ * ligne repérée par sa position devient la suivante), puis ses voisins de même nature dans la vue.
+ */
+function deleteFocusTargets() {
+  const panel = $('view-panel');
+  const op = chrome.detailOpener();
+  if (!op?.isConnected || !panel?.contains(op)) return null;
+  const kind = op.classList[0] ? `${op.tagName}.${CSS.escape(op.classList[0])}` : op.tagName;
+  const peers = [...panel.querySelectorAll(kind)];
+  const order = focusOrder(
+    peers.map((_, k) => String(k)),
+    String(peers.indexOf(op)),
+  );
+  return order.map((k) => peers[Number(k)] && selectorOf(peers[Number(k)])).filter(Boolean);
+}
 
 /** Ouvre le formulaire d'une ligne (après « Créer et ouvrir ») ; la fiche courante devient « Retour ». */
 function openForm(ref) {
@@ -793,6 +841,8 @@ const lookup = {
     const t = state.raw?.tables.Tasks;
     return t?.Chantier ? t.id.filter((_, i) => t.Chantier[i] === id) : [];
   },
+  // Tables chargées (suppression en mode essai : lot et instantané sur les données lues)
+  table: (name) => state.raw?.tables[name] ?? null,
   referenced: (table, id) =>
     table === 'Tasks' ? lookup.childIds(id).length > 0 : table === 'Chantiers' && lookup.chantierTasks(id).length > 0,
 };
