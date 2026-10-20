@@ -29,8 +29,10 @@ import {
 } from '../core/person-form.js';
 import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
+import { tagsWriteProblem } from '../core/tags-edit.js';
+import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags-field.js';
 import { draftChangeRight, quickStatusRight } from '../core/write-rights.js';
-import { label, statusLabel } from '../labels.js';
+import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargeEqText,
   chargeRowMsgs,
@@ -133,6 +135,12 @@ export function createTaskEditor(deps) {
     if (st.badNumber) v.errors.progression = { key: 'form.error.progression' };
     if (st.badCapacity) v.errors.capaciteHebdo = { key: 'person.error.capacity', vars: { max: CAPACITY_MAX } };
     if (st.chargeErrors.size) v.errors.charges = { key: 'form.error.charges' };
+    // Tags (fiches tâche et chantier) : mêmes règles que le writer, signalées avant l'envoi
+    if ('tags' in st.draft) {
+      const p = tagsWriteProblem(st.draft.tags, st.base.tags ?? []);
+      const why = hasLabel(`form.error.tags.${p}`) ? `form.error.tags.${p}` : 'form.error.tags.autre';
+      if (p) v.errors.tags = { key: 'form.error.tags', vars: { raison: label(why) } };
+    }
     // Saisie sur une colonne devenue non modifiable : « Rétablir » ce champ pour enregistrer le reste
     if (!st.locked)
       for (const f of Object.keys(changes()))
@@ -287,6 +295,11 @@ export function createTaskEditor(deps) {
       pendingLeave: null,
       changedElsewhere: false,
       depQuery: '',
+      tagQuery: '',
+      tagOpen: false,
+      tagActive: 0,
+      tagsReplace: null,
+      confirmTagsReplace: false,
       badDates: new Set(),
       badNumber: false,
       chargeErrors: new Map(),
@@ -431,7 +444,9 @@ export function createTaskEditor(deps) {
           ? 'tf-priorite-none'
           : first === 'charges'
             ? (document.querySelector('#tf-people [aria-invalid="true"]')?.id ?? 'tf-people-title')
-            : `tf-${first}`;
+            : first === 'tags' && document.getElementById('tf-tags')?.disabled
+              ? 'tf-tags-label'
+              : `tf-${first}`;
       render(target);
       return;
     }
@@ -459,6 +474,8 @@ export function createTaskEditor(deps) {
       before: opts.before,
       chargesBase: opts.chargesBase,
       chargesSeen: opts.chargesSeen,
+      tagsSeen: opts.tagsSeen,
+      tagsReplace: cur.tagsReplace ?? undefined,
       timeoutMs: deps.timeoutMs?.(),
     });
     cur.busy = false;
@@ -483,6 +500,9 @@ export function createTaskEditor(deps) {
     }
     if (result.kind === 'reread-failed') {
       cur.confirmNoCheck = true;
+      // Tags : jamais enregistrés sans vérification (« Enregistrer sans vérifier » n'envoie que le reste)
+      cur.noCheckTags = 'tags' in ch;
+      cur.noCheckRest = Object.keys(ch).filter((c) => c !== 'tags').length;
       cur.fail = failFrom(result, ch);
       return render('tf-alert');
     }
@@ -598,6 +618,93 @@ export function createTaskEditor(deps) {
     }
   }
 
+  // ---------- Tags : sélecteur en « combobox » (liste proposée, flèches, Entrée, Échap) ----------
+
+  /** Liste des tags proposés et attributs de la zone de recherche mis à jour, sans redessiner le formulaire. */
+  function tagRefresh() {
+    const box = document.getElementById('tf-tags-results');
+    if (box) box.innerHTML = tagListHtml(st, model()).toString();
+    const status = document.getElementById('tf-tags-status');
+    if (status) status.innerHTML = tagStatusHtml(st, model()).toString();
+    const input = document.getElementById('tf-tags');
+    if (!input) return;
+    const n = st.tagOpen ? tagItems(st, model()).items.length : 0;
+    st.tagActive = Math.max(0, Math.min(st.tagActive, n - 1));
+    input.setAttribute('aria-expanded', String(n > 0));
+    if (n) input.setAttribute('aria-activedescendant', `tf-tags-opt-${st.tagActive}`);
+    else input.removeAttribute('aria-activedescendant');
+    document.getElementById(`tf-tags-opt-${st.tagActive}`)?.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  /**
+   * Annonce aux lecteurs d'écran (tag ajouté, retiré) dans la région persistante du panneau (#drawer-live, créée
+   * par ui/drawer.js et jamais remplacée par un rendu de la fiche). Le texte est vidé puis posé au tour suivant,
+   * pour qu'un même message répété soit relu.
+   */
+  function speakTags(text) {
+    const el = document.getElementById('drawer-live');
+    if (!el) return;
+    el.textContent = '';
+    setTimeout(() => {
+      el.textContent = text;
+    }, 60);
+  }
+
+  /** Ajoute le tag de l'option choisie (existant, ou nom nouveau non déclaré) ; la recherche se vide. */
+  function addTag(item) {
+    if (!item || !st.can('tags').ok || tagsBlocked(st)) return;
+    const tags = st.draft.tags ?? [];
+    if (!tags.includes(item.value) && !applyDraft({ ...st.draft, tags: [...tags, item.value] }, 'tf-tags')) return;
+    st.tagQuery = '';
+    st.tagOpen = false;
+    st.tagActive = 0;
+    render('tf-tags');
+    speakTags(label('form.tags.added', { nom: item.value }));
+  }
+
+  /** Retire le tag à cette position (les autres valeurs de la cellule restent telles quelles). */
+  function removeTag(i) {
+    const tags = st.draft.tags ?? [];
+    if (!st.can('tags').ok || tagsBlocked(st) || !Number.isInteger(i) || i < 0 || i >= tags.length) return;
+    const name = tags[i];
+    if (!applyDraft({ ...st.draft, tags: tags.filter((_, k) => k !== i) }, 'tf-tags')) return;
+    st.tagOpen = false;
+    render('tf-tags');
+    speakTags(label('form.tags.removed', { nom: name }));
+  }
+
+  /** Clavier de la zone de recherche des tags ; vrai si la touche est traitée. */
+  function tagKeydown(e) {
+    const items = tagItems(st, model()).items;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!st.tagOpen) {
+        st.tagOpen = true;
+        st.tagActive = e.key === 'ArrowUp' ? items.length - 1 : 0;
+      } else if (items.length)
+        st.tagActive = (st.tagActive + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      tagRefresh();
+      return true;
+    }
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      if (st.tagOpen && items.length) addTag(items[Math.min(st.tagActive, items.length - 1)]);
+      return true;
+    }
+    if (e.key === 'Escape' && st.tagOpen) {
+      e.stopPropagation();
+      st.tagOpen = false;
+      tagRefresh();
+      return true;
+    }
+    if (e.key === 'Backspace' && !e.target.value && st.draft.tags?.length) {
+      e.preventDefault();
+      removeTag(st.draft.tags.length - 1);
+      return true;
+    }
+    return false;
+  }
+
   function toggleStatusMenu(force) {
     const btn = document.getElementById('btn-status-menu');
     const list = document.getElementById('status-menu-list');
@@ -643,7 +750,22 @@ export function createTaskEditor(deps) {
       st.depQuery = t.value;
       const box = document.getElementById('tf-dep-results');
       if (box) box.innerHTML = depResultsHtml(st, model()).toString();
+    } else if (t.dataset.tagSearch !== undefined) {
+      st.tagQuery = t.value;
+      st.tagOpen = true;
+      st.tagActive = 0;
+      tagRefresh();
     }
+  });
+
+  // Liste des tags : un clic sur une option ne retire pas le focus de la recherche
+  deps.root.addEventListener('mousedown', (e) => {
+    if (st && e.target.closest?.('[data-tag-opt]')) e.preventDefault();
+  });
+  deps.root.addEventListener('focusout', (e) => {
+    if (!st || e.target.dataset?.tagSearch === undefined || !st.tagOpen) return;
+    st.tagOpen = false;
+    tagRefresh();
   });
 
   deps.root.addEventListener('change', (e) => {
@@ -727,6 +849,17 @@ export function createTaskEditor(deps) {
   );
 
   deps.root.addEventListener('click', (e) => {
+    const opt = e.target.closest?.('[data-tag-opt]');
+    if (opt && st && !st.busy) {
+      addTag(tagItems(st, model()).items[Number(opt.dataset.tagOpt)]);
+      return;
+    }
+    if (st && !st.busy && e.target.dataset?.tagSearch !== undefined && !st.tagOpen) {
+      st.tagOpen = true;
+      st.tagActive = 0;
+      tagRefresh();
+      return;
+    }
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.statusToggle !== undefined) return void toggleStatusMenu();
@@ -773,6 +906,14 @@ export function createTaskEditor(deps) {
       if (!applyDraft(assignPerson(st.draft, id), 'tf-people-title')) return;
       renderCharges();
       document.getElementById(lineFocus(id))?.focus();
+    } else if (t.dataset.removeTag !== undefined) {
+      removeTag(Number(t.dataset.removeTag));
+    } else if (t.dataset.tagsReplace) {
+      // Cellule de tags illisible : remplacement seulement après confirmation (le contenu reste montré)
+      const a = t.dataset.tagsReplace;
+      st.confirmTagsReplace = a === 'ask';
+      if (a === 'confirm') st.tagsReplace = st.base.tagsUnreadable;
+      render(a === 'ask' ? 'tf-tags-replace-confirm' : a === 'confirm' ? 'tf-tags' : 'tf-tags-replace');
     } else if (t.dataset.removeDep) {
       const id = Number(t.dataset.removeDep);
       if (!applyDraft({ ...st.draft, dependDe: st.draft.dependDe.filter((x) => x !== id) })) return;
@@ -811,8 +952,20 @@ export function createTaskEditor(deps) {
     } else {
       const action = t.dataset.form;
       if (action === 'save' || action === 'leave-save') save();
-      else if (action === 'save-nocheck') save({ skipCheck: true });
-      else if (action === 'cancel') close();
+      else if (action === 'save-nocheck') {
+        const ch = changes();
+        if (!('tags' in ch)) save({ skipCheck: true });
+        else {
+          // Sans vérification, les tags ne partent pas : seulement les autres champs (annoncé dans le message)
+          const rest = Object.fromEntries(Object.entries(ch).filter(([c]) => c !== 'tags'));
+          if (Object.keys(rest).length)
+            save({
+              skipCheck: true,
+              changes: rest,
+              before: Object.fromEntries(Object.keys(rest).map((c) => [c, st.base[c]])),
+            });
+        }
+      } else if (action === 'cancel') close();
       else if (action === 'clear-closure') {
         if (!applyDraft({ ...st.draft, dateCloture: null })) return;
         st.badDates.delete('dateCloture');
@@ -836,6 +989,7 @@ export function createTaskEditor(deps) {
   });
 
   deps.root.addEventListener('keydown', (e) => {
+    if (st && !st.busy && e.target.dataset?.tagSearch !== undefined && tagKeydown(e)) return;
     // Échap ferme d'abord le menu de statut, sans fermer la fiche
     if (e.key === 'Escape') {
       const list = document.getElementById('status-menu-list');

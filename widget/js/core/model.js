@@ -2,6 +2,7 @@
 import { dayOf } from './dates.js';
 import { parseCharges } from './charges.js';
 import { estimationOf } from './estimation.js';
+import { readTagsCell } from './tags-edit.js';
 
 export const ISD_ROLES = Object.freeze({ DE: 'DE', DA: 'DA', DS: 'DS', 'PO Data': 'PO' });
 export const NO_CHANTIER = '(sans chantier)';
@@ -16,6 +17,11 @@ function rows(table) {
 const refs = (v) => (Array.isArray(v) && v[0] === 'L' ? v.slice(1).filter((x) => x > 0) : []);
 const ref = (v) => (typeof v === 'number' && v > 0 ? v : null);
 const text = (v) => (typeof v === 'string' ? v.trim() : '');
+/** Tags d'une ligne : liste lue, et contenu brut si la cellule est illisible (null sinon). */
+const tagFields = (v) => {
+  const c = readTagsCell(v);
+  return { tags: c.tags, tagsUnreadable: c.ok ? null : c.raw };
+};
 const byTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
 
 export function buildModel(raw) {
@@ -91,6 +97,7 @@ export function buildModel(raw) {
         priorite: text(r.Priorite),
         criteres: text(r.Criteres_de_succes),
         description: text(r.Description),
+        ...tagFields(r.tags),
       },
     ]),
   );
@@ -126,7 +133,7 @@ export function buildModel(raw) {
       type: text(r.type),
       priorite: text(r.priorite),
       progression: typeof r.progression === 'number' && Number.isFinite(r.progression) ? r.progression : null,
-      tags: Array.isArray(r.tags) && r.tags[0] === 'L' ? r.tags.slice(1).filter((x) => typeof x === 'string') : [],
+      ...tagFields(r.tags),
     };
     if (task.start !== null && task.end !== null && task.end < task.start)
       issues.push({ kind: 'dates-incoherentes', taskId: r.id });

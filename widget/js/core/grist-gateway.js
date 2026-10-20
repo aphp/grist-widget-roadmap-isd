@@ -65,6 +65,7 @@ export const REQUIRED = Object.freeze({
 export const OPTIONAL_COLUMNS = Object.freeze({
   Team: ['email', 'aph', 'n_1', 'Domaine'],
   Tasks: ['progression', 'tags'],
+  Chantiers: ['tags'],
   Disponibilites: ['type'],
 });
 

@@ -12,14 +12,15 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   seulement (main.js, passerelle) ; `getAccessToken` avec `{ readOnly: true }` ; ni `getTable` ni `selectedTable`.
   `tests/write-guard.test.js` le vérifie.
 - **Liste blanche figée** (`WRITABLE`, comparée à une copie dans write-guard) : Tasks (champs de la fiche, `charges`,
-  `assignees`, `Chantier`, `projet`), Chantiers (fiche chantier, jamais `Priorite` ni `tags`), Team et Disponibilites
-  (lot équipe). Projects et catégories : jamais. `RemoveRecord` seulement pour annuler une création de la session
+  `assignees`, `Chantier`, `projet`, `tags`), Chantiers (fiche chantier et `tags`, jamais `Priorite`), Team et
+  Disponibilites (lot équipe). `tags` en mise à jour seulement, jamais à la création. Projects et catégories : jamais. `RemoveRecord` seulement pour annuler une création de la session
   (ligne relue identique, aucune référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, périmètre ISD, relecture des lignes avant l'envoi,
-  fusion par champ et, pour `charges`, par personne. Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`,
-  `Team.aph`) jamais écrites. Team : `nom`, `email`, `aph` (1 à 10 chiffres ou vide, `validAph`), `role`,
-  `capaciteHebdo`, `actif`, `n_1` ; `Domaine` seulement à la création.
+  fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun).
+  Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`, `Team.aph`) jamais écrites. Team : `nom`,
+  `email`, `aph` (1 à 10 chiffres ou vide, `validAph`), `role`, `capaciteHebdo`, `actif`, `n_1` ; `Domaine`
+  seulement à la création.
 - **Édition coupée par défaut** : seule l'adresse l'ouvre (`?edition=essai` = rien n'est envoyé ;
   `?edition=1&doc=<id>` = envoi seulement si `doc` est le document ouvert) et `flags.json` (`{ "edition": true }`,
   adresse fixe, relu avant chaque envoi) peut tout couper. Délai maximal de 10 s sur chaque requête.
@@ -63,13 +64,26 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
 ## État et suite
 - Fait : vues en lecture, édition des tâches, charges, chantiers, créations, bloc « Personnes », équipe ISD, statut
   depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
-  `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte).
+  `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte), tags affectés et
+  retirés (lot 2e, `core/tags-edit.js`).
+- **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
+  Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
+  (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
+  seulement, nouveaux tags sans espaces de bord ni caractère de contrôle, 80 caractères au plus, aucun doublon ajouté,
+  30 tags au plus (fusion comprise) ; valeurs d'avant recopiées telles quelles (chaîne vide comprise). Fusion en
+  multi-ensemble (retirer un exemplaire d'un doublon tient), refaite sur la ligne relue à l'envoi, y compris après la
+  fenêtre de conflit (`tagsSeen`). Cellule illisible (texte, `['E', …]`, non-texte) : montrée, champ bloqué, remplacée
+  seulement après confirmation de ce contenu (`replaceTags`). Le writer contrôle lui-même la ligne avant d'écrire
+  des tags, « Annuler » compris (qui saute alors les tags et le signale) : ligne relue par l'appelant pour cet envoi
+  (`fresh`, une seule lecture), sinon table relue (échec : refus `tags-relecture`), données chargées en mode essai.
+  Les tags ne s'enregistrent jamais sans vérification : « Enregistrer sans vérifier » n'envoie que les autres champs
+  et le dit. Annonces des tags dans `#drawer-live`, région persistante du panneau (hors du contenu redessiné).
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`.
-- Lots suivants : « Mes tâches » et vue d'accueil par profil, tags (attribuer), glisser-
-  déposer du Kanban, dates à la souris dans le Gantt.
+- Lots suivants : glisser-déposer du Kanban, dates à la souris dans le Gantt, gestion des tags (lot 2g, reportée).
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
-  d'aide), gestion des tags (options de colonne), échelle de priorité, demandeur par chantier. Pas de création de
-  rôle. `Team.capaciteHebdo` et `Team.aph` restent en lecture tant que ce sont des colonnes formules vides de la
-  Feuille (`?ecritures=capacite-donnee` / `aph-donnee` simulent leur conversion en dev).
+  d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité,
+  demandeur par chantier. Pas de création de rôle. `Team.capaciteHebdo` et `Team.aph` restent en lecture tant que
+  ce sont des colonnes formules vides de la Feuille (`?ecritures=capacite-donnee` / `aph-donnee` simulent leur
+  conversion en dev).
 - Production : page du widget dans la Feuille, servie depuis une adresse https, seulement après les tests.

@@ -217,7 +217,8 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
         Priorite: k === 0 ? 'P3' : '',
         Criteres_de_succes: 'Critère de succès fictif',
         Description: `Description du chantier ${k + 1}`,
-        tags: null,
+        // Tags : un choix déclaré de la colonne et un tag utilisé mais non déclaré (lot 2e)
+        tags: k === 0 ? ['L', 'Intégration de données'] : k === 1 && p.id % 2 ? ['L', 'Projet pilote'] : null,
       };
       chantiers.push(ch);
       // Première carte du Kanban (à faire, échéance la plus proche) : sans personne ni charge, que les tests
@@ -267,6 +268,8 @@ export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
           tempsPasse: 0,
           type: jalon ? 'jalon' : 'tache',
           progression: statut === 'done' ? 100 : (n % 4) * 25,
+          // Tags des tâches (colonne sans choix déclarés) : quelques valeurs utilisées
+          tags: n === 2 ? ['L', 'atelier'] : n === 5 ? ['L', 'qualité', 'atelier'] : null,
           Cree_par: 'createur.fictif',
         };
         tasks.push(parent);

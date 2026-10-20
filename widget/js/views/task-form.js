@@ -1,8 +1,8 @@
 /**
  * Formulaire d'une tâche ou sous-tâche dans la fiche (lot 2a) : rendu seul (fragments h``), à partir de l'état
  * tenu par ui/task-editor.js. Liste courte de champs, le reste sous « Plus de champs » ; pied fixe
- * Enregistrer / Annuler. Bloc « Personnes » : assignés et charges en ETP ou en heures réunis ; rattachement et tags
- * en lecture.
+ * Enregistrer / Annuler. Bloc « Personnes » : assignés et charges en ETP ou en heures réunis ; rattachement en
+ * lecture (« Changer » ouvre sa fenêtre) ; tags affectés et retirés (lot 2e, views/tags-field.js).
  */
 import {
   chargeRows,
@@ -30,6 +30,7 @@ import { isIsdTeamMember, pickerGroups } from '../core/team-directory.js';
 import { h } from '../ui/kit.js';
 import { addSubtaskButton, refList, roleBadge, section, statusMenu } from './detail.js';
 import { estimationBadge } from './team.js';
+import { tagsFieldHtml } from './tags-field.js';
 
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const etpInputFormat = new Intl.NumberFormat('fr-FR', {
@@ -73,6 +74,7 @@ export function valueText(model, col, v) {
   if (col === 'statut') return statusLabel(v);
   if (col === 'progression') return `${v} %`;
   if (col === 'charges') return chargesText(model, v);
+  if (col === 'tags') return v.join(', ');
   return String(v);
 }
 
@@ -122,7 +124,7 @@ export function field(st, f, control, opts = {}) {
     ? h`<span class="tf-req" aria-hidden="true"> *</span><span class="fr-sr-only"> (${label('form.required')})</span>`
     : '';
   return h`<div class="tf-field fr-input-group ${raw(err ? 'fr-input-group--error' : '')} ${raw(opts.wide ? 'tf-field--wide' : '')}" data-field="${f}" ${raw(opts.legend ? `role="group" aria-labelledby="${p}-${f}-label"` : '')}>
-    ${opts.legend ? h`<p class="fr-label tf-label" id="${p}-${f}-label">${opts.labelText ?? fieldLabel(f)}${required}</p>` : h`<label class="fr-label tf-label" for="${p}-${f}">${opts.labelText ?? fieldLabel(f)}${required}${opts.help ? h`<span class="fr-hint-text" id="${p}-${f}-help">${opts.help}</span>` : ''}</label>`}
+    ${opts.legend ? h`<p class="fr-label tf-label" id="${p}-${f}-label" tabindex="-1">${opts.labelText ?? fieldLabel(f)}${required}</p>` : h`<label class="fr-label tf-label" for="${p}-${f}">${opts.labelText ?? fieldLabel(f)}${required}${opts.help ? h`<span class="fr-hint-text" id="${p}-${f}-help">${opts.help}</span>` : ''}</label>`}
     ${control}
     ${opts.hintAfter ? h`<p class="fr-hint-text tf-hint" id="${p}-${f}-help">${opts.hintAfter}</p>` : ''}
     <div class="tf-msgs" id="${p}-${f}-msgs" aria-live="polite">${messagesHtml(st, f)}</div>
@@ -239,11 +241,12 @@ export function alertHtml(st, model) {
         : label(itemKey(st, `form.fail.${['acl', 'missing', 'reread'].includes(f.kind) ? f.kind : 'other'}`));
     return h`<div class="fr-alert ${raw(f.kind === 'reread' ? 'fr-alert--warning' : 'fr-alert--error')} fr-alert--sm tf-alert" role="alert" id="tf-alert" tabindex="-1">
       <p>${text}</p>
+      ${st.confirmNoCheck && st.noCheckTags ? h`<p class="tf-warn" id="tf-nocheck-tags">${label(st.noCheckRest ? 'form.tags.nocheckWarn' : 'form.tags.nocheckOnly')}</p>` : ''}
       ${
         st.confirmNoCheck
           ? h`<div class="tf-alert__actions">
         <button type="button" class="fr-btn fr-btn--sm fr-btn--secondary" data-form="save">${label('form.fail.retry')}</button>
-        <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-form="save-nocheck">${label('form.reread.force')}</button>
+        ${st.noCheckTags && !st.noCheckRest ? '' : h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-form="save-nocheck">${label(st.noCheckTags ? 'form.reread.forceNoTags' : 'form.reread.force')}</button>`}
         <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline" data-form="nocheck-cancel">${label('form.conflict.cancel')}</button>
       </div>`
           : ''
@@ -538,9 +541,8 @@ export function taskFormBody(st, model) {
               : ''
         }
       </dd></div>
-      <div class="dt-field"><dt>${label('form.field.tags')}</dt><dd>${task.tags.length ? h`<span class="tf-tags">${task.tags.map((t) => h`<span class="fr-tag fr-tag--sm">${t}</span>`)}</span>` : label('form.field.tags.none')}</dd></div>
     </dl>
-    <p class="tf-note">${label('form.later')}</p>
+    ${tagsFieldHtml(st, model, field, attrs)}
     ${peopleBlockHtml(st, model)}
     <details class="tf-more" id="tf-more" ${raw(st.moreOpen ? 'open' : '')}>
       <summary class="tf-more__summary">${label('form.more')} <span class="tf-more__hint">(${label('form.more.hint')})</span></summary>

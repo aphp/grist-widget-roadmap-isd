@@ -67,7 +67,8 @@ test('Ref, RefList, ChoiceList : 0, ["L", …], liste vide = null', () => {
   assert.throws(() => encodeValue('RefList:Team', 1), EncodeError);
   assert.deepEqual(encodeValue('ChoiceList', ['a', 'b']), ['L', 'a', 'b']);
   assert.equal(encodeValue('ChoiceList', []), null);
-  assert.throws(() => encodeValue('ChoiceList', ['']), EncodeError);
+  assert.deepEqual(encodeValue('ChoiceList', ['']), ['L', '']); // chaîne vide gardée (contrôle des nouveaux tags en amont)
+  assert.throws(() => encodeValue('ChoiceList', ['a', 3]), EncodeError);
   assert.throws(() => encodeValue('ChoiceList', 'a'), EncodeError);
   assert.deepEqual(decodeValue('RefList:Team', ['L', 3, 0, 1]), [3, 1]);
   assert.deepEqual(decodeValue('RefList:Team', ['L']), []);

@@ -95,7 +95,7 @@ export function createDrawer(root, on) {
     const back = opts.backTitle
       ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline fr-icon-arrow-left-line fr-btn--icon-left drawer__back" id="btn-detail-back" title="${label('detail.back', { titre: opts.backTitle })}">${label('detail.backShort')}</button>`
       : '';
-    root.innerHTML = h`
+    content().innerHTML = h`
       <div class="drawer__head">
         <h2 class="drawer__title" id="detail-title" tabindex="-1">
           <span class="drawer__kind">${kind}</span>${title}
@@ -142,6 +142,13 @@ export function createDrawer(root, on) {
     return true;
   }
 
+  /**
+   * Contenu redessiné à chaque ouverture (.drawer__content, sans boîte : la mise en page reste celle du panneau) et
+   * région d'annonce persistante (#drawer-live) : jamais remplacée par un rendu, et dans le dialogue (aria-modal
+   * masque le reste de la page à certains lecteurs d'écran). Voir announce().
+   */
+  root.innerHTML = h`<div class="drawer__content"></div><p class="fr-sr-only" id="drawer-live" role="status" aria-live="polite"></p>`;
+  const content = () => root.querySelector('.drawer__content');
   root.setAttribute('inert', '');
   root.setAttribute('aria-modal', 'false');
   root.setAttribute('aria-label', label('detail.label'));

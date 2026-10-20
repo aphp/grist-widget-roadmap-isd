@@ -25,6 +25,7 @@ import { raw } from '../core/sanitize.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 import { activeBadge, capacityText, estimationBadge, roleText, unavailabilityText } from './team.js';
 import { isEstimationPerson } from '../core/estimation.js';
+import { tagChipsHtml } from './tags-field.js';
 
 export const id = 'detail';
 
@@ -75,6 +76,11 @@ function people(model, ids) {
 // Valeur absente → null : le champ rejoint la ligne « Non renseignés » de fields()
 const dateOr = (d) => (d === null || d === undefined ? null : formatDateFr(d));
 const textOr = (s) => (s ? s : null);
+/** Tags en lecture : pastilles, ou contenu d'une cellule illisible (montré tel quel). */
+const tagsRead = (model, table, row) =>
+  row.tagsUnreadable
+    ? h`<span class="dt-muted">${label('detail.tags.unreadable', { texte: row.tagsUnreadable })}</span>`
+    : tagChipsHtml(model, table, row.tags) || null;
 
 /** Champs renseignés un par ligne, puis les champs vides regroupés sur une seule ligne. */
 function fields(rows) {
@@ -190,6 +196,7 @@ function taskBody(model, task, today, canCreate = false) {
           task.tempsPasse ? label('detail.hours', { h: hoursFormat.format(task.tempsPasse) }) : null,
         ],
         ['detail.field.link', linkHtml(task.lien)],
+        ['detail.field.tags', tagsRead(model, 'Tasks', task)],
       ]),
     )}
     ${section('detail.section.people', peopleHtml(model, task), h` <span class="dt-count">${taskPeopleRows(model, task).length}</span>`)}
@@ -217,6 +224,7 @@ function chantierBody(model, c, canCreate = false) {
         ['detail.field.priority', textOr(priorityText(c.priorite))],
         ['detail.field.responsable', c.responsable ? (person(model, c.responsable) ?? null) : null],
         ['detail.field.contributeurs', people(model, c.contributeurs)],
+        ['detail.field.tags', tagsRead(model, 'Chantiers', c)],
       ]),
     )}
     ${c.criteres ? section('detail.section.criteres', prose(c.criteres)) : ''}

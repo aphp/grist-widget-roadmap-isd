@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+
 - Status from the card and the row (editing on, task editable): "⋯" button on Kanban cards (keyboard: "S" or
   Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
   lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);
@@ -17,6 +18,10 @@
   written (columns are never re-enabled during a session).
 - Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs and an
   "Estimation DE" person).
+- Tags: assign and remove existing tags on tasks and chantiers in their forms (searchable, keyboard-accessible chip
+  picker). A new name can be assigned without being declared in the sheet (column options are never changed) and is
+  marked "non déclaré". Tags shown in the detail panel, an optional "Tags" column in the Table and a "Tag" filter
+  under "+ Filtres". Strict writer checks and a set merge when the tags changed elsewhere meanwhile.
 
 ## [0.2.0] — 2026-10-20
 First published version.

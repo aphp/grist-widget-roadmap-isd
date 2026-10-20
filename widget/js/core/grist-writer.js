@@ -19,12 +19,14 @@
  */
 import { chargesWriteProblem, periodDays } from './charges-edit.js';
 import { estimationIdOfTable, isEstimationAph } from './estimation.js';
+import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
 
 /**
  * Colonnes modifiables par table et par opération. update : mise à jour d'une ligne existante (lots 2a, 2b, 2c) ;
- * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5), tags au lot 2e.
+ * add : colonnes permises à la création (lot 2c). Priorite des chantiers en lecture (Q5). Tags (lot 2e, Q3 B) :
+ * affectés et retirés dans les fiches, jamais à la création ; aucune option de colonne n'est jamais modifiée.
  */
 export const WRITABLE = Object.freeze({
   Tasks: Object.freeze({
@@ -47,6 +49,7 @@ export const WRITABLE = Object.freeze({
       'charges',
       'Chantier',
       'projet',
+      'tags',
     ]),
     add: Object.freeze([
       'titre',
@@ -76,6 +79,7 @@ export const WRITABLE = Object.freeze({
       'Description',
       'Objectifs_resultats_attendus',
       'Criteres_de_succes',
+      'tags',
     ]),
     add: Object.freeze([
       'Nom_du_chantier',
@@ -150,6 +154,7 @@ export const EXPECTED_TYPES = Object.freeze({
   'Tasks.Chantier': 'Ref:Chantiers',
   'Tasks.projet': 'Ref:Projects',
   'Tasks.Cree_par': 'Text',
+  'Tasks.tags': 'ChoiceList',
   'Chantiers.Nom_du_chantier': 'Text',
   'Chantiers.Projets': 'RefList:Projects',
   'Chantiers.Statut': 'Choice',
@@ -160,6 +165,7 @@ export const EXPECTED_TYPES = Object.freeze({
   'Chantiers.Description': 'Text',
   'Chantiers.Objectifs_resultats_attendus': 'Text',
   'Chantiers.Criteres_de_succes': 'Text',
+  'Chantiers.tags': 'ChoiceList',
   'Team.nom': 'Text',
   'Team.email': 'Text',
   'Team.aph': 'Text',
@@ -287,7 +293,8 @@ function encodeCol(table, col, value) {
  *   tâche après modification (borne 1 ETP) ; isEstimation : personne estimation (Team.aph), exemptée de cette borne
  *   before : valeurs d'avant (les entrées de charges conservées telles quelles ne sont pas recontrôlées) ;
  *   refExists : existence d'une ligne (teamId des charges dans Team) ; restoring : colonnes remises à leur
- *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle).
+ *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle) ; current : ligne
+ *   lue par le writer lui-même (cellule de tags illisible, contrôlée même pour « Annuler »).
  * @returns {['UpdateRecord', string, number, Record<string,*>]}
  */
 export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) {
@@ -310,6 +317,18 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
         ctx.isEstimation ?? null,
       );
       if (problem) throw new WriteRefused('charges', problem);
+    }
+    // Cellule de tags illisible dans la ligne lue par le writer (current) ou d'après l'appelant (before) : remplacée
+    // seulement sur confirmation de CE contenu (replaceTags), jamais par « Annuler »
+    if (col === 'tags') {
+      const unreadable = [ctx.current?.tagsUnreadable, ctx.before?.tagsUnreadable].find((x) => typeof x === 'string');
+      if (unreadable !== undefined && ctx.replaceTags !== unreadable)
+        throw new WriteRefused('tags-illisible', key(table, col));
+    }
+    // Tags : liste de chaînes, nouveaux tags nettoyés et bornés, aucun doublon ajouté ; valeurs d'avant recopiées
+    if (col === 'tags' && !ctx.restoring?.includes(col)) {
+      const problem = tagsWriteProblem(changes[col], ctx.before?.[col] ?? []);
+      if (problem) throw new WriteRefused(problem === 'trop' ? 'tags-trop' : 'tags', problem);
     }
     fields[col] = encodeCol(table, col, changes[col]);
   }
@@ -453,6 +472,12 @@ export function decodeRow(tableData, table, id) {
   const out = {};
   for (const col of [...(WRITABLE[table]?.update ?? []), ...(READ_ALSO[table] ?? [])])
     out[col] = decodeValue(EXPECTED_TYPES[key(table, col)], tableData[col]?.[i]);
+  // Cellule de tags illisible (texte, ['E', …], éléments non textuels) : son contenu, pour ne jamais l'écraser en
+  // silence ; null si elle est lisible (toujours présente : un ancien signalement ne survit pas à une relecture)
+  if ('tags' in out) {
+    const cell = readTagsCell(tableData.tags?.[i]);
+    out.tagsUnreadable = cell.ok ? null : cell.raw;
+  }
   return out;
 }
 
@@ -467,7 +492,9 @@ export function planUndo(entry, fresh) {
   const changes = {};
   const skipped = [];
   for (const [col, v] of Object.entries(entry.after)) {
-    if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
+    // Cellule de tags devenue illisible (texte importé…) : jamais réécrite par une annulation
+    if (col === 'tags' && typeof fresh?.tagsUnreadable === 'string') skipped.push(col);
+    else if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
     else skipped.push(col);
   }
   return { changes, skipped };
@@ -917,8 +944,11 @@ export function createWriter({
    * @param {number} id
    * @param {object} changes valeurs du modèle des colonnes modifiées
    * @param {{before?:object, undoOf?:number, period?:{start:number|null, end:number|null},
-   *          also?:{table:string, id:number, changes:object, before?:object}[]}} [opts] valeurs d'avant
-   *   (pour « Annuler ») ; period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées
+   *          also?:{table:string, id:number, changes:object, before?:object}[], replaceTags?:string,
+   *          fresh?:object}} [opts] fresh : ligne relue par l'appelant juste avant cet envoi (decodeRow) ;
+   *   valeurs d'avant (pour « Annuler » ; before.tagsUnreadable : contenu d'une cellule de tags illisible) ;
+   *   period : dates de la ligne relue (borne de 1 ETP des charges) ; also : lignes dérivées ; replaceTags :
+   *   contenu illisible dont l'utilisateur a confirmé le remplacement
    * @returns {Promise<{seq:number, table:string, id:number, before:object, after:object, actions:any[], sent:boolean}>}
    */
   async function update(table, id, changes, opts = {}) {
@@ -944,12 +974,32 @@ export function createWriter({
       'dateDebut' in ch ? ch.dateDebut : period.start,
       'dateEcheance' in ch ? ch.dateEcheance : period.end,
     );
+    // Tags : le writer contrôle lui-même la ligne, pour ne jamais écraser une cellule illisible, quel que soit
+    // l'appelant (« Annuler » compris). Envoi réel : la ligne que l'appelant vient de relire pour ce même envoi
+    // (opts.fresh, relecture complète de decodeRow) évite une seconde lecture ; sinon la table est relue ici.
+    // Mode essai : les données chargées.
+    let current = null;
+    if (changes && 'tags' in changes) {
+      const reread = opts.fresh && 'tagsUnreadable' in opts.fresh && 'tags' in opts.fresh ? opts.fresh : null;
+      if (mode !== 'on' || !readTable) current = reread ?? lookup?.row(table, id) ?? null;
+      else if (reread) current = reread;
+      else {
+        try {
+          current = decodeRow(await readFresh(table), table, id);
+        } catch (err) {
+          if (err instanceof WriteRefused) throw new WriteRefused('tags-relecture', key(table, 'tags'));
+          throw err;
+        }
+      }
+    }
     const action = buildUpdate(table, id, changes, disabled, {
+      current,
       before: opts.before,
       refExists: exists,
       restoring,
       days,
       isEstimation,
+      replaceTags: opts.replaceTags,
     });
     const also = opts.also ?? [];
     const derived = also.map((r) => buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before }));
@@ -1174,7 +1224,12 @@ export function createWriter({
       }
       let undoEntry = null;
       if (Object.keys(changes).length)
-        undoEntry = await update(entry.table, entry.id, changes, { before: entry.after, undoOf: entry.seq, also });
+        undoEntry = await update(entry.table, entry.id, changes, {
+          before: entry.after,
+          undoOf: entry.seq,
+          also,
+          ...(mode === 'on' && fresh ? { fresh } : {}),
+        });
       entry.undone = true;
       return { entry, skipped, undoEntry, busy: false };
     } finally {
