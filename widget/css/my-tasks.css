@@ -1,0 +1,216 @@
+/*
+ * Vue « Mes tâches » : puces de saut vers chaque groupe et charge de la semaine, puis un groupe par échéance
+ * (titre h3, liste de lignes cliquables). Ligne en grille à partir de 768 px (titre et lieu, statut, dates, ETP),
+ * empilée en dessous. « En retard » : libellé écrit et filet rouge, la couleur n'est jamais seule.
+ */
+.mt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.mt__total {
+  margin: 0;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+.mt .view-heading__sub p {
+  margin: 0;
+}
+
+/* ---- Puces de saut et charge de la semaine ---- */
+.mt__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.mt__jump-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mt__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+}
+button.mt__chip {
+  cursor: pointer;
+}
+button.mt__chip:hover {
+  background: var(--color-surface-hover);
+}
+.mt__chip--late {
+  border-color: var(--load-over-mark);
+  color: var(--load-text-over);
+}
+.mt__chip--empty {
+  color: var(--color-text-muted);
+  border-style: dashed;
+}
+.mt__chip-n {
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.mt__load {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.mt__load-label {
+  color: var(--color-text-muted);
+}
+.mt__load strong {
+  font-variant-numeric: tabular-nums;
+}
+.mt__load-over {
+  color: var(--load-text-over);
+  font-weight: var(--font-weight-medium);
+}
+.mt__load-over::before {
+  content: '▲ ';
+}
+
+/* ---- Groupes ---- */
+.mt__group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.mt__group--late {
+  border-left: 4px solid var(--load-over-mark);
+}
+.mt__group-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.mt__group--late .mt__group-title {
+  color: var(--load-text-over);
+}
+.mt__count {
+  font-variant-numeric: tabular-nums;
+}
+.mt__range {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+.mt__item + .mt__item {
+  border-top: 1px solid var(--color-border);
+}
+
+/* ---- Ligne ---- */
+.mt__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  color: var(--color-text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.mt__row:hover {
+  background: var(--color-surface-hover);
+}
+.mt__row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.mt__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mt__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-title);
+  overflow-wrap: anywhere;
+}
+.mt__place {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.mt__dates,
+.mt__etp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.mt__late {
+  color: var(--load-text-over);
+  font-weight: var(--font-weight-medium);
+}
+.mt__roles {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+/* Étroit : statut, dates et ETP sur une ligne sous le titre */
+@media (max-width: 767px) {
+  .mt__row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mt__main {
+    grid-column: 1 / -1;
+  }
+  .mt__etp {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 768px) {
+  .mt__row {
+    grid-template-columns: minmax(0, 1fr) 8.5rem 11.5rem 8rem;
+    align-items: center;
+  }
+  .mt__etp {
+    flex-direction: column;
+    text-align: right;
+    align-items: flex-end;
+  }
+}
+
+.mt__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+.mt__more .fr-btn {
+  margin: 0;
+}
+.mt__shown {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
