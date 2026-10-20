@@ -1,0 +1,198 @@
+/*
+ * Vue Synthèse : deux cartes (tableau de pilotage Markdown, Gantt Mermaid). Aperçu en cadre défilant,
+ * source Markdown repliée. Couleurs : variables du widget uniquement (clair et sombre).
+ */
+.syn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+/* Titre de vue : même écart que dans les autres vues (le gap de .syn sépare les sections, plus largement) */
+.syn > .view-heading {
+  margin-bottom: calc(var(--space-3) - var(--space-5));
+}
+.syn__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.syn__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.syn__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-title);
+}
+.syn__help {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.syn__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.syn__actions .fr-btn {
+  margin: 0;
+}
+.syn__notice {
+  margin: 0;
+  min-height: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-text);
+}
+.syn__notice:empty {
+  display: none;
+}
+.syn__omitted {
+  align-self: flex-start;
+  margin: 0;
+  max-width: 100%;
+  text-transform: none;
+  white-space: normal;
+}
+
+/* ---- Aperçu du Markdown ---- */
+.syn__preview {
+  max-height: min(65vh, 640px);
+  overflow: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  color: var(--color-text);
+}
+.syn__preview > :first-child {
+  margin-top: 0;
+}
+.syn__preview h3,
+.syn__preview h4,
+.syn__preview h5 {
+  margin: var(--space-5) 0 var(--space-2);
+  line-height: var(--line-height-tight);
+  color: var(--color-title);
+}
+.syn__preview h3 {
+  font-size: var(--font-size-lg);
+}
+.syn__preview h4 {
+  padding-bottom: var(--space-1);
+  border-bottom: 2px solid var(--color-indicator);
+  font-size: var(--font-size-md);
+}
+.syn__preview h5 {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-accent-text);
+}
+.syn__preview p,
+.syn__preview ul {
+  margin: 0 0 var(--space-3);
+}
+.syn__preview ul {
+  padding-left: var(--space-5);
+}
+.syn__preview table {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 var(--space-3);
+  overflow-x: auto;
+  border-collapse: collapse;
+  background: var(--color-surface);
+  font-variant-numeric: tabular-nums;
+}
+.syn__preview th,
+.syn__preview td {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.syn__preview th {
+  background: var(--color-surface-2);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  white-space: nowrap;
+}
+.syn__preview td {
+  min-width: 5rem;
+}
+.syn__preview .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---- Source ---- */
+.syn__source summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-text);
+}
+.syn__source summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.syn__area {
+  margin-top: var(--space-2);
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-size-xs);
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+
+/* ---- Gantt Mermaid ---- */
+.syn__gantt {
+  overflow: auto;
+  max-height: 80vh;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.syn__svg svg {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+.syn__loading,
+.syn__empty {
+  margin: 0;
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+.syn__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+.syn__error p {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  .syn {
+    gap: var(--space-4);
+  }
+  .syn__preview {
+    padding: var(--space-3);
+  }
+  .syn__actions,
+  .syn__actions .fr-btn {
+    width: 100%;
+  }
+}

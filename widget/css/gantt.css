@@ -1,0 +1,724 @@
+/*
+ * Vue Gantt : colonne des éléments figée à gauche, frise en % de la fenêtre, en-tête figé en haut.
+ * Couleurs d'étape et de statut : variables partagées --viz-* (css/tokens.css), toujours
+ * accompagnées d'une légende et du libellé dans l'infobulle.
+ */
+.gantt {
+  --gantt-row: 32px;
+  --gantt-label: 320px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Barre d'outils ---- */
+.gantt__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-5);
+}
+.gantt__scales {
+  margin: 0;
+}
+.gantt__legend-title {
+  font-size: var(--font-size-sm);
+}
+.gantt__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gantt__nav .fr-btn {
+  margin: 0;
+}
+.gantt__period {
+  margin: 0 0 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Légende et compteur ---- */
+.gantt__info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.gantt__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+}
+.gantt__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.gantt__count {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.gantt__notice {
+  color: var(--color-text);
+}
+
+/* Pastilles de légende (mêmes classes que les barres) */
+.gswatch {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--viz-neutral);
+  vertical-align: middle;
+}
+.gswatch--instruction,
+.gswatch--inprogress {
+  background: var(--viz-1);
+}
+.gswatch--realisation,
+.gswatch--review {
+  background: var(--viz-2);
+}
+.gswatch--mep,
+.gswatch--done {
+  background: var(--viz-3);
+}
+.gswatch--other {
+  background: var(--viz-neutral);
+}
+.gantt__legend .gswatch--other {
+  margin-right: 0;
+}
+.gswatch--deduced {
+  background: repeating-linear-gradient(135deg, var(--viz-summary) 0 2px, transparent 2px 5px);
+  border: 1px solid var(--viz-summary);
+}
+.gswatch--milestone {
+  width: 10px;
+  height: 10px;
+  margin: 0 3px;
+  transform: rotate(45deg);
+  background: var(--viz-summary);
+}
+.gswatch--hollow {
+  background: transparent;
+  border: 1px dashed var(--viz-neutral);
+}
+.gswatch--late {
+  background: transparent;
+  outline: 2px solid var(--viz-late);
+  outline-offset: -2px;
+}
+.gswatch--today {
+  width: 2px;
+  height: 14px;
+  margin: 0 7px;
+  background: var(--viz-today);
+}
+.gtip .gswatch {
+  margin-right: var(--space-2);
+}
+
+/* ---- Grille ---- */
+.gantt__scroll {
+  position: relative;
+  overflow: auto;
+  max-height: max(420px, calc(100vh - 290px));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.gantt__grid {
+  position: relative;
+  min-width: calc(var(--gantt-label) + var(--timeline-min, 900px));
+}
+.gantt__head,
+.grow {
+  display: grid;
+  grid-template-columns: var(--gantt-label) minmax(0, 1fr);
+}
+.gantt__head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.gantt__corner {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.gantt__scale {
+  position: relative;
+  height: 48px;
+}
+.gantt__groups,
+.gantt__cols {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 24px;
+}
+.gantt__groups {
+  top: 0;
+}
+.gantt__cols {
+  top: 24px;
+}
+.gantt__group,
+.gantt__col {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  overflow: hidden;
+  padding: 0 var(--space-1);
+  border-left: 1px solid var(--color-border);
+  white-space: nowrap;
+  text-overflow: clip;
+  font-size: var(--font-size-xs);
+  line-height: 24px;
+}
+.gantt__group {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.gantt__col {
+  color: var(--color-text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.gantt__col.is-current {
+  color: var(--color-accent-text);
+  font-weight: var(--font-weight-bold);
+}
+.gantt__today-flag {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-bottom: 0;
+  border-top: 6px solid var(--viz-today);
+}
+
+.gantt__body {
+  position: relative;
+}
+.gantt__lines {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--gantt-label);
+  right: 0;
+  pointer-events: none;
+}
+.gantt__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--color-border);
+}
+.gantt__today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  border-left: 2px solid var(--viz-today);
+  margin-left: -1px;
+}
+.gantt__empty {
+  padding: var(--space-6);
+  color: var(--color-text-muted);
+}
+.gantt__empty p {
+  margin: 0 0 var(--space-2);
+}
+.gantt__empty-title {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+
+/* Copie de la grille pour l'export PDF : rendue hors écran, jamais visible */
+.gantt--offscreen {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  width: max-content;
+  pointer-events: none;
+}
+
+/* ---- Lignes ---- */
+.grow {
+  height: var(--gantt-row);
+  border-bottom: 1px solid var(--color-border);
+}
+.grow:hover > .grow__label,
+.grow:hover > .grow__track,
+.grow:focus-within > .grow__label,
+.grow:focus-within > .grow__track {
+  background-color: var(--color-surface-hover);
+}
+/* Ligne focalisée (focus itinérant du treegrid) : cadre indigo dessiné sur les deux cellules, au-dessus du
+   fond collant de la colonne des éléments */
+.grow:focus {
+  outline: none;
+}
+.grow:focus-visible > .grow__label {
+  box-shadow:
+    inset 2px 0 0 var(--color-focus),
+    inset 0 2px 0 var(--color-focus),
+    inset 0 -2px 0 var(--color-focus);
+}
+.grow:focus-visible > .grow__track {
+  box-shadow:
+    inset -2px 0 0 var(--color-focus),
+    inset 0 2px 0 var(--color-focus),
+    inset 0 -2px 0 var(--color-focus);
+}
+.grow--categorie > .grow__label {
+  background: var(--color-surface-2);
+}
+.grow__label {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: calc(var(--space-1) + var(--depth, 0) * 16px);
+  padding-right: var(--space-2);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+.grow__toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.grow__toggle::before {
+  --icon-size: 1rem;
+}
+.grow__toggle:hover {
+  background: var(--color-surface-2);
+  color: var(--color-title);
+}
+.grow__toggle--leaf {
+  cursor: default;
+}
+.grow__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: var(--gantt-row);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.grow__title:hover {
+  text-decoration: underline;
+}
+.grow--categorie .grow__title {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.grow--projet .grow__title {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-title);
+}
+.grow__title--static {
+  cursor: default;
+}
+.grow__title--static:hover {
+  text-decoration: none;
+}
+.grow__track {
+  position: relative;
+  min-width: 0;
+}
+.grow__nodates {
+  position: absolute;
+  top: 50%;
+  left: var(--space-2);
+  transform: translateY(-50%);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+/* ---- Barres ---- */
+.gbar,
+.gms,
+.gout {
+  position: absolute;
+  z-index: 2;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+/* Couleur portée par --g-fill ; sélecteurs renforcés pour primer sur le survol des boutons du DSFR */
+.gbar {
+  --g-fill: var(--viz-neutral);
+  top: 7px;
+  height: 18px;
+  min-width: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  /* Le nom de l'étape (ou du statut) n'est écrit que si la barre est assez large : requête de conteneur */
+  container-type: inline-size;
+}
+/* Nom écrit dans la barre : pastille claire à texte foncé (contraste du texte garanti quelle que soit la
+   couleur de la barre), masquée sous 56 px de barre ; nom complet dans l'infobulle */
+.gbar__text {
+  display: block;
+  max-width: calc(100% - 6px);
+  margin: 2px 3px;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-medium);
+  line-height: 14px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: max-content;
+  pointer-events: none;
+}
+@container (max-width: 56px) {
+  .gbar__text {
+    display: none;
+  }
+}
+.gms {
+  --g-fill: var(--viz-neutral);
+  top: 9px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+.gantt .gbar,
+.gantt .gms,
+.gantt .gbar:not(:disabled):hover,
+.gantt .gms:not(:disabled):hover {
+  background-color: var(--g-fill);
+}
+.gbar--instruction,
+.gbar--inprogress,
+.gms--instruction,
+.gms--inprogress {
+  --g-fill: var(--viz-1);
+}
+.gbar--realisation,
+.gbar--review,
+.gms--realisation,
+.gms--review {
+  --g-fill: var(--viz-2);
+}
+.gbar--mep,
+.gbar--done,
+.gms--mep,
+.gms--done {
+  --g-fill: var(--viz-3);
+}
+.gbar--summary,
+.gms--summary {
+  --g-fill: var(--viz-summary);
+}
+.gbar--summary {
+  top: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+.gantt .gbar--deduced,
+.gantt .gbar--deduced:not(:disabled):hover {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(135deg, var(--g-fill) 0 3px, transparent 3px 7px);
+  box-shadow: inset 0 0 0 1px var(--g-fill);
+}
+.gbar--clip-start {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.gbar--clip-end {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.gantt .is-late {
+  /* Contour de retard en ombre portée : le contour de focus (outline) reste visible par-dessus */
+  box-shadow:
+    0 0 0 1px var(--color-surface),
+    0 0 0 3px var(--viz-late);
+}
+.gantt .gbar--deduced.is-late {
+  box-shadow:
+    inset 0 0 0 1px var(--g-fill),
+    0 0 0 1px var(--color-surface),
+    0 0 0 3px var(--viz-late);
+}
+/* Statut hors des quatre connus : barre creuse en pointillés (distincte de « À faire », pleine) */
+.gantt .gbar--hollow,
+.gantt .gms--hollow,
+.gantt .gbar--hollow:not(:disabled):hover,
+.gantt .gms--hollow:not(:disabled):hover {
+  background-color: var(--color-surface);
+  background-image: none;
+  border: 2px dashed var(--viz-neutral);
+}
+.gout {
+  top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.gout::before,
+.gout [class^='fr-icon-']::before {
+  --icon-size: 0.875rem;
+}
+.gout--before {
+  left: var(--space-1);
+}
+.gout--after {
+  right: var(--space-1);
+  flex-direction: row-reverse;
+}
+.gantt .gout:not(:disabled):hover {
+  background: var(--color-surface-2);
+  color: var(--color-title);
+}
+.gbar:hover,
+.gms:hover {
+  filter: brightness(1.08);
+}
+/* Barres hors tabulation (focus par programme ou souris) : anneau dès :focus ; le retard reste en ombre portée */
+.gantt .gbar:focus,
+.gantt .gms:focus,
+.gantt .gout:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Infobulle ---- */
+.gtip {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-3);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
+  pointer-events: none;
+}
+.gtip[hidden] {
+  display: none;
+}
+.gtip__kind {
+  color: var(--color-text-muted);
+}
+.gtip__title {
+  font-size: var(--font-size-sm);
+  color: var(--color-title);
+  overflow-wrap: anywhere;
+}
+.gtip__line {
+  display: flex;
+  align-items: center;
+}
+.gtip__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 2px 0;
+}
+
+/* ---- Copie imprimée (export PDF) : rien de figé, tout est déroulé ---- */
+.gantt--print .gantt__scroll {
+  overflow: visible;
+  max-height: none;
+  border: 0;
+}
+.gantt--print .gantt__head,
+.gantt--print .gantt__corner,
+.gantt--print .grow__label {
+  position: relative;
+  left: auto;
+  top: auto;
+}
+
+/* html2canvas ne rend ni les icônes en masque ni les dégradés répétés : équivalents imprimables */
+.gantt--print .gbar--deduced {
+  background-image: none;
+  background-color: var(--g-fill);
+  opacity: 0.35;
+  box-shadow: none;
+  outline: 1px solid var(--g-fill);
+}
+
+@media (max-width: 1279px) {
+  .gantt {
+    --gantt-label: 260px;
+  }
+  .gantt__grid {
+    min-width: calc(var(--gantt-label) + var(--timeline-min, 900px) * 0.7);
+  }
+}
+@media (max-width: 767px) {
+  .gantt {
+    --gantt-label: 180px;
+  }
+  .gantt__scroll {
+    max-height: 70vh;
+  }
+}
+
+/* ---- Liste chronologique (sous 768 px, à la place de l'arbre) ---- */
+.gantt__list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.glist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.glist__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  border-left: 3px solid transparent;
+}
+.glist__item:last-child {
+  border-bottom: 0;
+}
+.glist__item--late {
+  border-left-color: var(--viz-late);
+}
+.glist__title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-title);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+button.glist__title {
+  cursor: pointer;
+}
+button.glist__title:hover {
+  text-decoration: underline;
+}
+button.glist__title:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.glist__path {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.glist__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+}
+.glist__track {
+  position: relative;
+  height: 8px;
+  margin-top: var(--space-1);
+  border-radius: 2px;
+  background: var(--color-surface-2);
+}
+.glist__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 4px;
+  border-radius: 2px;
+  background: var(--g-fill, var(--viz-neutral));
+}
+.glist__bar.gbar--hollow {
+  background: transparent;
+  border: 1px dashed var(--viz-neutral);
+}
+.glist__bar--deduced {
+  background: repeating-linear-gradient(135deg, var(--g-fill, var(--viz-neutral)) 0 2px, transparent 2px 5px);
+  box-shadow: inset 0 0 0 1px var(--g-fill, var(--viz-neutral));
+}
+.glist__empty,
+.glist__more {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gbar:hover,
+  .gms:hover {
+    filter: none;
+  }
+}

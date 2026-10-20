@@ -1,0 +1,735 @@
+/*
+ * Vue Portfolio : indicateurs, sous-onglets, frises (une ligne par élément) et charge hebdomadaire par profil.
+ * Couleurs des données : variables partagées --viz-* (PO = 1, DA = 2, DS = 3, DE = 4), toujours avec légende
+ * et valeurs écrites ; niveaux de charge : variables d'alerte du DSFR, toujours avec le taux en texte.
+ */
+.pf {
+  --pf-row: 40px;
+  --pf-load-row: 44px;
+  --pf-label: 340px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- Indicateurs ---- */
+.pf-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.pf-kpi {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-indicator);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+.pf-kpi p {
+  margin: 0;
+}
+.pf-kpi__label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.pf-kpi__value {
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  font-variant-numeric: tabular-nums;
+}
+.pf-kpi__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.pf-kpi__profiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.pf-kpi__profiles li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ---- Pastilles (légendes) ---- */
+.pf-swatch {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  margin-right: var(--space-1);
+  vertical-align: middle;
+}
+.pf-swatch--PO,
+.pf-seg--PO {
+  background: var(--viz-1);
+}
+.pf-swatch--DA,
+.pf-seg--DA {
+  background: var(--viz-2);
+}
+.pf-swatch--DS,
+.pf-seg--DS {
+  background: var(--viz-3);
+}
+.pf-swatch--DE,
+.pf-seg--DE {
+  background: var(--viz-4);
+}
+/* Ambre sous 3:1 sur fond clair : fines rayures et contour pour détacher les segments DE (valeurs écrites à côté) */
+.pf-seg--DE,
+.pf-swatch--DE {
+  background-image: repeating-linear-gradient(135deg, transparent 0 7px, var(--color-surface) 7px 8px);
+  outline: 1px solid var(--color-text-muted);
+  outline-offset: -1px;
+}
+.pf-swatch--bar {
+  width: 16px;
+  height: 10px;
+  background: var(--viz-1);
+}
+.pf-swatch--deduced {
+  width: 16px;
+  height: 10px;
+  border: 1px solid var(--viz-summary);
+  background: repeating-linear-gradient(135deg, var(--viz-summary) 0 2px, transparent 2px 5px);
+}
+.pf-swatch--today {
+  width: 2px;
+  height: 14px;
+  margin: 0 7px;
+  background: var(--viz-today);
+}
+.pf-swatch--cap {
+  width: 3px;
+  height: 14px;
+  margin: 0 6px;
+  background: var(--color-title);
+}
+
+/* ---- Barre : sous-onglets et réglages ---- */
+.pf-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+.pf-tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+}
+.pf-tab {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+.pf-tab:hover {
+  background: var(--color-surface-hover);
+}
+.pf-tab[aria-selected='true'] {
+  background: var(--color-surface);
+  color: var(--color-accent-text);
+  font-weight: var(--font-weight-bold);
+  box-shadow:
+    inset 0 -2px 0 var(--color-indicator),
+    var(--shadow-1);
+}
+.pf-tab:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+/* Champs alignés sur une même ligne de libellés (Rechercher, Début, Durée), puis une même ligne de contrôles
+   alignés en haut ; l'export reste aligné sur le bas des contrôles */
+.pf-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.pf-field {
+  margin: 0;
+}
+.pf-field > .fr-label,
+.pf-field > .pf-field__legend {
+  display: block;
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  line-height: var(--line-height-base);
+}
+.pf-field .fr-input {
+  margin-top: 0;
+  height: 40px;
+}
+.pf-controls > .pf-pdf {
+  align-self: flex-end;
+}
+.pf-field--search {
+  width: 220px;
+}
+.pf-field__legend {
+  font-size: var(--font-size-sm);
+}
+.pf-controls .fr-btn {
+  margin: 0;
+}
+.pf-period {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  font-variant-numeric: tabular-nums;
+}
+.pf-notice {
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+.pf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Légende et compteur ---- */
+.pf-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.pf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+}
+.pf-legend li {
+  display: inline-flex;
+  align-items: center;
+}
+.pf-count,
+.pf-scope {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.pf-more {
+  align-self: flex-start;
+}
+.pf-empty {
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+.pf-empty p {
+  margin: 0 0 var(--space-2);
+}
+.pf-empty__title {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+
+/* ---- Frise ---- */
+.pf-tl__scroll {
+  overflow: auto;
+  max-height: max(420px, calc(100vh - 380px));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.pf-tl {
+  position: relative;
+  min-width: calc(var(--pf-label) + var(--tl-min, 768px));
+}
+.pf-tl__head,
+.pf-tl__row {
+  display: grid;
+  grid-template-columns: var(--pf-label) minmax(0, 1fr);
+}
+.pf-tl__head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.pf-tl__corner {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.pf-tl__scale {
+  position: relative;
+  height: 48px;
+}
+.pf-tl__groups,
+.pf-tl__cols {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 24px;
+}
+.pf-tl__cols {
+  top: 24px;
+}
+.pf-tl__group,
+.pf-tl__col {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  overflow: hidden;
+  padding: 0 var(--space-1);
+  border-left: 1px solid var(--color-border);
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  line-height: 24px;
+}
+.pf-tl__group {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.pf-tl__col {
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.pf-tl__col.is-current {
+  color: var(--color-accent-text);
+  font-weight: var(--font-weight-bold);
+}
+.pf-tl__flag {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-bottom: 0;
+  border-top: 6px solid var(--viz-today);
+}
+.pf-tl__body {
+  position: relative;
+}
+.pf-tl__lines {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--pf-label);
+  right: 0;
+  pointer-events: none;
+}
+.pf-tl__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--color-border);
+}
+.pf-tl__today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  margin-left: -1px;
+  border-left: 2px solid var(--viz-today);
+}
+.pf-tl__row {
+  height: var(--pf-row);
+  border-bottom: 1px solid var(--color-border);
+}
+.pf-tl__row:hover > *,
+.pf-tl__row:focus-within > * {
+  background-color: var(--color-surface-hover);
+}
+.pf-tl__label {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+.pf-tl__title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-title);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pf-tl__title:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.pf-tl__title:hover .pf-tl__name {
+  text-decoration: underline;
+}
+.pf-tl__name,
+.pf-tl__context {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pf-tl__name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+}
+.pf-tl__context {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-tight);
+}
+.pf-tl__status {
+  flex: none;
+}
+.pf-tl__track {
+  position: relative;
+}
+.pf-tl__bar {
+  position: absolute;
+  top: 12px;
+  z-index: 2;
+  height: 16px;
+  min-width: 4px;
+  border-radius: 4px;
+  background: var(--viz-1);
+  cursor: pointer;
+}
+.pf-tl__bar--deduced {
+  border: 1px solid var(--viz-summary);
+  background: repeating-linear-gradient(135deg, var(--viz-summary) 0 2px, transparent 2px 6px);
+}
+.pf-tl__bar.is-clip-start {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.pf-tl__bar.is-clip-end {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.pf-tl__nodates,
+.pf-tl__out {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.pf-tl__nodates,
+.pf-tl__out--before {
+  left: 0;
+}
+.pf-tl__out--after {
+  right: 0;
+}
+.pf-tl__out [class^='fr-icon-']::before {
+  --icon-size: 1rem;
+}
+
+/* ---- Charge ---- */
+.pf-subtitle {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-tight);
+  color: var(--color-title);
+}
+.pf-sum {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.pf-sum__item {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+.pf-sum__item p {
+  margin: 0;
+}
+.pf-sum__name {
+  display: flex;
+  align-items: center;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.pf-sum__value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  font-variant-numeric: tabular-nums;
+}
+.pf-sum__rate {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.pf-sum__line {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.pf-sum__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.pf-sum__item--tension {
+  border-left: 4px solid var(--text-default-warning);
+}
+.pf-sum__item--over {
+  border-left: 4px solid var(--text-default-error);
+}
+.pf-sum__item--tension .pf-sum__value,
+.pf-sum__item--tension .pf-sum__rate {
+  color: var(--text-default-warning);
+  font-weight: var(--font-weight-bold);
+}
+.pf-sum__item--over .pf-sum__value,
+.pf-sum__item--over .pf-sum__rate {
+  color: var(--text-default-error);
+  font-weight: var(--font-weight-bold);
+}
+
+.pf-load__scroll {
+  overflow: auto;
+  max-height: max(420px, calc(100vh - 420px));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.pf-load__scroll:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.pf-load {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.pf-load th,
+.pf-load td {
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: middle;
+}
+.pf-load thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 40px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-strong);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  white-space: nowrap;
+}
+.pf-load__row {
+  height: var(--pf-load-row);
+}
+.pf-load__row.is-current > * {
+  background: var(--color-accent-soft);
+}
+.pf-load__week {
+  width: 1%;
+  white-space: nowrap;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-title);
+}
+.pf-load__chart {
+  min-width: 200px;
+}
+.pf-stack {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 18px;
+}
+.pf-seg {
+  height: 100%;
+  min-width: 2px;
+}
+.pf-seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.pf-seg:last-of-type {
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+.pf-cap {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--color-title);
+  box-shadow: 0 0 0 1px var(--color-surface);
+}
+.pf-load__cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+.pf-load td.pf-load__cell {
+  line-height: var(--line-height-tight);
+}
+.pf-load__value {
+  display: block;
+  color: var(--color-text);
+}
+.pf-load__rate {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.pf-load__cell--none {
+  color: var(--color-text-disabled);
+}
+.pf-load__cell--tension {
+  background: var(--background-contrast-warning);
+}
+.pf-load__cell--tension .pf-load__rate {
+  color: var(--text-default-warning);
+  font-weight: var(--font-weight-bold);
+}
+.pf-load__cell--over {
+  background: var(--background-contrast-error);
+}
+.pf-load__cell--over .pf-load__rate {
+  color: var(--text-default-error);
+  font-weight: var(--font-weight-bold);
+}
+.pf-load__warn::before {
+  --icon-size: 0.875rem;
+  margin-right: 2px;
+}
+.pf-load tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+/* ---- Copie pour l'export PDF : hors écran, sans défilement ---- */
+.pf-offscreen {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  width: max-content;
+  pointer-events: none;
+}
+.pf--print {
+  padding: var(--space-2);
+  background: var(--color-surface);
+}
+.pf--print .pf-tl__scroll,
+.pf--print .pf-load__scroll {
+  max-height: none;
+  overflow: visible;
+}
+.pf--print .pf-tl {
+  min-width: 0;
+}
+/* html2canvas ne gère pas position: sticky ni les dégradés répétés : équivalents imprimables */
+.pf--print .pf-tl__head,
+.pf--print .pf-tl__corner,
+.pf--print .pf-tl__label,
+.pf--print .pf-load thead th {
+  position: relative;
+  left: auto;
+  top: auto;
+}
+.pf--print .pf-seg--DE,
+.pf--print .pf-swatch--DE {
+  background-image: none;
+}
+.pf--print .pf-tl__bar--deduced,
+.pf--print .pf-swatch--deduced {
+  background: var(--viz-summary);
+  opacity: 0.35;
+}
+
+/* ---- Largeurs ---- */
+@media (max-width: 1279px) {
+  .pf {
+    --pf-label: 260px;
+  }
+  .pf-kpis,
+  .pf-sum {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 767px) {
+  .pf {
+    --pf-label: 180px;
+  }
+  .pf-kpi__value {
+    font-size: var(--font-size-2xl);
+  }
+  .pf-tabs {
+    display: flex;
+    width: 100%;
+  }
+  .pf-tab {
+    flex: 1;
+    padding: var(--space-2);
+  }
+  .pf-controls,
+  .pf-field--search {
+    width: 100%;
+  }
+  .pf-tl__status {
+    display: none;
+  }
+  .pf-load__prof {
+    display: none;
+  }
+  .pf-load__chart {
+    min-width: 120px;
+  }
+}
