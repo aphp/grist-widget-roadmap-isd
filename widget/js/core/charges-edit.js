@@ -14,6 +14,7 @@
 import { etpToHours, hoursToEtp } from './capacity.js';
 import { taskEtpByRole } from './kanban-data.js';
 import { EncodeError, parseNumberFr } from './write-encode.js';
+import { ESTIMATION_MAX_ETP } from './estimation.js';
 
 /** Pas de stockage des heures. */
 export const HOURS_STEP = 0.5;
@@ -23,24 +24,8 @@ export const MIN_HOURS = 0.25;
 export const MAX_ETP = 1;
 /** Sans période connue, borne de bon sens : 2 000 h par personne et par tâche. */
 export const MAX_HOURS = 2000;
-/**
- * APH (Team.aph) de la personne « estimation » : une ligne de Team (ex. « Data Engineer ») qui sert à estimer la
- * charge d'une tâche dans la feuille de route avant de la répartir entre des personnes réelles. Seule une personne
- * qui porte exactement cet APH échappe à la borne de 1 ETP ; si personne ne le porte, personne n'y échappe.
- */
-export const ESTIMATION_APH = '9999999';
-/**
- * Borne de bon sens de la personne estimation : 50 ETP sur la période (sans dates : MAX_HOURS, comme pour tous),
- * pour qu'une faute de frappe (un zéro de trop) ne passe pas.
- */
-export const ESTIMATION_MAX_ETP = 50;
-
-/** L'APH est-il celui de la personne estimation ? (valeur de Team.aph, espaces de bord ignorés) */
-export const isEstimationAph = (aph) =>
-  (typeof aph === 'string' || typeof aph === 'number') && String(aph).trim() === ESTIMATION_APH;
-
-/** La personne du modèle (people) est-elle la personne estimation ? */
-export const isEstimationPerson = (person) => Boolean(person) && isEstimationAph(person.aph);
+// Personne estimation (Team.aph, titulaire unique) : seule exemptée de la borne de 1 ETP, voir estimation.js
+export { ESTIMATION_APH, ESTIMATION_MAX_ETP, isEstimationAph, isEstimationPerson } from './estimation.js';
 
 /** Heures arrondies à 0,5 h près. */
 export const roundHours = (h) => Math.round(h / HOURS_STEP) * HOURS_STEP;

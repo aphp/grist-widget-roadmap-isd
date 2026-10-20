@@ -7,7 +7,11 @@
   the Feuille, the field stays read-only with its reason. Strict check in the writer: 1 to 10 digits, or empty.
 - Charges: the person whose APH is `9999999` (`ESTIMATION_APH`, used to estimate load in the roadmap) is the only
   one exempt from the "1 FTE maximum per person" rule, in the form and in the writer; a sanity bound of 50 FTE over
-  the period (2,000 h without dates) still applies. An "Estimation" badge explains it next to that person.
+  the period (2,000 h without dates) still applies. An "Estimation" badge explains it next to that person. The
+  exemption needs exactly one Team row with that APH (strict comparison); with none or several, nobody is exempt.
+  The widget never sets that APH nor changes it away: the estimation person is chosen in the Feuille.
+- Writer: column metadata is re-checked on every reload; a column that turned back into a formula is no longer
+  written (columns are never re-enabled during a session).
 - Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs and an
   "Estimation DE" person).
 

@@ -18,6 +18,7 @@ import { editAvailability, taskInScope } from './core/task-form.js';
 import { chantierInScope } from './core/chantier-form.js';
 import { parisToday } from './core/write-encode.js';
 import { buildModel } from './core/model.js';
+import { estimationIdOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
 import { dayInZone, monthKey, monthsFrom } from './core/dates.js';
 import { openingView, sanitizeHomeView } from './core/home-view.js';
@@ -606,6 +607,8 @@ function refExists(table, id) {
 const lookup = {
   choices: (key) => state.model?.choices?.[key] ?? null,
   row: (table, id) => (state.raw?.tables[table] ? decodeRow(state.raw.tables[table], table, id) : null),
+  // Personne estimation : titulaire unique de ESTIMATION_APH dans Team (sinon null : personne n'est exempté)
+  estimationId: () => estimationIdOfTable(state.raw?.tables.Team),
   childIds: (id) => {
     const t = state.raw?.tables.Tasks;
     return t?.parentTask ? t.id.filter((_, i) => t.parentTask[i] === id) : [];
@@ -724,6 +727,8 @@ async function reload() {
     const first = !editSetup;
     editSetup ??= setupEdit(raw.columns);
     await editSetup;
+    // Colonnes relues à chaque relecture : une colonne redevenue formule (vide) n'est plus écrite
+    if (!first) writer?.recheckColumns?.(raw.columns);
     if (!first) await recheckFlags();
     // Préférence ancienne ou ligne supprimée : un filtre qui ne désigne plus rien est retiré
     const f = validFilters(state.model, state.prefs.filters);

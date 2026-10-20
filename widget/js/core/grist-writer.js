@@ -17,7 +17,8 @@
  * - Contrôle des colonnes au chargement : une colonne absente, devenue formule ou de type inattendu est retirée
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
-import { chargesWriteProblem, isEstimationAph, periodDays } from './charges-edit.js';
+import { chargesWriteProblem, periodDays } from './charges-edit.js';
+import { estimationIdOfTable, isEstimationAph } from './estimation.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
 
@@ -606,6 +607,9 @@ function personProblem(it, after, touches, add, lookup, nameBad) {
   // APH vide permis (non renseigné) ; sinon chiffres seulement, sans espace
   if (touches('aph') && after.aph !== null && after.aph !== undefined && after.aph !== '' && !validAph(after.aph))
     return 'aph';
+  // Personne estimation : se désigne dans la Feuille, jamais depuis le widget (ni poser l'APH, ni le retirer)
+  if (touches('aph') && (isEstimationAph(after.aph) || (!add && isEstimationAph(lookup.row('Team', it.id)?.aph))))
+    return 'aph-estimation';
   if (touches('role') && !(choices('role') ?? []).includes(after.role)) return 'role';
   if (touches('Domaine') && !(choices('Domaine') ?? []).includes(after.Domaine)) return 'domaine';
   // À la création, une capacité absente ou vide vaut 35 h par défaut
@@ -636,6 +640,7 @@ export function lookupFromTables(tables, base = null) {
   return {
     choices: (k) => base?.choices?.(k) ?? null,
     row: (t, id) => (tables[t] ? decodeRow(tables[t], t, id) : (base?.row(t, id) ?? null)),
+    estimationId: () => (tables.Team ? estimationIdOfTable(tables.Team) : (base?.estimationId?.() ?? null)),
     childIds: (id) => (tasks() ? ids((i) => col('parentTask')[i] === id) : (base?.childIds?.(id) ?? [])),
     chantierTasks: (id) => (tasks() ? ids((i) => col('Chantier')[i] === id) : (base?.chantierTasks?.(id) ?? [])),
   };
@@ -748,8 +753,12 @@ export function createWriter({
   const created = new Set(); // 'Table:id' créées dans la session (seules lignes supprimables, pour « Annuler »)
   const addRefused = new Set(); // tables où une règle d'accès refuse l'ajout
   const exists = refExists ?? (lookup ? (t, id) => Boolean(lookup.row(t, id)) : null);
-  // Personne estimation (Team.aph = ESTIMATION_APH dans les données chargées) : seule exemptée de la borne de 1 ETP
-  const isEstimation = (n) => isEstimationAph(lookup?.row('Team', n)?.aph);
+  // Personne estimation (titulaire UNIQUE de ESTIMATION_APH dans les données chargées, lookup.estimationId) : seule
+  // exemptée de la borne de 1 ETP ; sans lookup, sans titulaire ou avec plusieurs, personne ne l'est
+  const isEstimation = (n) => {
+    const id = lookup?.estimationId?.() ?? null;
+    return Number.isInteger(id) && n === id;
+  };
   let seq = 0;
   let blocked = null; // refus sur tout le document : la session passe en lecture
   let undoing = false;
@@ -1184,5 +1193,13 @@ export function createWriter({
     },
     /** Retire une colonne pour la session (refus constaté ailleurs). */
     refuse: (table, col, reason = 'acl') => disabled.set(key(table, col), reason),
+    /**
+     * Métadonnées relues (à chaque relecture) : une colonne devenue formule, absente ou d'un autre type est retirée
+     * à son tour. Rien n'est jamais rétabli en cours de session ; métadonnées illisibles : rien ne change.
+     */
+    recheckColumns: (cols) => {
+      if (!cols) return;
+      for (const [k, r] of checkColumns(cols)) if (!disabled.has(k)) disabled.set(k, r);
+    },
   };
 }

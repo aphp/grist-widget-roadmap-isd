@@ -11,6 +11,7 @@ import {
   ESTIMATION_MAX_ETP,
   etpOf,
   inputValue,
+  isEstimationAph,
   isEstimationPerson,
   maxHours,
   periodDays,
@@ -286,7 +287,7 @@ function personLineHtml(st, model, l, ctx) {
   const canRemove =
     (!l.assigned || ctx.canAssign) && (!l.charged || (ctx.canCharges && ctx.readable)) && (l.assigned || l.charged);
   return h`<li class="tf-charge tf-person ${raw(l.assigned ? '' : 'tf-person--unassigned')}" data-charge="${id}">
-    <span class="tf-charge__who">${name}${p ? roleBadge(model, p, true) : ''}${estimationBadge(p)}${
+    <span class="tf-charge__who">${name}${p ? roleBadge(model, p, true) : ''}${estimationBadge(isEstimationPerson(model, id))}${
       l.assigned
         ? ''
         : h` <span class="tf-person__flag" id="tf-person-${id}-flag">${label('form.people.unassigned')}</span>${
@@ -334,7 +335,9 @@ export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const to = delta ? etpFormat.format(delta.to) : '';
   const errKey = err?.error === 'max' && !ctx.days ? 'maxNoDates' : err?.error;
   // Personne estimation (Team.aph) : borne de ESTIMATION_MAX_ETP au lieu de 1 ETP
-  const estimation = isEstimationPerson(model.people.get(l.teamId));
+  const estimation = isEstimationPerson(model, l.teamId);
+  // Plusieurs personnes portent l'APH d'estimation : aucune n'est exemptée, on le dit à côté de chacune
+  const many = !estimation && isEstimationAph(model.people.get(l.teamId)?.aph) && model.estimation?.holders.length > 1;
   const max = ctx.days ? maxHours(ctx.days, estimation) : null;
   const over = ctx.days && l.heures !== null && l.heures > max && !err;
   const etp = ESTIMATION_MAX_ETP;
@@ -342,7 +345,7 @@ export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
     over
       ? h`<p class="tf-warn">${label(estimation ? 'form.charges.overEstimation' : 'form.charges.over', { h: hoursFormat.format(max), etp })}</p>`
       : ''
-  }${
+  }${many ? h`<p class="tf-warn">${label('estimation.many', { n: model.estimation.holders.length })}</p>` : ''}${
     l.count > 1
       ? h`<p class="tf-warn">${label('form.charges.duplicate', { n: l.count })}</p>${ctx.canCharges ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-charge-merge="${l.teamId}">${label('form.charges.merge', { n: l.count })}</button>` : ''}`
       : ''

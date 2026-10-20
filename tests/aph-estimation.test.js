@@ -125,15 +125,19 @@ test('formulaire : APH nettoyé de ses espaces, invalide bloquant, longueur inha
   assert.equal('aph' in newPersonFields(draft('1234567'), { model: m, canAddField: (c) => c !== 'aph' }), false);
 });
 
-test('modèle et annuaire : APH lu (texte nettoyé, nombre accepté), vide si la colonne manque', () => {
+test('modèle et annuaire : APH lu tel quel (texte seulement), vide si la colonne manque', () => {
   const r = raw();
   r.tables.Team.aph[1] = ' 7000001 ';
   r.tables.Team.aph[2] = 7000002;
   const m = buildModel(r);
   assert.equal(m.people.get(1).aph, ESTIMATION_APH);
-  assert.equal(m.people.get(2).aph, '7000001');
-  assert.equal(m.people.get(3).aph, '7000002');
-  assert.equal(filterUsers(m).find((p) => p.id === 1).aph, ESTIMATION_APH);
+  assert.equal(m.people.get(2).aph, ' 7000001 ');
+  assert.equal(m.people.get(3).aph, '');
+  assert.deepEqual(m.estimation, { holders: [1], id: 1 });
+  const users = filterUsers(m);
+  assert.equal(users.find((p) => p.id === 1).aph, ESTIMATION_APH);
+  assert.equal(users.find((p) => p.id === 1).estimation, true);
+  assert.equal(users.find((p) => p.id === 2).estimation, false);
   const without = feuille();
   delete without.tables.Team.aph;
   assert.equal(buildModel(without).people.get(1).aph, '');
@@ -197,31 +201,88 @@ test('writer : Team.aph colonne de données écrite après contrôle strict (chi
   await writer.add('Team', { ...fields, aph: '7000009' });
   assert.deepEqual(g.batches.at(-1), [['AddRecord', 'Team', null, { ...fields, aph: '7000009' }]]);
   // Par le formulaire (runSave) : saisie avec espaces de bord, envoyée nettoyée
-  const base = await readRow('Team', 1);
+  const base = await readRow('Team', 2);
   const r = await runSave({
     table: 'Team',
     diff: diffPerson,
-    taskId: 1,
+    taskId: 2,
     base,
     draft: { ...personDraftFrom(base), aph: ' 7000010 ' },
     writer,
     fetchRow: (id) => readRow('Team', id),
   });
   assert.equal(r.kind, 'saved');
-  assert.deepEqual(g.batches.at(-1), [['UpdateRecord', 'Team', 1, { aph: '7000010' }]]);
+  assert.deepEqual(g.batches.at(-1), [['UpdateRecord', 'Team', 2, { aph: '7000010' }]]);
+});
+
+test('estimation : le widget ne pose jamais l’APH d’estimation et ne le retire jamais (writer et formulaire)', async () => {
+  const { g, writer, model } = setup();
+  const fields = { nom: 'Nouvelle DE', role: 'DE', Domaine: ISD, actif: true };
+  // Writer : poser 9999999 (mise à jour ou création), ou changer l'APH de la ligne qui le porte : refusé
+  assert.equal(await reason(writer.update('Team', 5, { aph: ESTIMATION_APH })), 'aph-estimation');
+  assert.equal(await reason(writer.add('Team', { ...fields, aph: ESTIMATION_APH })), 'aph-estimation');
+  assert.equal(await reason(writer.update('Team', 1, { aph: '1234567' })), 'aph-estimation');
+  assert.equal(await reason(writer.update('Team', 1, { aph: '' })), 'aph-estimation');
+  assert.equal(await reason(writer.update('Team', 1, { aph: ESTIMATION_APH })), 'aph-estimation');
+  assert.equal(g.batches.length, 0);
+  // Le reste de la fiche de la personne estimation reste modifiable
+  await writer.update('Team', 1, { nom: 'Data Engineer' });
+  assert.deepEqual(g.batches, [[['UpdateRecord', 'Team', 1, { nom: 'Data Engineer' }]]]);
+  // Formulaire : erreur bloquante avec le message attendu, création sans l'APH d'estimation
+  const m = model();
+  const err = { key: 'person.error.aphEstimation' };
+  const v = (draft, personId) =>
+    validatePerson({ ...newPersonDraft(), nom: 'X', role: 'DE', ...draft }, { model: m, personId });
+  assert.deepEqual(v({ aph: ' 9999999 ' }, null).errors.aph, err);
+  assert.deepEqual(v({ aph: '9999999', role: 'DA' }, 5).errors.aph, err);
+  assert.deepEqual(v({ aph: '1234567' }, 1).errors.aph, err);
+  assert.deepEqual(v({ aph: '' }, 1).errors.aph, err);
+  assert.equal(v({ aph: ESTIMATION_APH }, 1).errors.aph, undefined);
+  assert.deepEqual(v({ aph: ESTIMATION_APH }, 1).warnings, []);
+  assert.equal(
+    'aph' in newPersonFields({ ...newPersonDraft(), nom: 'X', role: 'DE', aph: ESTIMATION_APH }, { model: m }),
+    false,
+  );
 });
 
 // ---------- Personne estimation : borne de 1 ETP ----------
 
-test('estimation : seul l’APH 9999999 (espaces de bord ignorés) désigne la personne estimation', () => {
+test('estimation : seul le texte exact 9999999 désigne la personne estimation (comparaison stricte)', () => {
   assert.equal(ESTIMATION_APH, '9999999');
   assert.equal(isEstimationAph('9999999'), true);
-  assert.equal(isEstimationAph(' 9999999 '), true);
-  assert.equal(isEstimationAph(9999999), true);
-  for (const no of ['', '999999', '99999999', '1234567', null, undefined, {}]) assert.equal(isEstimationAph(no), false);
-  assert.equal(isEstimationPerson({ aph: '9999999' }), true);
-  assert.equal(isEstimationPerson({ aph: '' }), false);
-  assert.equal(isEstimationPerson(undefined), false);
+  for (const no of [' 9999999 ', '9999999 ', 9999999, '', '999999', '99999999', '1234567', null, undefined, {}])
+    assert.equal(isEstimationAph(no), false, String(no));
+  const m = buildModel(raw());
+  assert.equal(isEstimationPerson(m, 1), true);
+  assert.equal(isEstimationPerson(m, 5), false);
+  assert.equal(isEstimationPerson(m, null), false);
+  assert.equal(isEstimationPerson(null, 1), false);
+  // Espaces de bord dans la Feuille : pas la personne estimation
+  const r = raw();
+  r.tables.Team.aph[0] = ' 9999999 ';
+  assert.deepEqual(buildModel(r).estimation, { holders: [], id: null });
+});
+
+test('estimation : deux titulaires de l’APH, personne n’est exempté (saisie, writer) et le formulaire avertit', async () => {
+  const r = raw();
+  r.tables.Team.aph[4] = ESTIMATION_APH; // Eve DA aussi
+  const m = buildModel(r);
+  assert.deepEqual(m.estimation, { holders: [1, 5], id: null });
+  assert.equal(isEstimationPerson(m, 1), false);
+  assert.equal(isEstimationPerson(m, 5), false);
+  const draft = personDraftFrom({ nom: 'Alice DE', role: 'DE', aph: ESTIMATION_APH });
+  assert.deepEqual(validatePerson(draft, { model: m, personId: 1 }).warnings, [
+    { field: 'aph', key: 'person.warn.aphEstimationMany', vars: { n: 2 } },
+  ]);
+  const { g, writer } = setup();
+  g.data.Team.aph[4] = ESTIMATION_APH;
+  const period = { start: 100, end: 113 };
+  for (const who of [1, 5])
+    assert.equal(
+      await reason(writer.update('Tasks', 1002, { charges: `[{"teamId":${who},"heures":210}]` }, { period })),
+      'charges',
+    );
+  assert.equal(g.batches.length, 0);
 });
 
 test('estimation : saisie au-delà de 1 ETP acceptée jusqu’à 50 ETP sur la période ; les autres restent à 1 ETP', () => {
@@ -296,5 +357,43 @@ test('estimation : sans personne à l’APH 9999999, personne n’est exempté',
   // Writer sans données lues (lookup absent) : aucune exemption non plus
   const w = createWriter({ docApi: g.docApi, mode: 'on', columns: META, refExists: () => true });
   assert.equal(await reason(w.update('Tasks', 1002, { charges: v }, { period })), 'charges');
+  assert.equal(g.batches.length, 0);
+});
+
+test('estimation : « Annuler » une charge d’estimation rend la valeur d’avant, même après la perte de l’exemption', async () => {
+  const { g, writer, readRow } = setup();
+  const period = { start: 100, end: 113 };
+  const i = g.data.Tasks.id.indexOf(1002);
+  const est = '[{"teamId":1,"heures":210}]';
+  await writer.update('Tasks', 1002, { charges: est }, { before: { charges: g.data.Tasks.charges[i] }, period });
+  assert.equal(g.data.Tasks.charges[i], est);
+  // Annulation simple : retour aux 70 h d'origine
+  const u = await writer.undoLast(readRow);
+  assert.equal(g.data.Tasks.charges[i], '[{"teamId":1,"heures":70}]');
+  assert.ok(u.undoEntry);
+  // Charge d'estimation ramenée à 70 h, puis l'exemption tombe (deuxième titulaire) : l'annulation rend les 210 h
+  // telles quelles (valeur d'avant, non recontrôlée), une nouvelle saisie au-dessus de 1 ETP reste refusée
+  await writer.update('Tasks', 1002, { charges: est }, { before: { charges: g.data.Tasks.charges[i] }, period });
+  await writer.update('Tasks', 1002, { charges: '[{"teamId":1,"heures":70}]' }, { before: { charges: est }, period });
+  g.data.Team.aph[4] = ESTIMATION_APH;
+  await writer.undoLast(readRow);
+  assert.equal(g.data.Tasks.charges[i], est);
+  const v = '[{"teamId":1,"heures":280}]';
+  assert.equal(
+    await reason(writer.update('Tasks', 1002, { charges: v }, { before: { charges: est }, period })),
+    'charges',
+  );
+});
+
+test('colonnes relues : une colonne redevenue formule vide est retirée à la relecture, jamais rétablie', async () => {
+  const { g, writer } = setup();
+  assert.equal(writer.can('Team', 'aph').ok, true);
+  writer.recheckColumns(null);
+  assert.equal(writer.can('Team', 'aph').ok, true);
+  writer.recheckColumns(META_FORMULA);
+  assert.deepEqual(writer.can('Team', 'aph'), { ok: false, reason: 'vide' });
+  assert.equal(await reason(writer.update('Team', 5, { aph: '7654321' })), 'colonne-retiree');
+  writer.recheckColumns(META);
+  assert.deepEqual(writer.can('Team', 'aph'), { ok: false, reason: 'vide' });
   assert.equal(g.batches.length, 0);
 });

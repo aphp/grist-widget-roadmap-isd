@@ -12,6 +12,7 @@
  * à 1 (dispo), textes (type, commentaire).
  */
 import { APH_MAX_DIGITS, APH_USUAL_DIGITS, CAPACITY_MAX, NAME_MAX, validAph, validCapacity } from './grist-writer.js';
+import { ESTIMATION_APH, isEstimationAph } from './estimation.js';
 import { ISD_ROLES } from './model.js';
 import { ROLE_ORDER, inIsdTeam, isValidEmail, isdDomain, pickerGroups } from './team-directory.js';
 import { sameValue } from './write-encode.js';
@@ -127,7 +128,14 @@ export function validatePerson(draft, { model, personId = null, domaine = '' }) 
   const email = String(draft.email ?? '').trim();
   if (email && !isValidEmail(email)) errors.email = { key: 'person.error.email' };
   const aph = String(draft.aph ?? '').trim();
-  if (aph && !validAph(aph)) errors.aph = { key: 'person.error.aph', vars: { max: APH_MAX_DIGITS } };
+  // Personne estimation : se désigne dans la Feuille ; le widget ne pose ni ne retire jamais cet APH
+  const held = personId === null ? '' : (model.people.get(personId)?.aph ?? '');
+  if (isEstimationAph(held)) {
+    if (draft.aph !== held) errors.aph = { key: 'person.error.aphEstimation' };
+    const n = model.estimation?.holders.length ?? 0;
+    if (n > 1) warnings.push({ field: 'aph', key: 'person.warn.aphEstimationMany', vars: { n } });
+  } else if (aph === ESTIMATION_APH) errors.aph = { key: 'person.error.aphEstimation' };
+  else if (aph && !validAph(aph)) errors.aph = { key: 'person.error.aph', vars: { max: APH_MAX_DIGITS } };
   else if (aph && aph.length !== APH_USUAL_DIGITS)
     warnings.push({ field: 'aph', key: 'person.warn.aphLength', vars: { n: APH_USUAL_DIGITS } });
   const choices = model.choices?.['Team.role'] ?? [];
@@ -169,7 +177,7 @@ export function newPersonFields(draft, { model, canAddField = () => true }) {
   const email = String(draft.email ?? '').trim();
   if (email && canAddField('email')) out.email = email;
   const aph = String(draft.aph ?? '').trim();
-  if (aph && canAddField('aph')) out.aph = aph;
+  if (aph && aph !== ESTIMATION_APH && canAddField('aph')) out.aph = aph;
   if (draft.capaciteHebdo !== null && canAddField('capaciteHebdo')) out.capaciteHebdo = draft.capaciteHebdo;
   if (draft.n_1 !== null && canAddField('n_1')) out.n_1 = draft.n_1;
   return out;

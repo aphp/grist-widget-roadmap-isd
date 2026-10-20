@@ -248,7 +248,7 @@ export function createTaskEditor(deps) {
     const id = Number(t.dataset.chargeInput);
     const days = periodDays(st.draft.dateDebut, st.draft.dateEcheance);
     // Personne estimation (Team.aph) : pas de borne de 1 ETP, seulement la borne de bon sens
-    const estimation = isEstimationPerson(model().people.get(id));
+    const estimation = isEstimationPerson(model(), id);
     const r = lineInput(st.draft, id, t.value, st.chargesUnit, days, { estimation });
     if (r.error) {
       st.chargeErrors.set(id, r.error);

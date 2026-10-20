@@ -28,7 +28,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   entrées non touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : la personne estimation
   (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer » pour estimer dans la roadmap), bornée à
   `ESTIMATION_MAX_ETP` = 50 ETP sur la période (2 000 h sans dates), dans la saisie et dans le writer ; badge
-  « Estimation » à côté d'elle. Sans personne à cet APH, personne n'est exempté.
+  « Estimation » à côté d'elle. Exemption seulement si EXACTEMENT UNE ligne porte cet APH (comparaison stricte,
+  `core/estimation.js`) ; aucune ou plusieurs : personne n'est exempté. Le widget ne pose ni ne retire jamais cet APH
+  (refus `aph-estimation` du writer, erreur du formulaire) : la personne estimation se désigne dans la Feuille.
 - Aucune donnée, clé, capture ni identifiant de document dans le dépôt (un test cherche les identifiants).
   `config.yaml` (clé API, ids des documents) reste hors du dépôt.
 - Textes injectés : `html```, `sanitize()` ou `textContent`. CSP : même origine + `https://grist.numerique.gouv.fr`.

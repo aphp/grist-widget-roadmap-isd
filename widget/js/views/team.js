@@ -7,7 +7,7 @@
  * personne inactive (cochez « Inclure les inactifs »), seulement si l'édition est ouverte et que les droits le
  * permettent (ctx.team). Aucun rôle n'est créé ici : les rôles sont les choix existants de la Feuille.
  */
-import { ESTIMATION_APH, ESTIMATION_MAX_ETP, isEstimationPerson } from '../core/charges-edit.js';
+import { ESTIMATION_APH, ESTIMATION_MAX_ETP } from '../core/estimation.js';
 import { formatDateFr } from '../core/dates.js';
 import { groupUsersByRole, isdTeamSummary, roleShort, roleSummary, roleTone } from '../core/team-directory.js';
 import { raw } from '../core/sanitize.js';
@@ -41,11 +41,12 @@ export const capacityText = (p) =>
   p.capaciteHebdo ? label('team.capacity.value', { h: hours.format(p.capaciteHebdo) }) : label('team.capacity.default');
 
 /**
- * Badge discret « Estimation » de la personne estimation (Team.aph = ESTIMATION_APH) : il explique pourquoi la
- * limite de 1 ETP par personne ne s'applique pas à elle. Rien pour les autres personnes.
+ * Badge discret « Estimation » de la personne estimation (titulaire unique de ESTIMATION_APH, isEstimationPerson) :
+ * il explique pourquoi la limite de 1 ETP par personne ne s'applique pas à elle. Rien pour les autres personnes.
+ * @param {boolean} on la personne est la personne estimation
  */
-export function estimationBadge(p) {
-  if (!isEstimationPerson(p)) return '';
+export function estimationBadge(on) {
+  if (on !== true) return '';
   const why = label('estimation.title', { aph: ESTIMATION_APH, etp: ESTIMATION_MAX_ETP });
   return h` <span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--info est-badge" title="${why}">${label('estimation.badge')}<span class="fr-sr-only"> : ${why}</span></span>`;
 }
@@ -113,7 +114,7 @@ function personRow(p, team) {
   return h`<li class="tperson ${raw(p.actif ? '' : 'is-inactive')}" data-row="${p.id}">
     <span class="tperson__who">
       <button type="button" class="tperson__name" data-person="${p.id}" aria-haspopup="dialog">${p.nom || label('common.untitled')}</button>
-      ${p.aph ? h`<span class="tperson__aph" data-aph="${p.id}">${label('team.aph', { aph: p.aph })}${estimationBadge(p)}</span>` : ''}
+      ${p.aph.trim() ? h`<span class="tperson__aph" data-aph="${p.id}">${label('team.aph', { aph: p.aph })}${estimationBadge(p.estimation)}</span>` : ''}
     </span>
     <span class="tperson__team">${p.domaine || h`<span class="tperson__none" title="${label('team.none.aria')}">${label('team.noDomain')}</span>`}</span>
     <span class="tperson__status">${activeBadge(p.actif)}</span>

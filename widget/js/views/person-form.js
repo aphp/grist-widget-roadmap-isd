@@ -6,6 +6,7 @@
  */
 import { APH_MAX_DIGITS, CAPACITY_MAX, isdDomainValue, n1Candidates, roleOptions } from '../core/person-form.js';
 import { NAME_MAX } from '../core/grist-writer.js';
+import { isEstimationAph } from '../core/estimation.js';
 import { raw } from '../core/sanitize.js';
 import { roleShort } from '../core/team-directory.js';
 import { MAX_YEAR, MIN_YEAR, inputFromDay } from '../core/write-encode.js';
@@ -66,10 +67,15 @@ function personFields(st, model, { add, personId }) {
   const p = st.prefix ?? 'tf';
   const d = st.draft;
   const show = (f) => !add || st.optional?.(f) !== false;
+  // APH de la personne estimation : en lecture (il se change dans la Feuille, jamais depuis le widget)
+  const estimationRow = !add && isEstimationAph(model.people.get(personId)?.aph);
+  const aphHelp = estimationRow
+    ? label('person.error.aphEstimation')
+    : label('form.field.aph.help', { max: APH_MAX_DIGITS });
   return h`
     ${field(st, 'nom', h`<input type="text" id="${p}-nom" class="fr-input tf-title" value="${d.nom}" maxlength="${NAME_MAX + 50}" required autocomplete="off" data-input="nom" ${attrs(st, 'nom')}>`, { required: true })}
     ${show('email') ? field(st, 'email', h`<input type="email" id="${p}-email" class="fr-input" value="${d.email}" autocomplete="off" spellcheck="false" data-input="email" ${attrs(st, 'email')}>`) : ''}
-    ${show('aph') ? field(st, 'aph', h`<input type="text" inputmode="numeric" id="${p}-aph" class="fr-input tf-num" value="${d.aph ?? ''}" maxlength="${APH_MAX_DIGITS + 10}" autocomplete="off" spellcheck="false" data-input="aph" ${attrs(st, 'aph', true)}>`, { help: label('form.field.aph.help', { max: APH_MAX_DIGITS }) }) : ''}
+    ${show('aph') ? field(st, 'aph', h`<input type="text" inputmode="numeric" id="${p}-aph" class="fr-input tf-num" value="${d.aph ?? ''}" maxlength="${APH_MAX_DIGITS + 10}" autocomplete="off" spellcheck="false" data-input="aph" ${raw(estimationRow ? 'readonly' : '')} ${attrs(st, 'aph', true)}>`, { help: aphHelp }) : ''}
     ${field(st, 'role', roleControl(st, model, { add }), { required: add, help: label('form.field.role.help') })}
     ${show('capaciteHebdo') ? field(st, 'capaciteHebdo', capacityControl(st), { help: label('form.field.capaciteHebdo.help', { max: CAPACITY_MAX }) }) : ''}
     ${show('n_1') ? field(st, 'n_1', n1Control(st, model, personId)) : ''}`;

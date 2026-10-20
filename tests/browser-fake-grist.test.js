@@ -1538,3 +1538,35 @@ test(
     ]);
   },
 );
+
+test(
+  'estimation : l’APH d’estimation ne se pose ni ne se retire depuis le widget (fiche en lecture, saisie refusée)',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
+    await clickOn('[data-person="19"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').readOnly;`), true);
+    assert.match(
+      await w(`return D.getElementById('tf-aph-help').textContent;`),
+      /La personne d’estimation se désigne directement dans la Feuille/,
+    );
+    await clickOn('#btn-form-cancel');
+    await until(`D.getElementById('btn-person-active')`);
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    await typeIn('#tf-aph', '9999999');
+    assert.match(
+      await w(`return D.getElementById('tf-aph-msgs').textContent;`),
+      /La personne d’estimation se désigne directement dans la Feuille/,
+    );
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
