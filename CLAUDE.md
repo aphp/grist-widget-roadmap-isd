@@ -34,11 +34,14 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
 - `widget/js/core/` : logique pure, testée (≥ 90 % de couverture). Modèle (`model.js` : Catégorie → Projet →
   Chantier → Tâche → Sous-tâche), filtres, données de chaque vue (`*-data.js`), équipe ISD (`team-directory.js`),
   écriture (`grist-writer.js`, `task-session.js`, `*-form.js`, `charges-edit.js`, `task-people.js`, `conflicts.js`,
-  `write-rights.js` : droits relus au moment d’agir).
+  `write-rights.js` : droits relus au moment d’agir ; `write-scope.js` : périmètre des écritures passé au writer).
 - `widget/js/views/` : rendu d'un onglet ou d'un formulaire, `render(el, ctx)`.
 - `widget/js/ui/` : coquille (en-tête, onglets, filtres, fiche, dialogues, kit `h```).
 - `widget/vendor/` : `grist-plugin-api.js` (copie de l'instance) et DSFR 1.15.3 (voir README).
 - Équipe ISD : rôle DE, DA, DS, PO, ou Domaine ISD ; Management ISD inclus dans les sélecteurs (`pickerGroups`).
+  Domaine ISD = nom contenant « ISD » (personnes, sinon choix de Team.Domaine), calculé une fois (`model.isdDomain`),
+  jamais de repli sur un autre Domaine (il fixe les écritures). Périmètre : responsable du projet, rôles de chantier
+  et de tâche pour toute l'équipe ; sponsor et contributeur clé pour les profils ISD seulement.
   Les sélecteurs d'ajout ne proposent que l'équipe ISD ; les personnes hors ISD déjà saisies dans la Feuille restent
   affichées et conservées. Personne : `isdTeam` = membre actif de l'équipe ISD (périmètre ISD, `inScope`, écritures) ;
   `isd` = profil ISD actif seul (DE, DA, DS, PO). Profils affichés (filtre Profil, charge et capacité du Portfolio,

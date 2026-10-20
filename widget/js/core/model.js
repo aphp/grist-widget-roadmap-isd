@@ -8,21 +8,18 @@ export const NO_CATEGORIE = 'Sans catégorie';
 const DONE = new Set(['done']);
 /** Équipe ISD : Domaine dont le nom contient le sigle « ISD ». */
 const ISD_DOMAIN = /\bISD\b/i;
-const domainCollator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
 
 /**
- * Nom du Domaine ISD parmi les personnes : celui qui contient « ISD », sinon celui qui compte le plus de
- * personnes de profil ISD (DE, DA, DS, PO Data), sinon null.
- * @param {Iterable<{domaine:string, role:string|null}>} people
+ * Nom du Domaine ISD : le Domaine porté par une personne dont le nom contient le sigle « ISD », sinon le choix de
+ * Team.Domaine qui le contient, sinon null. Jamais de repli sur un autre Domaine (par exemple le plus fourni en
+ * profils ISD) : ce Domaine fixe le périmètre ISD et donc les écritures. Sans lui, l'équipe ISD se réduit aux
+ * profils ISD (DE, DA, DS, PO Data), sans le Management.
+ * @param {Iterable<{domaine:string}>} people
+ * @param {string[]} [choices] choix de la colonne Team.Domaine
  */
-export function isdDomainOf(people) {
-  const list = [...people];
-  const names = [...new Set(list.map((p) => p.domaine).filter(Boolean))];
-  const named = names.find((d) => ISD_DOMAIN.test(d));
-  if (named) return named;
-  const counts = new Map();
-  for (const p of list) if (p.domaine && p.role) counts.set(p.domaine, (counts.get(p.domaine) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1] || domainCollator.compare(a[0], b[0]))[0]?.[0] ?? null;
+export function isdDomainOf(people, choices = []) {
+  for (const p of people) if (p.domaine && ISD_DOMAIN.test(p.domaine)) return p.domaine;
+  return (Array.isArray(choices) ? choices : []).find((d) => typeof d === 'string' && ISD_DOMAIN.test(d)) ?? null;
 }
 
 /** Vrai si la personne fait partie de l'équipe ISD : profil ISD (DE, DA, DS, PO Data) ou Domaine ISD. */
@@ -64,7 +61,7 @@ export function buildModel(raw) {
       },
     ]),
   );
-  const isdName = isdDomainOf(people.values());
+  const isdName = isdDomainOf(people.values(), raw.choices?.['Team.Domaine']);
   for (const p of people.values()) p.isdTeam = p.actif && inIsdTeam(p, isdName);
   for (const r of rows(t.Disponibilites)) {
     const p = people.get(ref(r.membre)),
@@ -255,8 +252,13 @@ export function buildModel(raw) {
   };
   categories.forEach(span);
 
-  // ---- Périmètre ISD (spec §4.3) : une personne active de l'équipe ISD (Management ISD compris) y est impliquée ----
+  // ---- Périmètre ISD (spec §4.3) ----
+  // Responsable du projet, rôle sur un chantier ou sur une tâche : toute personne active de l'équipe ISD
+  // (Management ISD compris). Sponsor ou contributeur clé : profils ISD seulement, pour qu'un Management ISD
+  // sponsor du projet d'une autre équipe ne le fasse pas entrer dans le périmètre (il reste visible dans « Mes
+  // chantiers », non modifiable).
   const isd = (id) => people.get(id)?.isdTeam === true;
+  const profile = (id) => people.get(id)?.isd === true;
   const taskTouches = (task) =>
     task.assignees.some(isd) || isd(task.responsable) || task.charges.some((c) => isd(c.personId));
   const subtreeTasks = (n, acc = []) => {
@@ -269,8 +271,8 @@ export function buildModel(raw) {
     const chs = [...chantiers.values()].filter((c) => c.projectIds.includes(p.id));
     p.inScope =
       isd(p.responsable) ||
-      p.sponsor.some(isd) ||
-      p.contributeursCles.some(isd) ||
+      p.sponsor.some(profile) ||
+      p.contributeursCles.some(profile) ||
       chs.some((c) => isd(c.responsable) || c.contributeurs.some(isd)) ||
       subtreeTasks(projNode).some(taskTouches);
   }
@@ -278,6 +280,8 @@ export function buildModel(raw) {
   const observed = [...new Set([...tasks.values()].map((x) => x.status).filter(Boolean))];
   return {
     people,
+    /** Domaine ISD (isdDomainOf), calculé une fois : équipe ISD, périmètre, sélecteurs, onglet Équipe. */
+    isdDomain: isdName,
     projects,
     chantiers,
     tasks,

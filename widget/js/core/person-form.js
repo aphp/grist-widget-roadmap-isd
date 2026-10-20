@@ -27,7 +27,6 @@ export const UNAV_FIELDS = Object.freeze(['dateDebut', 'dateFin', 'type', 'dispo
 export const ADD_ROLES = Object.freeze([...Object.keys(ISD_ROLES), 'Management']);
 
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
-const ISD_NAME = /\bISD\b/i;
 const trim = (v) => (typeof v === 'string' ? v.trim() : v);
 /** Capacité du modèle : 0 ou vide = null (35 h par défaut). */
 const cap = (v) => (typeof v === 'number' && v > 0 ? v : null);
@@ -35,13 +34,11 @@ const cap = (v) => (typeof v === 'number' && v > 0 ? v : null);
 const share = (v) => (typeof v === 'number' && Number.isFinite(v) ? (v > 1 ? v / 100 : v) : null);
 
 /**
- * Domaine ISD de la Feuille : celui que portent les personnes (team-directory.js:isdDomain), sinon le choix de
- * Team.Domaine qui contient « ISD », sinon null.
+ * Domaine ISD de la Feuille : celui du modèle (team-directory.js:isdDomain, nom contenant « ISD », porté par une
+ * personne ou parmi les choix de Team.Domaine), sinon null. Même Domaine que l'équipe ISD et le périmètre.
  */
 export function isdDomainValue(model) {
-  const fromPeople = isdDomain(model);
-  if (fromPeople && ISD_NAME.test(fromPeople)) return fromPeople;
-  return (model.choices?.['Team.Domaine'] ?? []).find((d) => ISD_NAME.test(d)) ?? fromPeople;
+  return isdDomain(model);
 }
 
 /** La personne fait-elle partie du périmètre modifiable (équipe ISD, active ou non) ? */

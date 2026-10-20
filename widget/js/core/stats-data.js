@@ -80,6 +80,8 @@ export function dataQuality(model, taskIds, chantierIds = [], projectIds = []) {
   for (const id of ids) {
     const t = model.tasks.get(id);
     if (t.start === null || t.end === null) by.get('sans-dates').add(id);
+    // Profils ISD seulement (p.isd, pas p.isdTeam) : une tâche dont seul le Management ISD est impliqué n'est pas
+    // signalée sans charge. Décision en attente (le Management doit-il chiffrer ses tâches ?)
     if (!t.done && !t.charges.length && taskPeople(model, t).some((p) => p.isd)) by.get('isd-sans-charge').add(id);
   }
   const task = (id) => todoItem(model, { table: 'Tasks', id });

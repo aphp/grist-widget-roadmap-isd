@@ -6,7 +6,7 @@
 import { raw } from '../core/sanitize.js';
 import { DAY_MS, MONTHS_FR, dayOfIso, formatDateFr, isoOfDay } from '../core/dates.js';
 import { hoursToEtp } from '../core/capacity.js';
-import { PROFILE_KEYS, profileKey } from '../core/kanban-data.js';
+import { ETP_ROLES, PROFILE_KEYS, profileKey } from '../core/kanban-data.js';
 import { barGeometry, isoWeek, pctOf, pdfFilenameOfDay } from '../core/gantt-data.js';
 import {
   PORTFOLIO_MONTHS,
@@ -174,12 +174,18 @@ function cellHtml(load, capacity, extra = '') {
   </td>`;
 }
 
+/**
+ * Total, barre et repère de capacité : profils ISD seulement (TOTAL_KEYS). Le Management garde sa colonne et sa
+ * carte : sa capacité, rarement chargée, ferait baisser mécaniquement le taux de l'équipe.
+ */
+const TOTAL_KEYS = ETP_ROLES;
+
 function loadRowHtml(row, max, today) {
-  const load = PROFILE_KEYS.reduce((s, k) => s + row[k], 0);
-  const capacity = PROFILE_KEYS.reduce((s, k) => s + row.capacity[k], 0);
+  const load = TOTAL_KEYS.reduce((s, k) => s + row[k], 0);
+  const capacity = TOTAL_KEYS.reduce((s, k) => s + row.capacity[k], 0);
   const { week } = isoWeek(row.weekStart);
   const current = today >= row.weekStart && today <= row.weekStart + 6;
-  const seg = PROFILE_KEYS.filter((k) => row[k] > 0).map(
+  const seg = TOTAL_KEYS.filter((k) => row[k] > 0).map(
     (k) => h`<span class="pf-seg pf-seg--${k}" style="width:${pct((row[k] / max) * 100)}"></span>`,
   );
   return h`<tr class="pf-load__row${current ? ' is-current' : ''}">
@@ -245,8 +251,8 @@ function loadHtml(ctx, st, startDay) {
     1e-9,
     ...rows.map((r) =>
       Math.max(
-        PROFILE_KEYS.reduce((s, k) => s + r[k], 0),
-        PROFILE_KEYS.reduce((s, k) => s + r.capacity[k], 0),
+        TOTAL_KEYS.reduce((s, k) => s + r[k], 0),
+        TOTAL_KEYS.reduce((s, k) => s + r.capacity[k], 0),
       ),
     ),
   );
@@ -256,7 +262,7 @@ function loadHtml(ctx, st, startDay) {
     <h3 class="pf-subtitle">${label('portfolio.load.byWeek')}</h3>
     <div class="pf-info">
       <ul class="list pf-legend" aria-label="${label('portfolio.legend')}">
-        ${PROFILE_KEYS.map((k) => h`<li><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.group.${k}`)}</li>`)}
+        ${TOTAL_KEYS.map((k) => h`<li><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.group.${k}`)}</li>`)}
         <li><span class="pf-swatch pf-swatch--cap" aria-hidden="true"></span>${label('portfolio.load.capacity')}</li>
       </ul>
       <p class="pf-count">${label('portfolio.load.unit')} ${label('portfolio.load.thresholds')}</p>
@@ -268,7 +274,7 @@ function loadHtml(ctx, st, startDay) {
           <th scope="col" class="pf-load__week">${label('portfolio.load.week')}</th>
           <th scope="col" class="pf-load__chart"><span aria-hidden="true">${label('portfolio.load.chart')}</span></th>
           ${PROFILE_KEYS.map((k) => h`<th scope="col" class="pf-load__cell pf-load__prof"><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.${k}`)}</th>`)}
-          <th scope="col" class="pf-load__cell">${label('portfolio.load.total')}</th>
+          <th scope="col" class="pf-load__cell" title="${label('portfolio.load.total.title')}">${label('portfolio.load.total')}</th>
         </tr></thead>
         <tbody>${raw(rows.map((r) => loadRowHtml(r, max, ctx.today)).join(''))}</tbody>
       </table>
@@ -281,7 +287,7 @@ const PROFILE_PRINT = Object.freeze(Object.fromEntries(PROFILE_KEYS.map((k) => [
 function pdfLegend(tab) {
   if (tab === 'load')
     return [
-      ...PROFILE_KEYS.map((k) => ({ label: label(`profile.group.${k}`), color: PROFILE_PRINT[k], mark: 'box' })),
+      ...TOTAL_KEYS.map((k) => ({ label: label(`profile.group.${k}`), color: PROFILE_PRINT[k], mark: 'box' })),
       { label: label('portfolio.load.capacity'), color: VIZ_PRINT.summary, mark: 'line' },
     ];
   return [

@@ -55,11 +55,11 @@ test('rôles de l’équipe ISD : personnes actives et capacité hebdo (35 h par
   assert.deepEqual(roleSummary({ people: new Map() }), []);
 });
 
-test('équipe ISD : Domaine portant « ISD », sinon le plus représenté en profils ISD', () => {
+test('équipe ISD : Domaine portant « ISD », sans repli sur le plus représenté en profils ISD', () => {
   assert.equal(isdDomain(m), ISD);
   const raw = feuille();
   raw.tables.Team.Domaine = raw.tables.Team.Domaine.map((d) => (d === ISD ? 'Données' : d));
-  assert.equal(isdDomain(buildModel(raw)), 'Données');
+  assert.equal(isdDomain(buildModel(raw)), null);
   assert.equal(isdDomain({ people: new Map() }), null);
 });
 

@@ -23,23 +23,20 @@ export const ETP_ROLES = Object.freeze(['PO', 'DA', 'DS', 'DE']);
 /** Ventilation de l'ETP d'une tâche (ordre d'affichage) : profils ISD, Management de l'équipe ISD, puis « Autre ». */
 export const ETP_SPLIT = Object.freeze([...ETP_ROLES, 'Mgmt', 'Autre']);
 
-/** Domaine ISD par modèle (calculé une fois : taskEtpByRole est appelée pour chaque tâche). */
-const isdDomains = new WeakMap();
-function isdDomainOf(model) {
-  if (!isdDomains.has(model)) isdDomains.set(model, isdDomain(model));
-  return isdDomains.get(model);
-}
-
 /**
  * Profils de l'équipe ISD (filtre Profil, charge et capacité par profil, plan de charge) : profils ISD, puis
  * Management de l'équipe ISD (« Mgmt »).
  */
 export const PROFILE_KEYS = Object.freeze([...ETP_ROLES, 'Mgmt']);
 
-/** Clé de la ventilation d'une personne : profil ISD, « Mgmt » (Management de l'équipe ISD), sinon « Autre ». */
+/**
+ * Clé de la ventilation d'une personne : profil ISD, « Mgmt » (Management de l'équipe ISD), sinon « Autre ».
+ * Un Management ISD inactif reste « Mgmt » (sans contrôle de actif, contrairement à profileKey) : les charges
+ * sont historiques, une personne partie garde la part qu'elle portait sur ses tâches.
+ */
 export function etpRoleKey(person, model) {
   if (person?.isd && ETP_ROLES.includes(person.role)) return person.role;
-  if (person?.roleText === 'Management' && inIsdTeam(person, isdDomainOf(model))) return 'Mgmt';
+  if (person?.roleText === 'Management' && inIsdTeam(person, isdDomain(model))) return 'Mgmt';
   return 'Autre';
 }
 

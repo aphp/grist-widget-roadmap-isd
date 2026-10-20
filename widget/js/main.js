@@ -14,8 +14,7 @@ import {
 } from './core/edit-switch.js';
 import { FLAGS_FILE } from './config.js';
 import { applyToTables, createWriter, decodeRow } from './core/grist-writer.js';
-import { editAvailability, taskInScope } from './core/task-form.js';
-import { chantierInScope } from './core/chantier-form.js';
+import { editAvailability } from './core/task-form.js';
 import { parisToday } from './core/write-encode.js';
 import { buildModel } from './core/model.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
@@ -43,7 +42,8 @@ import { createCreateDialog } from './ui/create-dialog.js';
 import { prefillFromFilters } from './core/create-form.js';
 import { createToast } from './ui/toast.js';
 import { createPersonDialog } from './ui/person-dialog.js';
-import { isdDomainValue, personInScope, teamValuesInScope } from './core/person-form.js';
+import { isdDomainValue, personInScope } from './core/person-form.js';
+import { canWriteRowIn, canWriteValuesIn } from './core/write-scope.js';
 import { failureKind, runSetActive } from './core/task-session.js';
 import { refusedText } from './views/task-form.js';
 
@@ -760,26 +760,12 @@ async function flagsOk() {
 
 /** Règle de périmètre (Q15 B), contrôlée aussi par le writer : seules les tâches et chantiers ISD s'écrivent. */
 function canWriteRow(table, id) {
-  const m = state.model;
-  // Personnes (Q14 A) : équipe ISD affichée par l'onglet, inactives comprises ; indisponibilités de ces personnes
-  if (table === 'Team') return Boolean(m && personInScope(m, m.people.get(id)));
-  if (table === 'Disponibilites') return Boolean(m && personInScope(m, m.people.get(lookup.row(table, id)?.membre)));
-  if (table === 'Chantiers') return Boolean(m?.chantiers.has(id) && chantierInScope(m, m.chantiers.get(id)));
-  const task = table === 'Tasks' ? m?.tasks.get(id) : null;
-  return Boolean(task && taskInScope(m, task));
+  return canWriteRowIn(state.model, table, id, (rowId) => lookup.row('Disponibilites', rowId)?.membre ?? null);
 }
 
-/** Même règle sur les valeurs d'une ligne créée ou rattachée ailleurs (projet, chantier, projets du chantier). */
+/** Même règle sur les valeurs d'une ligne créée ou rattachée ailleurs (core/write-scope.js). */
 function canWriteValues(table, v, opts = {}) {
-  const m = state.model;
-  if (!m) return false;
-  // Valeurs d'arrivée d'une personne : elle reste dans l'équipe ISD (création : Domaine ISD, rôle ISD ou Management)
-  if (table === 'Team') return teamValuesInScope(m, v, opts);
-  if (table === 'Disponibilites') return personInScope(m, m.people.get(v.membre));
-  const inScope = (p) => m.projects.get(p)?.inScope === true;
-  if (table === 'Chantiers') return (v.Projets ?? []).some(inScope);
-  if (table !== 'Tasks') return false;
-  return inScope(v.projet) || (m.chantiers.get(v.Chantier)?.projectIds ?? []).some(inScope);
+  return canWriteValuesIn(state.model, table, v, opts);
 }
 
 /** Existence d'une ligne dans les données lues (teamId des charges : la personne doit exister dans Team). */

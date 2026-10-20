@@ -5,13 +5,16 @@
   Shift+F10 on the focused card, outside the roving focus), menu button in the Table status cell and on "Mes tâches"
   lines. Same path as the detail panel quick status (re-read before sending, closing date, essai mode, undo toast);
   scroll and focus kept, the card follows its new column.
-- ISD scope uses the ISD team (ISD profile or ISD Domaine, Management ISD included): a project where only the
-  Management ISD is involved is no longer "hors périmètre". "Mes chantiers" also counts projects where I am the
+- ISD scope uses the ISD team (ISD profile or ISD Domaine, Management ISD included): a project led by the
+  Management ISD, or where it has a chantier or task role, is no longer "hors périmètre" (sponsor or key
+  contributor still counts for ISD profiles only). The ISD Domaine must contain "ISD" in its name, with no fallback
+  to another Domaine. "Mes chantiers" also counts projects where I am the
   project lead, sponsor or key contributor. Projects and chantiers without tasks show "Aucune tâche" in the Gantt,
   which (like the Portfolio) no longer falls back to the empty state when only such items match. README: "Règles
   d'affichage".
 - Management ISD as a full profile "Mgmt": Profile filter (PO, DA, DS, DE, Mgmt), Portfolio KPIs and weekly load
-  and capacity per profile, load plan rows and totals in Statistics (same capacity rules), `--viz-mgmt` colour.
+  and capacity per profile (the weekly total and bar stay on PO, DA, DS, DE), load plan rows and totals in
+  Statistics (same capacity rules), `--viz-mgmt` colour.
   The charges footer of the task form now also shows the Mgmt share.
 
 ## [0.2.0] — 2026-10-20

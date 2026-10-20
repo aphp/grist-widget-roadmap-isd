@@ -705,14 +705,30 @@
   .pf {
     --pf-label: 260px;
   }
-  .pf-kpis,
-  .pf-sum {
+  .pf-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Cinq cartes de profil : 3 puis 2, sans carte seule sur sa ligne */
+  .pf-sum {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .pf-sum__item {
+    grid-column: span 2;
+  }
+  .pf-sum__item:nth-child(n + 4) {
+    grid-column: span 3;
   }
 }
 @media (max-width: 767px) {
   .pf {
     --pf-label: 180px;
+  }
+  .pf-sum {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pf-sum__item,
+  .pf-sum__item:nth-child(n + 4) {
+    grid-column: auto;
   }
   .pf-kpi__value {
     font-size: var(--font-size-2xl);

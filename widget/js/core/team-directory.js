@@ -37,11 +37,13 @@ export function upcomingUnavailability(person, today) {
 }
 
 /**
- * Nom de l'équipe ISD : le Domaine qui contient « ISD », sinon celui qui compte le plus de personnes de profil
- * ISD (DE, DA, DS, PO Data), sinon null (model.js:isdDomainOf).
+ * Nom de l'équipe ISD : le Domaine dont le nom contient « ISD », calculé une fois par le modèle (model.isdDomain,
+ * voir model.js:isdDomainOf), sinon null.
  */
 export function isdDomain(model) {
-  return isdDomainOf(model.people.values());
+  return model.isdDomain !== undefined
+    ? model.isdDomain
+    : isdDomainOf(model.people.values(), model.choices?.['Team.Domaine']);
 }
 
 export { inIsdTeam };

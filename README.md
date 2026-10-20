@@ -25,30 +25,42 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
 
 ## Règles d'affichage
 
+- **Domaine ISD** : le Domaine (table Team) dont le nom contient le sigle « ISD », porté par une personne ou parmi
+  les choix de la colonne. Aucun autre Domaine ne le remplace : sans lui, l'équipe ISD se réduit aux profils DE,
+  DA, DS et PO, sans le Management.
 - **Équipe ISD** : personnes actives de rôle DE, DA, DS ou PO Data, ou du Domaine ISD (le Management ISD en fait
-  partie ; le Management d'un autre Domaine, non).
-- **Périmètre ISD** : un projet en fait partie si une personne de l'équipe ISD en est responsable, sponsor ou
-  contributrice clé, est responsable ou contributrice d'un de ses chantiers, ou est assignée, responsable ou chargée
-  sur une de ses tâches. Les autres projets sont masqués par défaut, ainsi que leurs chantiers et tâches.
+  partie ; le Management d'un autre Domaine, non). Une personne du Domaine ISD d'un autre rôle (ni profil ISD ni
+  Management) fait partie de l'équipe et du périmètre, mais n'a pas de profil : elle n'apparaît ni dans le filtre
+  Profil, ni dans les indicateurs et la charge par profil du Portfolio, ni dans le plan de charge.
+- **Périmètre ISD** : un projet en fait partie si une personne de l'équipe ISD en est responsable, est responsable
+  ou contributrice d'un de ses chantiers, ou est assignée, responsable ou chargée sur une de ses tâches. Sponsor ou
+  contributeur clé du projet : seulement les profils DE, DA, DS et PO (le Management ISD seulement sponsor du projet
+  d'une autre équipe ne le fait pas entrer). Les autres projets sont masqués par défaut, avec leurs chantiers et
+  tâches, et ne sont jamais modifiables dans le widget.
 - **« Hors périmètre ISD aussi »** : affiche aussi les projets hors périmètre. Sans la case, un projet hors périmètre
-  reste visible quand la personne ciblée (« Je suis… » avec « Mes chantiers », ou le filtre Personne) y est
-  impliquée.
+  reste visible quand la personne ciblée y est impliquée : « Je suis… » avec « Mes chantiers » (voir ci-dessous),
+  ou le filtre Personne ; ce dernier est un filtre de tâche, il ne garde donc que les projets où cette personne a
+  une tâche retenue (pas ceux dont elle n'est que sponsor ou responsable sans tâche).
 - **Périmètre « Tout / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint rien ;
   « Mes chantiers » garde les chantiers dont je suis responsable ou contributeur, ou qui portent une tâche non
   terminée où je suis assigné, responsable ou chargé, et tous les chantiers des projets dont je suis responsable,
-  sponsor ou contributeur clé, avec toutes leurs tâches ; sous « (sans chantier) », seulement mes tâches (toutes
-  si le projet est à moi). Mes tâches personnelles sont dans l'onglet « Mes tâches ».
+  sponsor ou contributeur clé (même hors périmètre ISD, alors en lecture seule), avec toutes leurs tâches ; sous
+  « (sans chantier) », seulement mes tâches (toutes si le projet est à moi). Mes tâches personnelles sont dans
+  l'onglet « Mes tâches ».
 - **Catégorie, Projet, Chantier** : limitent l'arbre à cet élément (listes en cascade, projets du périmètre). Ils
   s'appliquent aussi aux projets et chantiers sans tâche.
+- **Recherche** : garde un élément si son titre ou celui d'un de ses ancêtres contient le texte ; un projet ou un
+  chantier sans tâche n'est donc gardé que si son titre (ou celui de sa catégorie ou de son projet) correspond.
 - **Personne, Profil, Statut** (et Responsable sous « + Filtres ») : filtres de tâche. Personne : la personne est
   assignée, responsable ou chargée ; Profil (PO, DA, DS, DE ou Mgmt, le Management actif de l'équipe ISD) : une
-  personne active de ce profil l'est ; Statut : statut de la tâche. Dès
-  qu'un de ces filtres est actif, seuls restent les projets et chantiers qui ont une tâche
-  retenue.
+  personne active de ce profil l'est ; Statut : statut de la tâche. Dès qu'un de ces filtres est actif, seuls
+  restent les projets et chantiers qui ont une tâche retenue.
 - **Éléments sans tâche** : un projet ou un chantier sans tâche apparaît dans le Gantt, avec la mention « Aucune
   tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), et dans le Portfolio (onglets Projets
   et Chantiers), avec « Tout » ou « Mes chantiers » et sans filtre de tâche. Kanban, Tableau, Statistiques (dont le
   plan de charge), Synthèse et l'onglet Mes tâches ne montrent que des tâches. L'onglet Équipe n'est pas filtré.
+- **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
+  le total portent sur les profils DE, DA, DS et PO seulement.
 
 ## Développement
 npm install · npm test · npm run lint · python3 dev/serve.py (http://localhost:8770/dev/host.html)
