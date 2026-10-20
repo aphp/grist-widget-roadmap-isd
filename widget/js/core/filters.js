@@ -57,6 +57,8 @@ export const DEFAULT_PREFS = Object.freeze({
   /** Début des frises (AAAA-MM-JJ) ; null = premier jour du mois courant. */
   portfolioStart: null,
   portfolioMonths: 12,
+  /** Carte « Contrôle qualité des données » des Statistiques dépliée (repliée par défaut). */
+  statsQualityOpen: false,
   filters: DEFAULT_FILTERS,
 });
 
@@ -443,6 +445,7 @@ function sanitizePrefs(saved) {
     portfolioTab: PORTFOLIO_TABS.includes(tab) ? tab : DEFAULT_PREFS.portfolioTab,
     portfolioStart: isoDateOrNull(s.portfolioStart),
     portfolioMonths: PORTFOLIO_MONTHS.includes(s.portfolioMonths) ? s.portfolioMonths : DEFAULT_PREFS.portfolioMonths,
+    statsQualityOpen: s.statsQualityOpen === true,
     filters: {
       search: textOr(f.search, ''),
       categorie: textOr(f.categorie, legacy.categorie),

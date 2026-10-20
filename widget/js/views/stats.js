@@ -1,6 +1,6 @@
 /**
  * Vue Statistiques (lecture seule) : vue d'ensemble de l'équipe ISD sur les tâches filtrées.
- * « Données à compléter », graphiques en barres HTML (valeurs toujours écrites, tableau de valeurs repliable)
+ * « Contrôle qualité des données » (carte repliable), graphiques en barres HTML (valeurs toujours écrites, tableau de valeurs repliable)
  * puis le plan de charge personnes × mois.
  */
 import { raw } from '../core/sanitize.js';
@@ -12,6 +12,7 @@ import {
   delays,
   priorityTones,
   qualityRows,
+  qualityTotal,
   roleLoad,
   roleSeries,
   statusTone,
@@ -188,10 +189,27 @@ function todoHtml(it) {
   </li>`;
 }
 
-function qualityCard(rows, n) {
+/**
+ * Carte « Contrôle qualité des données », repliable en entier (repliée par défaut, état dans les préférences) : l'en-tête
+ * (bouton dans le titre h3) donne toujours le total, ou « Aucune anomalie ».
+ */
+export function qualityCard(rows, n, open) {
+  const total = qualityTotal(rows);
+  const count = total
+    ? h`<span class="stats__count">${total.toLocaleString('fr-FR')}</span>`
+    : h`<span class="stats__count stats__count--ok"><span aria-hidden="true">✓</span>${label('stats.quality.zero')}</span>`;
   return h`<section class="stats__card stats__card--wide card stats__quality" aria-labelledby="stats-quality">
-    <h3 class="stats__card-title" id="stats-quality">${label('stats.quality.title')}</h3>
-    <p class="stats__sub">${label('stats.todo.help')}</p>
+    <h3 class="stats__card-title stats__quality-title">
+      <button type="button" class="stats__quality-toggle" id="stats-quality" data-quality-toggle aria-expanded="${String(open)}" aria-controls="stats-quality-body">
+        <span class="stats__chev" aria-hidden="true">${open ? '▾' : '▸'}</span>
+        <span class="stats__quality-name">${label('stats.quality.title')}</span>
+        <span class="stats__quality-sep" aria-hidden="true">·</span>
+        ${count}
+      </button>
+    </h3>
+    <p class="stats__sub">${label('stats.quality.sub')}</p>
+    <div id="stats-quality-body" ${raw(open ? '' : 'hidden')}>
+    <p class="stats__help">${label('stats.todo.help')}</p>
     <ul class="list stats__issues">
       ${rows.map((r) => {
         const count = r.items.length;
@@ -216,6 +234,7 @@ function qualityCard(rows, n) {
       })}
     </ul>
     <p class="stats__foot">${label('stats.scope', { taches: taskCount(n).toLowerCase() })}</p>
+    </div>
   </section>`;
 }
 
@@ -240,7 +259,7 @@ export function render(el, ctx) {
   el.innerHTML = h`<div class="stats">
     ${viewHeading(label('stats.title'), label('stats.subtitle'))}
     <div class="stats__cards">
-      ${qualityCard(quality, ids.length)}
+      ${qualityCard(quality, ids.length, ctx.prefs?.statsQualityOpen === true)}
       ${card(
         'status',
         T('status'),
@@ -311,6 +330,15 @@ export function render(el, ctx) {
   mountLoadPlan(el.querySelector('[data-plan]'), ctx);
 
   el.onclick = (e) => {
+    const q = e.target.closest('[data-quality-toggle]');
+    if (q) {
+      const on = q.getAttribute('aria-expanded') !== 'true';
+      q.setAttribute('aria-expanded', String(on));
+      q.querySelector('.stats__chev').textContent = on ? '▾' : '▸';
+      el.querySelector('#stats-quality-body').hidden = !on;
+      ctx.setPrefs?.({ statsQualityOpen: on });
+      return;
+    }
     const k = e.target.closest('[data-kind]');
     if (k) {
       const on = k.getAttribute('aria-expanded') !== 'true';

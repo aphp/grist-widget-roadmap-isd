@@ -1326,3 +1326,37 @@ test('statistiques : charge par profil tracée sur 12 mois, légende et tableau 
   assert.equal(r.axes.length, 2);
   assert.equal(await w(`return W.__writes.length;`), 0);
 });
+
+test(
+  'statistiques : « Contrôle qualité des données » repliée par défaut, total affiché, état retenu',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-stats').click(); return true;`);
+    await until(`D.querySelector('#stats-quality')`);
+    const state = () =>
+      w(`const b = D.getElementById('stats-quality');
+      return { expanded: b.getAttribute('aria-expanded'), text: b.textContent.replace(/\\s+/g, ' ').trim(),
+        hidden: D.getElementById(b.getAttribute('aria-controls')).hidden,
+        heading: b.parentElement.tagName };`);
+    const closed = await state();
+    assert.equal(closed.expanded, 'false');
+    assert.equal(closed.hidden, true);
+    assert.equal(closed.heading, 'H3');
+    assert.match(closed.text, /^▸ Contrôle qualité des données · (\d+|✓Aucune anomalie)$/);
+    // Clavier : le bouton garde le focus après l'ouverture (pas de nouveau rendu)
+    await w(`const b = D.getElementById('stats-quality'); b.focus(); b.click(); return true;`);
+    const opened = await state();
+    assert.equal(opened.expanded, 'true');
+    assert.equal(opened.hidden, false);
+    assert.equal(await w(`return D.activeElement?.id ?? null;`), 'stats-quality');
+    assert.equal(await w(`return JSON.parse(W.localStorage.getItem('roadmap-isd:prefs')).statsQualityOpen;`), true);
+    // Changer d'onglet puis revenir : la carte reste dépliée
+    await w(`D.getElementById('tab-kanban').click(); return true;`);
+    await until(`D.querySelector('#view-panel[data-view="kanban"]')`);
+    await w(`D.getElementById('tab-stats').click(); return true;`);
+    await until(`D.querySelector('#stats-quality')`);
+    assert.equal((await state()).expanded, 'true');
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);

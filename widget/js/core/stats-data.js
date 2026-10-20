@@ -279,11 +279,11 @@ export function barPercent(value, max) {
   return Math.min(100, Math.max(1, (value / max) * 100));
 }
 
-/** Ordre d'affichage de toutes les anomalies de « Données à compléter ». */
+/** Ordre d'affichage de toutes les anomalies de « Contrôle qualité des données ». */
 export const QUALITY_KINDS = Object.freeze([...ISSUE_KINDS, ...EXTRA_KINDS, CHANTIER_KIND, PROJECT_KIND]);
 
 /**
- * Toutes les lignes de « Données à compléter », y compris celles sans élément (affichées « ✓ »), dans l'ordre
+ * Toutes les lignes de « Contrôle qualité des données », y compris celles sans élément (affichées « ✓ »), dans l'ordre
  * de QUALITY_KINDS.
  * @param {ReturnType<typeof dataQuality>} rows résultat de dataQuality
  */
@@ -292,4 +292,13 @@ export function qualityRows(rows) {
   return QUALITY_KINDS.map(
     (kind) => by.get(kind) ?? { kind, label: label(`stats.issue.${kind}`), taskIds: [], items: [] },
   );
+}
+
+/**
+ * Nombre total d'anomalies (somme des éléments de chaque catégorie ; un élément présent dans deux catégories
+ * compte deux fois, comme dans les compteurs des catégories).
+ * @param {{items:unknown[]}[]} rows
+ */
+export function qualityTotal(rows) {
+  return rows.reduce((s, r) => s + r.items.length, 0);
 }

@@ -46,7 +46,52 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Données à compléter ---- */
+/* ---- Contrôle qualité des données : carte repliable, total dans l'en-tête ---- */
+.stats__quality-title {
+  margin-bottom: var(--space-2);
+}
+.stats__quality-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 40px;
+  margin: calc(-1 * var(--space-1)) 0;
+  padding: var(--space-1) var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.stats__quality-toggle:hover {
+  background: var(--color-surface-hover);
+}
+.stats__quality-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.stats__quality-sep {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-regular);
+}
+.stats__quality-toggle .stats__count {
+  gap: var(--space-1);
+}
+.stats__help {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.stats__quality .stats__sub {
+  margin-bottom: 0;
+}
+#stats-quality-body {
+  margin-top: var(--space-3);
+}
 .stats__issue + .stats__issue {
   border-top: 1px solid var(--color-border);
 }
