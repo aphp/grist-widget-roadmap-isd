@@ -808,3 +808,157 @@
   min-height: 0;
   padding: 0 var(--space-1);
 }
+
+/*
+ * Statut depuis la carte et la ligne (P-UX-6) : menu posé sur la page (jamais dans la carte, qui est un bouton),
+ * bouton ⋯ des cartes du Kanban, cellule Statut du Tableau et statut des lignes de Mes tâches en bouton-menu.
+ */
+.qs-menu {
+  position: absolute;
+  z-index: 36;
+  min-width: 12rem;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-3);
+}
+.qs-menu__title {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+.qs-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.qs-menu__item::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+}
+.qs-menu__item[aria-checked='true'] {
+  font-weight: var(--font-weight-bold);
+}
+.qs-menu__item[aria-checked='true']::before {
+  content: '✓';
+}
+.qs-menu__item:hover {
+  background: var(--color-surface-hover);
+}
+.qs-menu__item:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+/* Kanban : bouton ⋯ en haut à droite de la carte, hors du focus itinérant */
+.kcard-item--qs {
+  position: relative;
+}
+.kcard-item--qs .kcard > :first-child {
+  margin-right: 1.75rem;
+}
+.kcard__qs {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+.kcard__qs:hover,
+.kcard__qs[aria-expanded='true'] {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+.kcard__qs:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 0;
+}
+
+/* Tableau et Mes tâches : le statut devient un bouton-menu (pastille ou badge, puis ▾) */
+.tbl-qs,
+.mt__qs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2rem;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+.tbl-qs:hover,
+.mt__qs:hover,
+.tbl-qs[aria-expanded='true'],
+.mt__qs[aria-expanded='true'] {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+.tbl-qs:focus-visible,
+.mt__qs:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.tbl-qs__caret,
+.mt__qs-caret {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.mt__item--qs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.mt__qs {
+  margin-right: var(--space-3);
+}
+@media (min-width: 768px) {
+  .mt__item--qs .mt__row {
+    grid-template-columns: minmax(0, 1fr) 11.5rem 8rem;
+  }
+  .mt__qs {
+    min-width: 8.5rem;
+    justify-content: space-between;
+  }
+}
+@media (max-width: 767px) {
+  .mt__item--qs {
+    align-items: start;
+  }
+  .mt__item--qs .mt__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mt__item--qs .mt__qs {
+    margin-top: var(--space-3);
+  }
+}

@@ -5,6 +5,8 @@
  * Pagination (P-PERF-2) : 100 lignes rendues, puis « Afficher 100 de plus » ajoute les suivantes sans tout redessiner ;
  * tri, compteur et export CSV portent sur toutes les lignes. Un filtre, une recherche ou un tri repart à 100 ; une
  * relecture (après une écriture) garde les lignes déjà affichées.
+ * Statut depuis la ligne (P-UX-6) : en édition, la cellule Statut d'une tâche modifiable devient un bouton-menu ;
+ * après le changement, le focus revient à ce bouton (la ligne reste affichée, même triée par statut).
  */
 import { raw } from '../core/sanitize.js';
 import { priorityText } from '../core/kanban-data.js';
@@ -29,6 +31,7 @@ import {
   toCsv,
 } from '../core/table-data.js';
 import { h, icon, roleFullText } from '../ui/kit.js';
+import { limitToReveal } from '../core/quick-status.js';
 import { viewHeading } from '../ui/heading.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 
@@ -123,7 +126,11 @@ function titleCell(r) {
   </td>`;
 }
 
-function cell(r, key, today) {
+/** Cellule Statut en édition : bouton-menu (pastille et ▾), nom accessible qui commence par le texte visible. */
+const statusButton = (r) =>
+  h`<td class="tbl__td tbl__td--qs"><button type="button" class="tbl-qs" data-qs-open="${r.taskId}" data-qs-focus="${r.taskId}" aria-haspopup="menu" aria-expanded="false" aria-label="${label('quickStatus.button', { statut: statusLabel(r.status), titre: r.own })}">${statusPill(r.status)}<span class="tbl-qs__caret" aria-hidden="true">▾</span></button></td>`;
+
+function cell(r, key, today, qs) {
   switch (key) {
     case 'tache':
       return titleCell(r);
@@ -132,7 +139,7 @@ function cell(r, key, today) {
     case 'projet':
       return h`<td class="tbl__td tbl__td--projet">${r.projet ? h`<span class="tbl-projet" title="${r.projet}">${r.projet}</span>` : ''}</td>`;
     case 'status':
-      return h`<td class="tbl__td">${statusPill(r.status)}</td>`;
+      return qs?.can(r.taskId) ? statusButton(r) : h`<td class="tbl__td">${statusPill(r.status)}</td>`;
     case 'start':
     case 'end':
       return dateCell(r, key, today);
@@ -160,8 +167,8 @@ function cell(r, key, today) {
 }
 
 /** Ligne de tâche ; `i` = rang dans toutes les lignes (zébrure stable quand des lignes sont ajoutées). */
-const rowHtml = (r, i, cols, today) =>
-  h`<tr class="tbl__row tbl-s--${statusKey(r.status)}${raw(i % 2 ? ' tbl__row--alt' : '')}" data-task="${r.taskId}">${cols.map((c) => cell(r, c, today))}</tr>`;
+const rowHtml = (r, i, cols, today, qs) =>
+  h`<tr class="tbl__row tbl-s--${statusKey(r.status)}${raw(i % 2 ? ' tbl__row--alt' : '')}" data-task="${r.taskId}">${cols.map((c) => cell(r, c, today, qs))}</tr>`;
 
 const fmt = (n) => n.toLocaleString('fr-FR');
 
@@ -195,6 +202,7 @@ function focusSelector(el) {
   if (!a || !el.contains(a)) return '';
   for (const k of ['sort', 'open', 'col', 'export'])
     if (a.dataset[k] !== undefined) return `[data-${k}="${CSS.escape(a.dataset[k])}"]`;
+  if (a.dataset.qsOpen !== undefined) return `[data-qs-open="${CSS.escape(a.dataset.qsOpen)}"]`;
   return a.id ? `#${CSS.escape(a.id)}` : '';
 }
 
@@ -230,6 +238,15 @@ export function render(el, ctx) {
 
   function paint() {
     rows = st.sort ? sortRows(base, st.sort.key, st.sort.dir) : base;
+    // Tâche dont le statut vient de changer : sa ligne reste affichée malgré la pagination
+    if (ctx.reveal !== null && ctx.reveal !== undefined) {
+      st.limit = limitToReveal(
+        st.limit,
+        rows.findIndex((r) => r.taskId === ctx.reveal),
+        TABLE_PAGE,
+      );
+      remember();
+    }
     const cols = COLUMNS.filter((c) => c === 'tache' || (st.columns.includes(c) && DISPLAY_COLUMNS.includes(c)));
     st.cols = cols;
     const page = pageRows(rows, st.limit);
@@ -263,7 +280,7 @@ export function render(el, ctx) {
             <thead><tr>${cols.map((c) => headCell(c, st.sort))}</tr></thead>
             <tbody>${
               rows.length
-                ? page.shown.map((r, i) => rowHtml(r, i, cols, ctx.today))
+                ? page.shown.map((r, i) => rowHtml(r, i, cols, ctx.today, ctx.quickStatus))
                 : h`<tr><td class="tbl__empty" colspan="${cols.length}">${label('table.empty')}</td></tr>`
             }</tbody>
           </table>
@@ -287,7 +304,7 @@ export function render(el, ctx) {
     if (!tbody) return paint();
     tbody.insertAdjacentHTML(
       'beforeend',
-      h`${page.shown.slice(from).map((r, k) => rowHtml(r, from + k, st.cols, ctx.today))}`.toString(),
+      h`${page.shown.slice(from).map((r, k) => rowHtml(r, from + k, st.cols, ctx.today, ctx.quickStatus))}`.toString(),
     );
     el.querySelector('#tbl-count-text').textContent = countText(page.total, page.shown.length);
     const more = el.querySelector('.tbl__more');
@@ -299,6 +316,8 @@ export function render(el, ctx) {
   el.onclick = (e) => {
     const t = e.target;
     if (t.closest('[data-table-more]')) return showMore();
+    const q = t.closest('[data-qs-open]');
+    if (q) return ctx.quickStatus?.open(q, Number(q.dataset.qsOpen));
     if (t.closest('#tbl-cols-btn')) {
       st.menu = !st.menu;
       if (st.menu) document.addEventListener('pointerdown', outside, true);
