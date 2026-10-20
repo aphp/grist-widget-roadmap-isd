@@ -348,7 +348,8 @@ const isBlank = (v) =>
  * Charges d'une tâche à créer : mêmes règles qu'en mise à jour (chargesWriteProblem, sans cellule d'avant : chaque
  * entrée est contrôlée, borne de 1 ETP sur la période des dates du même AddRecord, exemption de la personne
  * estimation) et cohérence du bloc « Personnes » : une seule entrée par personne, chaque personne chargée assignée
- * (ajouter une personne l'assigne ; une charge sans assignation ne se crée pas). Fonction pure.
+ * (ajouter une personne l'assigne ; une charge sans assignation ne se crée pas), entrées de la forme exacte
+ * {teamId, heures}. Fonction pure.
  * @returns {string|null} raison du refus
  */
 export function newChargesProblem(fields, teamExists, isEstimation = null) {
@@ -357,8 +358,15 @@ export function newChargesProblem(fields, teamExists, isEstimation = null) {
   const problem = chargesWriteProblem(value, null, teamExists, days, isEstimation);
   if (problem) return problem;
   const assigned = new Set(Array.isArray(fields.assignees) ? fields.assignees : []);
+  // Des charges sans personne assignée (y compris « [] ») ne se créent pas : la colonne est alors omise
+  const entries = JSON.parse(value);
+  if (!assigned.size && !entries.length) return 'charges sans personne assignée';
   const seen = new Set();
-  for (const e of JSON.parse(value)) {
+  for (const e of entries) {
+    // Création : aucune cellule à préserver, donc exactement {teamId, heures} (ni clé en plus, ni __proto__)
+    const keys = Object.keys(e);
+    if (keys.length !== 2 || !keys.includes('teamId') || !keys.includes('heures'))
+      return 'entrée de charge : seules les clés teamId et heures sont permises';
     if (seen.has(e.teamId)) return `personne en double : ${e.teamId}`;
     seen.add(e.teamId);
     if (!assigned.has(e.teamId)) return `personne chargée non assignée : ${e.teamId}`;

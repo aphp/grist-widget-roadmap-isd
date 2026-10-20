@@ -9,7 +9,13 @@ import assert from 'node:assert/strict';
 import { feuille } from './fixtures/feuille.js';
 import { createFakeGrist, lookupOf } from './fixtures/fake-grist.js';
 import { ESTIMATION_APH } from '../widget/js/core/charges-edit.js';
-import { newChargesError, newTaskDraft, newTaskFields } from '../widget/js/core/create-form.js';
+import {
+  droppedPeople,
+  newChargesError,
+  newTaskDraft,
+  newTaskFields,
+  overCapTeamIds,
+} from '../widget/js/core/create-form.js';
 import {
   EXPECTED_TYPES,
   READ_ALSO,
@@ -102,7 +108,10 @@ test('buildAdd : charges contrôlées comme en mise à jour, sur la période des
 
 test('newChargesProblem : entrées invalides, personne inconnue, doublon, charge sans assignation', () => {
   const p = (fields) => newChargesProblem({ ...DATED, ...fields }, (n) => team('Team', n), est);
+  // Charges sans personne assignée, « [] » compris : la colonne se crée seulement avec des assignés
   assert.equal(p({ assignees: [2], charges: '[]' }), null);
+  assert.equal(p({ charges: '[]' }), 'charges sans personne assignée');
+  assert.equal(p({ assignees: [], charges: '[]' }), 'charges sans personne assignée');
   assert.equal(p({ assignees: [2], charges: 'pas du json' }), 'JSON illisible');
   assert.equal(p({ assignees: [2], charges: '{"teamId":2}' }), 'tableau JSON attendu');
   assert.equal(p({ assignees: [2], charges: 7 }), 'texte JSON attendu');
@@ -185,4 +194,67 @@ test('fenêtre de création : charge facultative, borne sur la période saisie, 
   const f = newTaskFields(dated, { canAddField: (c) => c !== 'assignees' });
   assert.ok(!('assignees' in f) && !('charges' in f));
   assert.ok(!('charges' in newTaskFields(dated, { canAddField: (c) => c !== 'charges' })));
+});
+
+test('création : entrées de charge exactement {teamId, heures}, ni clé en plus ni __proto__', async () => {
+  const p = (charges) => newChargesProblem({ ...DATED, assignees: [2], charges }, (n) => team('Team', n), est);
+  assert.equal(p('[{"teamId":2,"heures":1}]'), null);
+  const extra = 'entrée de charge : seules les clés teamId et heures sont permises';
+  assert.equal(p('[{"teamId":2,"heures":1,"x":1}]'), extra);
+  assert.equal(p('[{"teamId":2,"heures":1,"__proto__":{}}]'), extra);
+  assert.notEqual(p('[{"teamId":2,"__proto__":{}}]'), null);
+  // Les deux gardes du writer : AddRecord réel et mode essai
+  for (const mode of ['on', 'dry-run']) {
+    const { g, writer } = setup(mode);
+    for (const charges of ['[{"teamId":2,"heures":1,"x":1}]', '[{"teamId":2,"heures":1,"__proto__":{}}]'])
+      assert.match(await reason(writer.add('Tasks', { ...DATED, assignees: [2], charges })), /^charges/);
+    assert.match(await reason(writer.add('Tasks', { ...DATED, charges: '[]' })), /^charges/);
+    assert.equal(g.batches.length, 0);
+  }
+});
+
+test('création : dates inversées avec charges refusées par le writer (dates), rien n’est envoyé', async () => {
+  for (const mode of ['on', 'dry-run']) {
+    const { g, writer } = setup(mode);
+    const fields = { ...BASE, dateDebut: 113, dateEcheance: 100, assignees: [2], charges: ch([2, 7]) };
+    assert.match(await reason(writer.add('Tasks', fields)), /^dates/);
+    assert.equal(g.batches.length, 0);
+  }
+});
+
+test('fenêtre de création : personnes que newTaskFields n’enverrait pas, lignes au-dessus de la borne', () => {
+  const model = buildModel(raw());
+  const d = {
+    ...newTaskDraft(model, { chantierId: 100, me: 2 }),
+    dateDebut: 100,
+    dateEcheance: 113,
+    assignees: [2, 5],
+    charges: ch([2, 71], [5, 7]),
+  };
+  assert.deepEqual(overCapTeamIds(d, model), [2]);
+  assert.deepEqual(overCapTeamIds({ ...d, charges: 'oups' }, model), []);
+  const fields = (canAddField) => newTaskFields(d, { canAddField });
+  const dropped = (canAddField, opts) => droppedPeople(d, fields(canAddField), opts);
+  assert.deepEqual(
+    dropped(() => true, { assigneesTouched: true }),
+    { charges: false, assignees: false },
+  );
+  assert.deepEqual(
+    dropped((c) => c !== 'charges'),
+    { charges: true, assignees: false },
+  );
+  // Sans assignés permis, les charges tombent aussi ; les assignés ne comptent que s'ils ont été choisis
+  assert.deepEqual(
+    dropped((c) => c !== 'assignees'),
+    { charges: true, assignees: false },
+  );
+  assert.deepEqual(
+    dropped((c) => c !== 'assignees', { assigneesTouched: true }),
+    { charges: true, assignees: true },
+  );
+  const bare = { ...d, charges: '' };
+  assert.deepEqual(droppedPeople(bare, newTaskFields(bare, { canAddField: (c) => c !== 'charges' })), {
+    charges: false,
+    assignees: false,
+  });
 });
