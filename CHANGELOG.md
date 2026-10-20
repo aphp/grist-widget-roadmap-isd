@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Team: optional `Team.aph` column (APH id) read and shown in the Team tab rows and the person card. It can be edited
+  in the person form and on creation only once it is a data column in Grist; while it is the empty formula column of
+  the Feuille, the field stays read-only with its reason. Strict check in the writer: 1 to 10 digits, or empty.
+- Charges: the person whose APH is `9999999` (`ESTIMATION_APH`, used to estimate load in the roadmap) is the only
+  one exempt from the "1 FTE maximum per person" rule, in the form and in the writer; a sanity bound of 50 FTE over
+  the period (2,000 h without dates) still applies. An "Estimation" badge explains it next to that person.
+- Dev: `?ecritures=aph-donnee` makes `Team.aph` a data column (with the synthetic dataset: invented APHs and an
+  "Estimation DE" person).
+
 ## [0.2.0] — 2026-10-20
 First published version.
 
