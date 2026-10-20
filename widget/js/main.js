@@ -486,6 +486,8 @@ const personDialog = createPersonDialog({
 /** « Réactiver » (ligne de l'onglet Équipe ou fiche) : une seule colonne actif, ligne relue avant l'envoi. */
 async function setPersonActive(id, actif) {
   if (!writer || !state.model) return;
+  // Droit relu au moment d'agir (le bouton a pu être affiché avant un passage en lecture)
+  if (!teamCtx().canReactivate(id)) return renderAll();
   const nom = state.model.people.get(id)?.nom || label('common.untitled');
   const r = await runSetActive({
     writer,

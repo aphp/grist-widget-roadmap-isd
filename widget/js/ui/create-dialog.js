@@ -157,6 +157,14 @@ export function createCreateDialog(deps) {
     render('cf-leave-continue');
   }
 
+  /** Droit d'agir (relu à l'ouverture et juste avant l'envoi) : { ok, reason }. */
+  function rights(w, kind, table) {
+    if (!w || w.mode === 'off') return { ok: false, reason: 'off' };
+    if (kind !== 'move') return w.canAdd(table);
+    const c = w.can('Tasks', 'Chantier');
+    return c.ok ? w.can('Tasks', 'projet') : c;
+  }
+
   /**
    * Ouvre une fenêtre.
    * @param {'task'|'subtask'|'chantier'|'move'} kind
@@ -167,7 +175,7 @@ export function createCreateDialog(deps) {
     const w = writer();
     if (!w || dlg) return false;
     const table = kind === 'chantier' ? 'Chantiers' : 'Tasks';
-    if (kind === 'move' ? !w.can('Tasks', 'Chantier').ok : !w.canAdd(table).ok) return false;
+    if (!rights(w, kind, table).ok) return false;
     const m = model();
     st = {
       kind,
@@ -255,8 +263,15 @@ export function createCreateDialog(deps) {
       const first = ORDER.find((f) => st.validation.errors[f]);
       return render(first ? `cf-${first}` : undefined);
     }
-    const cur = st;
     const w = writer();
+    // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
+    const allowed = rights(w, st.kind, st.table);
+    if (!allowed.ok) {
+      st.locked = true;
+      st.fail = { kind: 'session', message: allowed.reason === 'viewer' ? 'viewer' : 'flags', copy: '' };
+      return render('cf-alert');
+    }
+    const cur = st;
     cur.busy = true;
     cur.fail = null;
     render(st.kind === 'move' ? 'cf-submit' : andOpen ? 'cf-create-open' : 'cf-create');

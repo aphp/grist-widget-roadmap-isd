@@ -112,6 +112,14 @@ export function createPersonDialog(deps) {
     render('pf-leave-continue');
   }
 
+  /** Droit d'agir pour une fenêtre (relu à l'ouverture et juste avant l'envoi) : { ok, reason }. */
+  function rights(w, kind) {
+    if (!w || w.mode === 'off') return { ok: false, reason: 'off' };
+    const t = table(kind);
+    if (kind === 'add' || kind === 'unav-add') return w.canAdd(t);
+    return kind === 'off' ? w.can('Team', 'actif') : w.can('Disponibilites', 'dateDebut');
+  }
+
   /**
    * Ouvre une fenêtre.
    * @param {'add'|'unav-add'|'unav-edit'|'off'} kind
@@ -121,13 +129,7 @@ export function createPersonDialog(deps) {
     const w = writer();
     if (!w || dlg || !TITLES[kind]) return false;
     const t = table(kind);
-    const allowed =
-      kind === 'add' || kind === 'unav-add'
-        ? w.canAdd(t).ok
-        : kind === 'off'
-          ? w.can('Team', 'actif').ok
-          : w.can('Disponibilites', 'dateDebut').ok;
-    if (!allowed) return false;
+    if (!rights(w, kind).ok) return false;
     const m = model();
     st = {
       kind,
@@ -253,6 +255,13 @@ export function createPersonDialog(deps) {
       const first = ORDER.find((f) => st.validation.errors[f]);
       return render(first ? `pf-${first}` : undefined);
     }
+    // Droit relu juste avant l'envoi : la session a pu passer en lecture depuis l'ouverture
+    const allowed = rights(writer(), st.kind);
+    if (!allowed.ok) {
+      st.locked = true;
+      st.fail = { kind: 'session', message: allowed.reason === 'viewer' ? 'viewer' : 'flags', copy: '' };
+      return render('tf-alert');
+    }
     const cur = st;
     cur.busy = true;
     cur.fail = null;
@@ -291,7 +300,7 @@ export function createPersonDialog(deps) {
         fresh: result.fresh,
         names: result.cols.map((c) => fieldLabel(c, 'Disponibilites')).join(', '),
       };
-      return render('pf-alert');
+      return render('tf-alert');
     }
     cur.fail = failOf(result, fields);
     render('tf-alert');

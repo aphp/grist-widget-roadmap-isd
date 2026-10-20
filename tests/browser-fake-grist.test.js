@@ -376,6 +376,40 @@ test('arrêt d’urgence relu avant l’envoi : rien n’est écrit, formulaire 
 });
 
 test(
+  'droits relus au moment d’agir : un bouton du bloc Personnes resté affiché après le passage en lecture ne change rien',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    // Une personne ajoutée au brouillon : sa ligne porte « Retirer »
+    const id = Number(await firstOption('#tf-assignees'));
+    await change('#tf-assignees', String(id));
+    await until(`D.querySelector('[data-person-remove="${id}"]')`);
+    const lines = await w(`return D.querySelectorAll('#tf-people [data-charge]').length;`);
+    // La session passe en lecture (arrêt d'urgence relu avant l'envoi)
+    await type('tf-titre', 'Après coupure');
+    await w(`W.__coupe = true; D.getElementById('btn-form-save').click(); return true;`);
+    await until(`D.querySelector('.tf-alert') && !D.querySelector('[data-person-remove]')`);
+    // Boutons et menu périmés (rendus avant le passage en lecture) : rien ne change
+    const stale = (html) =>
+      w(
+        `const box = D.createElement('div'); box.innerHTML = ${JSON.stringify(html)}; D.getElementById('tf-people').append(box); return true;`,
+      );
+    await stale(`<button type="button" data-person-remove="${id}" id="stale-remove">x</button>`);
+    await clickOn('#stale-remove');
+    await stale(
+      `<select data-person-add id="stale-add"><option value=""></option><option value="${id + 1}">y</option></select>`,
+    );
+    await change('#stale-add', String(id + 1));
+    await stale(`<button type="button" data-charges="replace-confirm" id="stale-replace">z</button>`);
+    await clickOn('#stale-replace');
+    assert.equal(await w(`return D.querySelectorAll('#tf-people [data-charge]').length;`), lines);
+    assert.ok(await w(`return Boolean(D.querySelector('#tf-people [data-charge="${id}"]'));`));
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
   'arrêt d’urgence relu à une relecture, formulaire ouvert : il passe en lecture ; journal gardé (R2, R3)',
   { skip: SKIP },
   async () => {
