@@ -1,6 +1,7 @@
 /**
  * Panneau détail (à droite), modal (aria-modal="true" à l'ouverture) : le reste de la page est couvert d'un voile
- * qui capte les clics ; focus sur « Fermer » à l'ouverture, Tab boucle dans le panneau et tout focus qui en sort
+ * qui capte les clics ; focus sur « Fermer » à l'ouverture, Tab boucle dans le panneau (et le message « … Annuler »,
+ * [data-focus-cycle]) et tout focus qui en sort
  * (repeinture de la vue, raccourci) y est ramené ; fermeture par « Fermer », Échap ou clic sur le voile, focus rendu
  * à l'élément d'origine. Les liens internes ([data-ref-table]) et « Retour » sont confiés à main.js.
  *
@@ -118,22 +119,32 @@ export function createDrawer(root, on) {
     const link = e.target.closest('[data-ref-table]');
     if (link) on.onDetailRef?.({ table: link.dataset.refTable, id: Number(link.dataset.refId) });
   });
-  // Piège du focus : Tab et Maj+Tab bouclent dans le panneau tant qu'il est ouvert
-  root.addEventListener('keydown', (e) => {
+  /**
+   * Piège du focus : Tab et Maj+Tab bouclent dans le panneau tant qu'il est ouvert, en passant aussi par les zones
+   * [data-focus-cycle] hors du panneau (message « … Annuler » : son bouton reste atteignable au clavier). Une
+   * fenêtre <dialog> ouverte depuis la fiche garde son propre piège.
+   */
+  function trapTab(e) {
     if (e.key !== 'Tab' || root.dataset.open !== 'true') return;
-    const items = [...root.querySelectorAll(FOCUSABLE)].filter(
-      (x) => x.offsetParent !== null || x === document.activeElement,
-    );
+    const active = document.activeElement;
+    if (active?.closest?.('dialog[open]')) return;
+    const visible = (x) => x.offsetParent !== null || x === active;
+    const extra = [...document.querySelectorAll('[data-focus-cycle]')]
+      .filter((z) => !root.contains(z))
+      .flatMap((z) => [...z.querySelectorAll(FOCUSABLE)]);
+    const items = [...root.querySelectorAll(FOCUSABLE), ...extra].filter(visible);
     if (!items.length) return;
-    const first = items[0];
-    const last = items.at(-1);
-    if (e.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
+    e.preventDefault();
+    const at = items.indexOf(active);
+    let next;
+    if (at !== -1) next = items[(at + (e.shiftKey ? -1 : 1) + items.length) % items.length];
+    else if (active && active !== document.body) {
+      // Focus sur un élément non tabulable (titre de la fiche) : élément suivant ou précédent dans le document
+      const after = (x) => active.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING;
+      next = e.shiftKey ? items.findLast((x) => !after(x)) : items.find(after);
     }
-  });
+    (next ?? (e.shiftKey ? items.at(-1) : items[0])).focus();
+  }
+  document.addEventListener('keydown', trapTab, true);
   return { open, close, isOpen: () => root.dataset.open === 'true', root };
 }

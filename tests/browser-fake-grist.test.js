@@ -1244,6 +1244,58 @@ test(
   },
 );
 
+/** Touche réelle (CDP) envoyée à l'élément focalisé : Tab, Maj+Tab, Entrée. */
+async function press(key, shift = false) {
+  const codes = { Tab: 9, Enter: 13 };
+  const base = { key, code: key, windowsVirtualKeyCode: codes[key], modifiers: shift ? 8 : 0 };
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+  if (key === 'Enter') await send('Input.dispatchKeyEvent', { type: 'char', text: '\r', ...base });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+}
+
+test(
+  'fiche ouverte : le bouton « Annuler » du message est atteignable au Tab, la fiche reste modale',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await clickOn('[data-person="2"]');
+    await until(`D.querySelector('#btn-person-active[data-person-active="0"]')`);
+    await clickOn('#btn-person-active');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-submit')`);
+    await clickOn('#pf-submit');
+    await until(`W.__writes.length === 1 && D.querySelector('.toast [data-toast-action]')`);
+    await until(`D.getElementById('app-detail').dataset.open === 'true'`);
+    await w(`D.getElementById('btn-detail-close').focus(); return true;`);
+    // Tab depuis « Fermer » : on parcourt la fiche puis le message, sans jamais sortir ailleurs
+    const where = `const a = D.activeElement; return a.closest('#app-detail') ? 'fiche' : a.closest('.toast-region') ? (a.matches('[data-toast-action]') ? 'annuler' : 'message') : 'ailleurs';`;
+    const seen = [];
+    for (let i = 0; i < 60 && !seen.includes('annuler'); i++) {
+      await press('Tab');
+      seen.push(await w(where));
+    }
+    assert.ok(seen.includes('annuler'), seen.join(','));
+    assert.ok(!seen.includes('ailleurs'), seen.join(','));
+    // Maj+Tab revient dans la fiche ; Tab puis Tab bouclent vers la fiche après le message
+    await press('Tab', true);
+    assert.equal(await w(where), 'fiche');
+    await press('Tab');
+    assert.equal(await w(where), 'annuler');
+    await press('Tab');
+    assert.equal(await w(where), 'message');
+    await press('Tab');
+    assert.equal(await w(where), 'fiche');
+    assert.equal(await w(`return D.getElementById('app-detail').getAttribute('aria-modal');`), 'true');
+    // Entrée sur « Annuler » : la personne est réactivée, le focus revient dans la fiche
+    await press('Tab', true);
+    await press('Tab', true);
+    assert.equal(await w(where), 'annuler');
+    await press('Enter');
+    await until(`W.__writes.length === 2`);
+    assert.deepEqual((await writes())[1], [['UpdateRecord', 'Team', 2, { actif: true }]]);
+    await until(`D.activeElement.closest('#app-detail')`);
+  },
+);
+
 test('équipe (2d) : indisponibilité ajoutée puis modifiée (AddRecord puis UpdateRecord)', { skip: SKIP }, async () => {
   await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
   await w(`D.querySelector('[data-person]').click(); return true;`);
