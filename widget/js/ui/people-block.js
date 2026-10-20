@@ -47,6 +47,7 @@ export const peopleState = (storage, base = null) => ({
   chargesTyped: new Set(),
   chargesDays: base ? periodDays(base.dateDebut, base.dateEcheance) : null,
   chargesKeptOver: new Set(),
+  chargesNotRescaled: false,
   chargesUnit: storedUnit(storage),
   confirmReplace: false,
 });
@@ -77,6 +78,22 @@ export function followBase(s, model, { rescale = true } = {}) {
     ? rescaleCharges(s.draft.charges, untyped, days, { baseRaw, maxOf })
     : { raw: s.draft.charges, over: [] };
   s.draft = r.raw === s.draft.charges ? s.draft : { ...s.draft, charges: r.raw };
+  s.chargesDays = days;
+  s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
+}
+
+/**
+ * Après la fenêtre de conflit (dates finales décidées) : toutes les lignes, saisies comprises, recalculées depuis
+ * leur référence sur la période du brouillon, pour que les heures envoyées valent pour les dates envoyées.
+ * @param {object} s état du formulaire
+ * @param {object} model
+ */
+export function rescaleAll(s, model) {
+  if (!s?.chargeRefs || !('charges' in s.draft)) return;
+  const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+  const maxOf = (teamId) => maxHours(days, isEstimationPerson(model, teamId));
+  const r = rescaleCharges(s.draft.charges, s.chargeRefs, days, { baseRaw: s.base?.charges ?? null, maxOf });
+  if (r.raw !== s.draft.charges) s.draft = { ...s.draft, charges: r.raw };
   s.chargesDays = days;
   s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
 }
@@ -176,14 +193,18 @@ export function createPeopleBlock(deps) {
       s.chargeInputs.set(teamId, t.value);
       t.setAttribute('aria-invalid', 'true');
     } else {
+      const changed = r.charges !== s.draft.charges;
       if (!deps.applyDraft({ ...s.draft, charges: r.charges })) return;
       s.chargeErrors.delete(teamId);
       s.chargeInputs.delete(teamId);
-      // La saisie devient la référence de la ligne (seulement elle : les autres lignes ne sont pas recalculées)
-      if (r.heures === null) s.chargeRefs.delete(teamId);
-      else s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, days }));
-      s.chargesTyped.add(teamId);
-      s.chargesKeptOver.delete(teamId);
+      // Cellule changée : la saisie devient la référence de la ligne (seulement elle : les autres lignes ne sont pas
+      // recalculées) ; valeur affichée ressaisie : rien n'est « saisi », la ligne suit encore la Feuille
+      if (changed) {
+        if (r.heures === null) s.chargeRefs.delete(teamId);
+        else s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, days }));
+        s.chargesTyped.add(teamId);
+        s.chargesKeptOver.delete(teamId);
+      }
       t.removeAttribute('aria-invalid');
     }
     lineRefresh(teamId, days);
@@ -277,19 +298,26 @@ export function createPeopleBlock(deps) {
    * (chargesDays ; une date de clôture n'y touche pas), l'ETP de référence de chaque ligne est gardé et ses heures
    * recalculées (rescaleCharges). Une ligne qui dépasserait la borne est laissée telle quelle et signalée
    * (chargesKeptOver), comme une ligne non recalculée au-dessus de la borne. Retour aux dates d'origine : texte
-   * d'origine des entrées remis. Refus des droits : charges inchangées.
+   * d'origine des entrées remis. Date vidée (période inconnue) : chaque ligne revient aux heures de sa référence.
+   * Refus des droits : charges inchangées et signalées (chargesNotRescaled : leur ETP change avec la période).
    * @param {{render?:boolean}} [opts] render : faux si l'hôte redessine tout le formulaire ensuite
    */
   function onDatesChanged({ render: redraw = true } = {}) {
     const s = st();
     const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
     if (days === s.chargesDays) {
+      s.chargesNotRescaled = false;
       if (redraw) render();
       return;
     }
     const maxOf = (teamId) => maxHours(days, isEstimationPerson(model(), teamId));
     const r = rescaleCharges(s.draft.charges, s.chargeRefs, days, { baseRaw: s.base?.charges ?? null, maxOf });
-    if (r.raw !== s.draft.charges && !deps.applyDraft({ ...s.draft, charges: r.raw })) return;
+    if (r.raw !== s.draft.charges) {
+      // Posé avant : un refus redessine le formulaire (applyDraft), qui doit alors le dire
+      s.chargesNotRescaled = true;
+      if (!deps.applyDraft({ ...s.draft, charges: r.raw })) return;
+    }
+    s.chargesNotRescaled = false;
     s.chargesDays = days;
     s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
     if (redraw) render();

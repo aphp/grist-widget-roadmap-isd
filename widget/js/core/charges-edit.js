@@ -304,6 +304,29 @@ const groupOf = (items, teamId) => canonical(indicesOf(items, teamId).map((i) =>
 const teamIds = (items) => [...new Set(items.filter((x) => isValidEntry(x.value)).map((x) => entryTeamId(x.value)))];
 
 /**
+ * Cellule de base où seules les personnes ids prennent leurs entrées valides de fromRaw (texte d'origine) ; les
+ * autres gardent celles de la base (entrées invalides de la base comprises).
+ * @param {string|null} baseRaw
+ * @param {string|null} fromRaw
+ * @param {Iterable<number>} ids
+ * @returns {string|null} null si une des cellules est illisible
+ */
+export function withPeopleFrom(baseRaw, fromRaw, ids) {
+  if (!readChargesCell(baseRaw).ok || !readChargesCell(fromRaw).ok) return null;
+  const list = [...ids];
+  if (!list.length) return baseRaw;
+  const from = itemsOf(fromRaw);
+  let out = itemsOf(baseRaw);
+  for (const id of list) {
+    const replacement = indicesOf(from, id).map((i) => from[i]);
+    const idx = indicesOf(out, id);
+    if (!idx.length) out = [...out, ...replacement];
+    else out = out.flatMap((x, i) => (i === idx[0] ? replacement : idx.includes(i) ? [] : [x]));
+  }
+  return encodeItems(out);
+}
+
+/**
  * Fusion à trois voies, personne par personne : on part de la cellule relue (« leur » version) et on y reporte
  * seulement ce que l'utilisateur a changé depuis l'ouverture (base → mienne). Les modifications d'autres
  * personnes sur d'autres entrées survivent, avec leur texte d'origine. Une personne modifiée des deux côtés,

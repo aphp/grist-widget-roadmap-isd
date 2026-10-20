@@ -6,9 +6,17 @@
  * construite ici. Chaque enregistrement travaille sur un instantané : si le formulaire change pendant l'attente,
  * le résultat est quand même annoncé et appliqué au modèle, mais le nouveau formulaire n'est pas touché.
  */
-import { createPeopleBlock, followBase, peopleState } from './people-block.js';
-import { conflictBatch, failureKind, runQuickStatus, runSave } from '../core/task-session.js';
-import { FORM_FIELDS, diffDraft, draftFrom, rebaseDraft, setMilestone, validateTask } from '../core/task-form.js';
+import { createPeopleBlock, followBase, peopleState, rescaleAll } from './people-block.js';
+import { batchWithCharges, conflictBatch, failureKind, runQuickStatus, runSave } from '../core/task-session.js';
+import {
+  FORM_FIELDS,
+  diffDraft,
+  draftFrom,
+  rebaseCharges,
+  rebaseDraft,
+  setMilestone,
+  validateTask,
+} from '../core/task-form.js';
 import {
   CHANTIER_FIELDS,
   chantierDraftFrom,
@@ -74,6 +82,7 @@ const SPECS = Object.freeze({
         priorities: model.choices?.['Tasks.priorite'] ?? [],
         base: st.base,
         keptOver: st.chargesKeptOver ?? new Set(),
+        notRescaled: Boolean(st.chargesNotRescaled),
         maxDay,
       }),
     body: (st, model) => taskFormBody(st, model),
@@ -270,13 +279,32 @@ export function createTaskEditor(deps) {
     if (!st || st.busy) return;
     const fresh = deps.getBase(st.ref.table, st.ref.id);
     if (!fresh) return;
-    st.draft = spec(st).rebase(st.base, st.draft, fresh);
-    st.base = fresh;
-    followBase(st, model());
+    rebaseOnto(st, fresh, true);
     const task = st.ref.table === 'Tasks' ? model().tasks.get(st.ref.id) : null;
     const w = writer();
     st.canMove = Boolean(task && !task.parentId && w?.can('Tasks', 'Chantier').ok && w.can('Tasks', 'projet').ok);
     render();
+  }
+
+  /**
+   * Nouvelle base (ligne relue) : brouillon rebasé (charges : seules les personnes saisies comptent comme
+   * « miennes »), références et heures des personnes non saisies suivies (followBase). Personne saisie en conflit :
+   * la base des charges n'avance pas, pour que l'enregistrement ouvre la fenêtre de conflit au lieu d'écraser.
+   * @param {object} cur état du formulaire
+   * @param {object} fresh ligne relue (complète ou partielle)
+   * @param {boolean} [replace] la ligne relue remplace la base (sinon ses colonnes y sont fusionnées)
+   */
+  function rebaseOnto(cur, fresh, replace = false) {
+    const typed = cur.chargesTyped;
+    const oldCharges = cur.base.charges;
+    const clash =
+      cur.ref.table === 'Tasks' &&
+      'charges' in fresh &&
+      Boolean(rebaseCharges(oldCharges, cur.draft.charges, fresh.charges, typed)?.conflicts.length);
+    cur.draft = spec(cur).rebase(cur.base, cur.draft, fresh, { typed });
+    cur.base = replace ? fresh : { ...cur.base, ...fresh };
+    followBase(cur, model());
+    if (clash) cur.base = { ...cur.base, charges: oldCharges };
   }
 
   function close() {
@@ -362,11 +390,7 @@ export function createTaskEditor(deps) {
       saisie: valueText(model(), c, v),
       feuille: result.stored ? valueText(model(), c, result.stored[c]) : null,
     }));
-    if (result.stored) {
-      cur.draft = spec(cur).rebase(cur.base, cur.draft, result.stored);
-      cur.base = { ...cur.base, ...result.stored };
-      followBase(cur, model());
-    }
+    if (result.stored) rebaseOnto(cur, result.stored);
     deps.onUnknown?.();
     return {
       kind: result.stored === null ? 'missing' : 'unknown',
@@ -423,6 +447,7 @@ export function createTaskEditor(deps) {
       chargesBase: opts.chargesBase,
       chargesSeen: opts.chargesSeen,
       tagsSeen: opts.tagsSeen,
+      datesSeen: opts.datesSeen,
       tagsReplace: cur.tagsReplace ?? undefined,
       timeoutMs: deps.timeoutMs?.(),
     });
@@ -463,11 +488,15 @@ export function createTaskEditor(deps) {
     render('tf-alert');
   }
 
-  /** Fenêtre de conflit : la base devient la ligne relue, et les champs non touchés suivent la Feuille (I2). */
+  /**
+   * Fenêtre de conflit : la base devient la ligne relue, et les champs non touchés suivent la Feuille (I2). Tâche :
+   * le brouillon final (dates décidées) est construit d'abord, toutes ses charges recalculées sur ces dates
+   * (rescaleAll), puis le lot en est tiré : les heures envoyées valent pour les dates envoyées.
+   */
   async function applyConflicts() {
     const { cols, fresh, choices, mine } = st.conflict;
-    const batch = conflictBatch(st.base, st.draft, fresh, choices, spec(st).diff);
-    const draft = spec(st).rebase(st.base, st.draft, fresh);
+    let batch = conflictBatch(st.base, st.draft, fresh, choices, spec(st).diff);
+    const draft = spec(st).rebase(st.base, st.draft, fresh, { typed: st.chargesTyped });
     for (const c of cols) {
       if (choices[c] === 'theirs') draft[c] = fresh[c];
       else if (c in mine) draft[c] = mine[c];
@@ -479,7 +508,11 @@ export function createTaskEditor(deps) {
     }
     st.draft = draft;
     st.base = { ...st.base, ...fresh };
-    followBase(st, model(), { rescale: choices.charges !== 'theirs' });
+    if (st.ref.table === 'Tasks') {
+      followBase(st, model(), { rescale: false });
+      rescaleAll(st, model());
+      batch = batchWithCharges(batch, st.draft.charges, fresh);
+    }
     st.conflict = null;
     if (!Object.keys(batch.changes).length) return close();
     await save(batch);
@@ -532,11 +565,7 @@ export function createTaskEditor(deps) {
       const now = result.stored ? statusLabel(result.stored.statut ?? result.stored.Statut) : null;
       deps.toast.show(now ? label('toast.unknownStatus', { statut: now }) : label('toast.unknown'), { tone: 'error' });
       if (cur && st === cur) {
-        if (result.stored) {
-          cur.draft = spec(cur).rebase(cur.base, cur.draft, result.stored);
-          cur.base = { ...cur.base, ...result.stored };
-          followBase(cur, model());
-        }
+        if (result.stored) rebaseOnto(cur, result.stored);
         render('btn-status-menu');
       }
       return 'unknown';

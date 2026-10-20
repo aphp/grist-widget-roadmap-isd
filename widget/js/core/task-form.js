@@ -5,7 +5,7 @@
  * Le brouillon contient les valeurs du modèle des colonnes modifiables : jours (dates), identifiants (Ref),
  * listes d'identifiants (RefList), textes et nombre (progression).
  */
-import { chargeRows, mergeCharges, periodDays, readChargesCell, sameCharges } from './charges-edit.js';
+import { chargeRows, mergeCharges, periodDays, readChargesCell, sameCharges, withPeopleFrom } from './charges-edit.js';
 import { dateMaxError, overMaxDay } from './dates.js';
 import { chantierInScope } from './chantier-form.js';
 import { safeLink } from './detail-data.js';
@@ -69,19 +69,38 @@ export function diffDraft(base, draft) {
 }
 
 /**
+ * Charges du brouillon rebasées sur une cellule relue. typed : personnes saisies dans le formulaire, seules
+ * comptées comme « miennes » (les autres, recalculées ou non, repartent de la base ; l'appelant les recalcule
+ * depuis la cellule relue) ; sans typed, tout le brouillon. Personne en conflit : sa saisie est gardée dans raw.
+ * @param {string|null} oldRaw cellule de la base
+ * @param {string|null} draftRaw cellule du brouillon
+ * @param {string|null} freshRaw cellule relue
+ * @param {Set<number>|null} [typed]
+ * @returns {{raw:string|null, conflicts:number[]}|null} null : cellule illisible (le brouillon est gardé)
+ */
+export function rebaseCharges(oldRaw, draftRaw, freshRaw, typed = null) {
+  const mine = typed ? withPeopleFrom(oldRaw, draftRaw, typed) : draftRaw;
+  if (mine === null) return null;
+  if (sameCharges(oldRaw, mine)) return { raw: freshRaw, conflicts: [] };
+  const m = mergeCharges(oldRaw, mine, freshRaw);
+  return m.ok ? { raw: m.raw, conflicts: m.conflicts } : null;
+}
+
+/**
  * Nouvelle base (ligne relue) : les champs que l'utilisateur n'a pas touchés suivent la Feuille, pour qu'un
  * nouvel essai n'écrase jamais la modification de quelqu'un d'autre ; les champs saisis sont conservés. Les
- * charges saisies sont fusionnées personne par personne avec la cellule relue, quand c'est possible sans conflit ;
- * les tags saisis (ajouts, retraits) sont appliqués à la cellule relue.
+ * charges sont fusionnées personne par personne avec la cellule relue (rebaseCharges ; une personne en conflit
+ * garde sa saisie) ; les tags saisis (ajouts, retraits) sont appliqués à la cellule relue.
+ * @param {{typed?:Set<number>|null}} [opts] typed : personnes dont la charge a été saisie dans le formulaire
  */
-export function rebaseDraft(oldBase, draft, fresh) {
+export function rebaseDraft(oldBase, draft, fresh, { typed = null } = {}) {
   const out = { ...draft };
   for (const f of FORM_FIELDS) {
     if (!(f in fresh)) continue;
     if (sameField(f, oldBase[f], draft[f])) out[f] = Array.isArray(fresh[f]) ? [...fresh[f]] : fresh[f];
     else if (f === 'charges') {
-      const m = mergeCharges(oldBase.charges, draft.charges, fresh.charges);
-      if (m.ok && !m.conflicts.length) out.charges = m.raw;
+      const r = rebaseCharges(oldBase.charges, draft.charges, fresh.charges, typed);
+      if (r) out.charges = r.raw;
     } else if (f === 'tags') out.tags = mergeTags(oldBase.tags, draft.tags, fresh.tags);
   }
   return out;
@@ -265,15 +284,16 @@ export function editAvailability(model, ref, edit) {
  * Règles du formulaire. Les erreurs bloquent l'enregistrement ; les avertissements non.
  * @param {object} draft brouillon
  * @param {{model:object, taskId:number, statuses?:string[], priorities?:string[],
- *   base?:{dateDebut:number|null, dateEcheance:number|null}, keptOver?:Set<number>, maxDay?:number}} ctx maxDay :
- *   dernier jour de planification (une date plus tardive est refusée, sauf valeur d'origine) ; base : période de la
- *   tâche à l'ouverture ; keptOver : personnes dont les heures n'ont pas été recalculées après un changement de
- *   dates (au-dessus de la borne), signalées si les dates diffèrent de la base
+ *   base?:{dateDebut:number|null, dateEcheance:number|null}, keptOver?:Set<number>, notRescaled?:boolean,
+ *   maxDay?:number}} ctx maxDay : dernier jour de planification (une date plus tardive est refusée, sauf valeur
+ *   d'origine) ; base : période de la tâche à l'ouverture ; keptOver : personnes dont les heures n'ont pas été
+ *   recalculées après un changement de dates (au-dessus de la borne), signalées si les dates diffèrent de la base ;
+ *   notRescaled : recalcul des charges refusé par les droits (signalé)
  * @returns {{errors:Record<string,{key:string, vars?:object}>, warnings:{field:string, key:string, vars?:object}[]}}
  */
 export function validateTask(
   draft,
-  { model, taskId, statuses = [], priorities = [], base = null, keptOver = new Set(), maxDay },
+  { model, taskId, statuses = [], priorities = [], base = null, keptOver = new Set(), notRescaled = false, maxDay },
 ) {
   const errors = {};
   const warnings = [];
@@ -326,6 +346,8 @@ export function validateTask(
     const over = rows.filter((r) => keptOver.has(r.teamId)).length;
     if (over) warnings.push({ field: 'charges', key: 'form.warn.chargesOverDates', vars: { n: over } });
   }
+  // Recalcul refusé (colonne des charges non modifiable) : heures inchangées, leur ETP suit la nouvelle période
+  if (notRescaled) warnings.push({ field: 'charges', key: 'form.warn.chargesNotRescaled' });
   const unknown = rows.filter((r) => !model.people.has(r.teamId)).length;
   if (unknown) warnings.push({ field: 'charges', key: 'form.warn.chargesUnknown', vars: { n: unknown } });
   if (draft.statut === DONE_STATUS && draft.dateCloture === null)

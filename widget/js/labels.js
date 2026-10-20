@@ -776,6 +776,8 @@ const FR = Object.freeze({
   'form.error.summary': 'Corrigez le champ signalé pour pouvoir enregistrer.',
   'form.error.summaryMany': 'Corrigez les {n} champs signalés pour pouvoir enregistrer.',
   'form.warn.outsideParent': 'Les dates sortent de celles de la tâche parente.',
+  'form.warn.chargesNotRescaled':
+    'Dates modifiées : les charges ne sont pas modifiables ici, leurs heures restent telles quelles et leur ETP change avec la période.',
   'form.warn.chargesOverDates':
     'Dates modifiées : {n} charge(s) dépasseraient la borne sur la nouvelle période ; leurs heures sont gardées telles quelles. Vérifiez-les.',
   'form.warn.chargesNoDates': 'Cette tâche porte des charges : sans début ni échéance, l’ETP ne peut pas être calculé.',

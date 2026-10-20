@@ -24,10 +24,11 @@ import {
   roundHours,
   sameCharges,
   setPersonHours,
+  withPeopleFrom,
 } from '../widget/js/core/charges-edit.js';
 import { parseCharges } from '../widget/js/core/charges.js';
 import { mergeChargesChange, resolveConflicts } from '../widget/js/core/conflicts.js';
-import { diffDraft, rebaseDraft } from '../widget/js/core/task-form.js';
+import { diffDraft, rebaseCharges, rebaseDraft } from '../widget/js/core/task-form.js';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
 const reason = (fn) => {
@@ -286,15 +287,56 @@ test('mergeChargesChange et resolveConflicts : lot fusionné, conflit, « Garder
   });
 });
 
-test('rebaseDraft : charges saisies fusionnées avec la ligne relue, sinon conservées', () => {
+test('rebaseDraft : charges saisies fusionnées avec la ligne relue, conflit : la saisie gardée sur la cellule relue', () => {
   const oldBase = { charges: '[{"teamId":1,"heures":10},{"teamId":2,"heures":5}]' };
   const draft = { charges: setPersonHours(oldBase.charges, 1, 20) };
   const fresh = { charges: '[{"teamId":1,"heures":10},{"teamId":2,"heures":9}]' };
   assert.equal(rebaseDraft(oldBase, draft, fresh).charges, '[{"teamId":1,"heures":20},{"teamId":2,"heures":9}]');
+  // Même personne changée ailleurs et ici : la saisie reste, la personne 2 retirée ailleurs reste retirée
   const clash = { charges: '[{"teamId":1,"heures":30}]' };
-  assert.equal(rebaseDraft(oldBase, draft, clash).charges, draft.charges);
+  assert.equal(rebaseDraft(oldBase, draft, clash).charges, '[{"teamId":1,"heures":20}]');
   // Charges non touchées : elles suivent la Feuille
   assert.equal(rebaseDraft(oldBase, { charges: oldBase.charges }, clash).charges, clash.charges);
+});
+
+test('rebaseCharges : seules les personnes saisies comptent comme « miennes »', () => {
+  const old = '[{"teamId":1,"heures":70},{"teamId":2,"heures":35}]';
+  // Brouillon : 1 recalculé (non saisi) à 140 h, 2 saisie à 20 h
+  const draft = '[{"teamId":1,"heures":140},{"teamId":2,"heures":20}]';
+  // (a) ailleurs : une personne 3 ajoutée → gardée ; 1 recalculée repart de la cellule relue
+  const added = '[{"teamId":1,"heures":70},{"teamId":2,"heures":35},{"teamId":3,"heures":7}]';
+  assert.deepEqual(rebaseCharges(old, draft, added, new Set([2])), {
+    raw: '[{"teamId":1,"heures":70},{"teamId":2,"heures":20},{"teamId":3,"heures":7}]',
+    conflicts: [],
+  });
+  // (b) ailleurs : 1 retirée → ne revient pas
+  assert.deepEqual(rebaseCharges(old, draft, '[{"teamId":2,"heures":35}]', new Set([2])), {
+    raw: '[{"teamId":2,"heures":20}]',
+    conflicts: [],
+  });
+  // (c) ailleurs : 2 changée aussi → conflit nommé, saisie gardée
+  const r = rebaseCharges(old, draft, '[{"teamId":1,"heures":70},{"teamId":2,"heures":10}]', new Set([2]));
+  assert.deepEqual(r.conflicts, [2]);
+  assert.equal(r.raw, '[{"teamId":1,"heures":70},{"teamId":2,"heures":20}]');
+  // Rien de saisi : la cellule relue telle quelle ; cellule illisible : null
+  assert.deepEqual(rebaseCharges(old, draft, added, new Set()), { raw: added, conflicts: [] });
+  assert.equal(rebaseCharges('oops', draft, added, new Set([2])), null);
+  // rebaseDraft transmet typed
+  assert.equal(
+    rebaseDraft({ charges: old }, { charges: draft }, { charges: added }, { typed: new Set() }).charges,
+    added,
+  );
+});
+
+test('withPeopleFrom : entrées des seules personnes données reprises', () => {
+  const base = '[{"teamId":1,"heures":70}, {"teamId":2,"heures":35}]';
+  assert.equal(withPeopleFrom(base, '[]', []), base);
+  assert.equal(
+    withPeopleFrom(base, '[{"teamId":2,"heures":20},{"teamId":3,"heures":1}]', [2, 3]),
+    '[{"teamId":1,"heures":70},{"teamId":2,"heures":20},{"teamId":3,"heures":1}]',
+  );
+  assert.equal(withPeopleFrom(base, '[{"teamId":1,"heures":70}]', [2]), '[{"teamId":1,"heures":70}]');
+  assert.equal(withPeopleFrom('oops', base, [1]), null);
 });
 
 test('contrôle strict avant écriture : tableau compact, teamId existant, heures finies ≥ 0 au pas de 0,5', () => {

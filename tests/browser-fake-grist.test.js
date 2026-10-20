@@ -637,15 +637,22 @@ test('fiche : dates remises à l’identique, charges non envoyées', { skip: SK
  * créée depuis la fiche fait relire la ligne (refreshFromModel). before : étape faite dans la fiche avant la
  * relecture. Rend { id, person } ; une écriture (la sous-tâche) dans __writes.
  */
-async function openRebased50({ before = null, remote = true, expect = '= 50 h' } = {}) {
+async function openRebased50({
+  before = null,
+  remote = true,
+  expect = '= 50 h',
+  entries = (person) => [{ teamId: person, heures: 50 }],
+  card = '0,7 ETP',
+} = {}) {
   const { id, person } = await openCharged14();
+  const other = await w(`return Number(D.querySelector('#tf-assignees optgroup option').value);`);
   if (before) await before(person);
   if (remote) {
-    const charges = JSON.stringify([{ teamId: person, heures: 50 }]);
+    const charges = JSON.stringify(entries(person, other));
     await w(`await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { charges: ${JSON.stringify(charges)} }]]);
       return true;`);
-    // Modèle relu (0,7 ETP sur la carte) avant la sous-tâche
-    await until(`D.getElementById('kc-${id}')?.textContent.includes('0,7 ETP')`);
+    // Modèle relu (ETP de la carte) avant la sous-tâche
+    await until(`D.getElementById('kc-${id}')?.textContent.includes('${card}')`);
   }
   await w(`W.__writes.length = 0; return true;`);
   await clickOn('#btn-add-subtask');
@@ -657,7 +664,7 @@ async function openRebased50({ before = null, remote = true, expect = '= 50 h' }
   // Une relecture seule ne produit jamais d'écart « Dates modifiées »
   if (!before)
     assert.doesNotMatch(await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`), /Dates modifiées/);
-  return { id, person };
+  return { id, person, other };
 }
 
 /** Échéance + 14 jours dans la fiche (70 h → 140 h pour la personne non saisie). */
@@ -665,6 +672,105 @@ async function lengthen(person) {
   await setFormDate('dateEcheance', '2026-11-29');
   await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 140 h'`);
 }
+
+test(
+  'fiche : dates allongées, puis charges relues avec une personne ajoutée ailleurs : elle est gardée (rien perdu)',
+  { skip: SKIP },
+  async () => {
+    // Ailleurs : la personne passe à 50 h et une autre est ajoutée (7 h) ; ici les dates avaient été allongées
+    const { id, person, other } = await openRebased50({
+      before: lengthen,
+      expect: '= 100 h',
+      entries: (p, o) => [
+        { teamId: p, heures: 50 },
+        { teamId: o, heures: 7 },
+      ],
+      card: '0,8 ETP',
+    });
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`W.__writes.length === 2`);
+    const [, , rowId, cells] = (await writes())[1][0];
+    assert.equal(rowId, id);
+    // 0,1 ETP de l'autre personne, ajoutée ailleurs, gardé et recalculé sur 28 jours (14 h)
+    assert.equal(
+      cells.charges,
+      JSON.stringify([
+        { teamId: person, heures: 100 },
+        { teamId: other, heures: 14 },
+      ]),
+    );
+  },
+);
+
+test(
+  'fiche : charge saisie puis changée ailleurs : la relecture ne l’écrase pas, fenêtre de conflit',
+  { skip: SKIP },
+  async () => {
+    const typeHalf = async (person) => {
+      await type(`tf-ch-${person}`, '0,5');
+      await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 35 h'`);
+    };
+    const { person } = await openRebased50({ before: typeHalf, expect: '= 35 h' });
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`D.querySelector('.tf-conflict')`);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+    assert.ok(await w(`return Boolean(D.getElementById('tf-cf-charges-mine'));`));
+    assert.match(await w(`return D.querySelector('.tf-conflict').textContent;`), /50/);
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '0,5');
+  },
+);
+
+test('fiche : valeur affichée ressaisie, puis charges relues : la ligne suit la Feuille', { skip: SKIP }, async () => {
+  const retype = async (person) => {
+    await type(`tf-ch-${person}`, '1,0');
+  };
+  await openRebased50({ before: retype, expect: '= 50 h' });
+});
+
+/**
+ * Fiche de openCharged14 ; typed : ETP saisi d'abord ; dates raccourcies à 7 jours ; ailleurs, échéance au
+ * 29 novembre ; enregistrer ouvre la fenêtre, « la leur » choisie pour l'échéance. Rend { id, person }.
+ */
+async function shortenAgainstTheirs(typed = null) {
+  const { id, person } = await openCharged14();
+  if (typed) await type(`tf-ch-${person}`, typed);
+  await setFormDate('dateEcheance', '2026-11-08');
+  await w(
+    `await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { dateEcheance: ${Date.UTC(2026, 10, 29) / 1000} }]]);
+    W.__writes.length = 0; return true;`,
+  );
+  await w(`D.getElementById('btn-form-save').click(); return true;`);
+  await until(`D.getElementById('tf-cf-dateEcheance-theirs')`);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  await w(`const r = D.getElementById('tf-cf-dateEcheance-theirs'); r.checked = true;
+    r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+  await w(`D.querySelector('[data-form="conflict-apply"]').click(); return true;`);
+  return { id, person };
+}
+
+test(
+  'fiche : ETP saisi, dates raccourcies, échéance changée ailleurs, « la leur » : heures recalculées sur les dates envoyées',
+  { skip: SKIP },
+  async () => {
+    // 0,8 ETP saisi (56 h sur 14 jours), 7 jours ici (28 h) ; « la leur » : 28 jours, 0,8 ETP = 112 h (pas 28 h)
+    const { id, person } = await shortenAgainstTheirs('0,8');
+    await until(`W.__writes.length === 1`);
+    const [, , rowId, cells] = (await writes())[0][0];
+    assert.equal(rowId, id);
+    assert.deepEqual(cells, { charges: JSON.stringify([{ teamId: person, heures: 112 }]) });
+  },
+);
+
+test(
+  'fiche : charge non saisie, dates raccourcies, « la leur » pour l’échéance : la Feuille reste telle quelle',
+  { skip: SKIP },
+  async () => {
+    // La ligne suit la Feuille (70 h sur 28 jours) : jamais les 35 h calculées pour 7 jours
+    await shortenAgainstTheirs();
+    await until(`!D.getElementById('task-form')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
 
 test(
   'fiche : dates allongées, puis charges relues : la personne non saisie repart des nouvelles heures',
@@ -2791,22 +2897,23 @@ test(
     await until(`D.getElementById('cf-ch-5-eq').textContent === '= 35 h'`);
     assert.equal(await w(`return D.getElementById('cf-create').disabled;`), false);
     // Heures saisies sans dates (aucun ETP de référence), puis dates : heures gardées, au-dessus de la borne, bloqué
+    // (date vidée : la ligne revient aux heures de sa référence, 70 h ; 60 h saisies ensuite)
     await change('#cf-dateDebut', '');
     await change('#cf-dateEcheance', '');
     await pickRadio('#cf-charges-unit-heures');
-    await until(`!D.getElementById('cf-ch-5').disabled`);
-    await typeIn('#cf-ch-5', '70');
+    await until(`D.getElementById('cf-ch-5').value === '70' && !D.getElementById('cf-ch-5').disabled`);
+    await typeIn('#cf-ch-5', '60');
     await change('#cf-dateDebut', '2026-11-02');
     await change('#cf-dateEcheance', '2026-11-08');
     await until(`D.getElementById('cf-create').disabled`);
-    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '70');
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '60');
     assert.match(await w(`return D.getElementById('cf-charges-msgs').textContent;`), /dépasse la borne/);
     assert.equal(await w(`return W.__writes.length;`), 0);
     await change('#cf-dateEcheance', '2026-11-15');
     await until(`!D.getElementById('cf-create').disabled`);
     await clickOn('#cf-create-open');
     await until(`D.getElementById('task-form') && W.__writes.length === 1`);
-    assert.equal((await writes())[0][0][3].charges, JSON.stringify([{ teamId: 5, heures: 70 }]));
+    assert.equal((await writes())[0][0][3].charges, JSON.stringify([{ teamId: 5, heures: 60 }]));
     // La fiche complète montre la même personne et sa charge
     await until(`D.getElementById('tf-ch-5')`);
   },

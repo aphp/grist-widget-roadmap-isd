@@ -283,3 +283,10 @@ test('fiche : date de planification au-delà de la borne = erreur, sauf valeur d
   assert.deepEqual(v(old, { base: old }).errors, {});
   assert.equal(validateTask(draftWith(old), { model, taskId: 2010 }).errors.dateEcheance, undefined);
 });
+
+test('recalcul des charges refusé : avertissement explicite', () => {
+  const d = draftFrom(base(2010));
+  const keys = (notRescaled) => validateTask(d, { ...ctx(2010), notRescaled }).warnings.map((w) => w.key);
+  assert.ok(keys(true).includes('form.warn.chargesNotRescaled'));
+  assert.ok(!keys(false).includes('form.warn.chargesNotRescaled'));
+});
