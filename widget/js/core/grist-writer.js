@@ -248,7 +248,10 @@ export function classifyError(message) {
   const m = String(message ?? '');
   if (/no write access|access rules|no permission|not authori[sz]ed|blocked by|forbidden|insufficient access/i.test(m))
     return 'acl';
-  if (/invalid row id|row id .* (not found|does not exist)|no such row|KeyError: \d+/i.test(m)) return 'missing';
+  // Vrai Grist : « [Sandbox] AssertionError docactions.[Bulk]UpdateRecord for non-existent record #N » ; faux Grist :
+  // « Invalid row id N in Table » (RemoveRecord d'une ligne absente : accepté sans erreur par le vrai Grist)
+  if (/invalid row id|row id .* (not found|does not exist)|no such row|non-existent record|KeyError: \d+/i.test(m))
+    return 'missing';
   return 'other';
 }
 
