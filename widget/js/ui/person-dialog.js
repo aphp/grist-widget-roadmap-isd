@@ -35,8 +35,19 @@ const FIRST = Object.freeze({
   // Confirmation d'une action à conséquence : focus sur l'action sûre (« Annuler »), motif Alert Dialog de l'APG
   off: 'pf-cancel',
 });
-const ORDER = Object.freeze(['nom', 'email', 'role', 'capaciteHebdo', 'n_1', 'dateDebut', 'dateFin', 'dispo', 'type']);
-const TEXT = new Set(['nom', 'email', 'type', 'commentaire']);
+const ORDER = Object.freeze([
+  'nom',
+  'email',
+  'aph',
+  'role',
+  'capaciteHebdo',
+  'n_1',
+  'dateDebut',
+  'dateFin',
+  'dispo',
+  'type',
+]);
+const TEXT = new Set(['nom', 'email', 'aph', 'type', 'commentaire']);
 
 /**
  * @param {{getModel():object, getWriter():object|null, getBase(table:string, id:number):object|null, toast:{show:Function},

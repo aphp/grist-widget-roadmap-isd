@@ -168,8 +168,8 @@ const FROZEN = {
   },
   // Lot 2d : personnes ISD (Domaine seulement à la création, forcé à l'ISD) et indisponibilités
   Team: {
-    update: ['actif', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
-    add: ['Domaine', 'actif', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
+    update: ['actif', 'aph', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
+    add: ['Domaine', 'actif', 'aph', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role'],
   },
   Disponibilites: {
     update: ['commentaire', 'dateDebut', 'dateFin', 'dispo', 'type'],

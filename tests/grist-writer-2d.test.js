@@ -95,8 +95,17 @@ const reason = async (p) => {
 };
 
 test('liste blanche Team et Disponibilites : colonnes, types, pas de Domaine en mise à jour, jamais de suppression', () => {
-  assert.deepEqual([...WRITABLE.Team.update].sort(), ['actif', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role']);
-  assert.deepEqual([...WRITABLE.Team.add].sort(), ['Domaine', 'actif', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role']);
+  assert.deepEqual([...WRITABLE.Team.update].sort(), ['actif', 'aph', 'capaciteHebdo', 'email', 'n_1', 'nom', 'role']);
+  assert.deepEqual([...WRITABLE.Team.add].sort(), [
+    'Domaine',
+    'actif',
+    'aph',
+    'capaciteHebdo',
+    'email',
+    'n_1',
+    'nom',
+    'role',
+  ]);
   assert.ok(!WRITABLE.Team.update.includes('Domaine'));
   assert.ok(!WRITABLE.Disponibilites.update.includes('membre'));
   for (const c of ['avatar', 'couleur', 'indispos']) assert.ok(!WRITABLE.Team.add.includes(c), c);

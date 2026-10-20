@@ -31,6 +31,8 @@ export function buildModel(raw) {
         actif: Boolean(r.actif),
         roleText: text(r.role),
         email: text(r.email),
+        // APH (Team.aph, facultative) : texte ; un nombre saisi dans une colonne numérique reste lisible
+        aph: typeof r.aph === 'number' && Number.isFinite(r.aph) ? String(r.aph) : text(r.aph),
         domaine: text(r.Domaine),
         n1: ref(r.n_1),
         capaciteHebdo: Number(r.capaciteHebdo) || 0,

@@ -8,8 +8,10 @@ import {
   chargeRows,
   chargesSummary,
   etpDelta,
+  ESTIMATION_MAX_ETP,
   etpOf,
   inputValue,
+  isEstimationPerson,
   maxHours,
   periodDays,
   readChargesCell,
@@ -26,6 +28,7 @@ import { hasLabel, label, statusLabel } from '../labels.js';
 import { isIsdTeamMember, pickerGroups } from '../core/team-directory.js';
 import { h } from '../ui/kit.js';
 import { addSubtaskButton, refList, roleBadge, section, statusMenu } from './detail.js';
+import { estimationBadge } from './team.js';
 
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const etpInputFormat = new Intl.NumberFormat('fr-FR', {
@@ -283,7 +286,7 @@ function personLineHtml(st, model, l, ctx) {
   const canRemove =
     (!l.assigned || ctx.canAssign) && (!l.charged || (ctx.canCharges && ctx.readable)) && (l.assigned || l.charged);
   return h`<li class="tf-charge tf-person ${raw(l.assigned ? '' : 'tf-person--unassigned')}" data-charge="${id}">
-    <span class="tf-charge__who">${name}${p ? roleBadge(model, p, true) : ''}${
+    <span class="tf-charge__who">${name}${p ? roleBadge(model, p, true) : ''}${estimationBadge(p)}${
       l.assigned
         ? ''
         : h` <span class="tf-person__flag" id="tf-person-${id}-flag">${label('form.people.unassigned')}</span>${
@@ -330,9 +333,15 @@ export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const from = delta ? etpFormat.format(delta.from) : '';
   const to = delta ? etpFormat.format(delta.to) : '';
   const errKey = err?.error === 'max' && !ctx.days ? 'maxNoDates' : err?.error;
-  const over = ctx.days && l.heures !== null && l.heures > maxHours(ctx.days) && !err;
-  return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0) })}</p>` : ''}${
-    over ? h`<p class="tf-warn">${label('form.charges.over', { h: hoursFormat.format(maxHours(ctx.days)) })}</p>` : ''
+  // Personne estimation (Team.aph) : borne de ESTIMATION_MAX_ETP au lieu de 1 ETP
+  const estimation = isEstimationPerson(model.people.get(l.teamId));
+  const max = ctx.days ? maxHours(ctx.days, estimation) : null;
+  const over = ctx.days && l.heures !== null && l.heures > max && !err;
+  const etp = ESTIMATION_MAX_ETP;
+  return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0), etp })}</p>` : ''}${
+    over
+      ? h`<p class="tf-warn">${label(estimation ? 'form.charges.overEstimation' : 'form.charges.over', { h: hoursFormat.format(max), etp })}</p>`
+      : ''
   }${
     l.count > 1
       ? h`<p class="tf-warn">${label('form.charges.duplicate', { n: l.count })}</p>${ctx.canCharges ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary" data-charge-merge="${l.teamId}">${label('form.charges.merge', { n: l.count })}</button>` : ''}`

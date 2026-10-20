@@ -17,7 +17,7 @@
  * - Contrôle des colonnes au chargement : une colonne absente, devenue formule ou de type inattendu est retirée
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
-import { chargesWriteProblem, periodDays } from './charges-edit.js';
+import { chargesWriteProblem, isEstimationAph, periodDays } from './charges-edit.js';
 import { isValidEmail } from './team-directory.js';
 import { EncodeError, decodeValue, encodeValue, sameValue } from './write-encode.js';
 
@@ -88,10 +88,11 @@ export const WRITABLE = Object.freeze({
     ]),
   }),
   // Lot 2d : personnes de l'équipe ISD (Q14 A). Domaine seulement à la création (forcé à l'ISD) ; jamais de
-  // suppression d'une personne : « Supprimer » = actif à faux (Q9).
+  // suppression d'une personne : « Supprimer » = actif à faux (Q9). aph : identifiant APH, chiffres seulement
+  // (validAph) ; comme capaciteHebdo, jamais écrit tant que c'est une colonne formule (vide) de la Feuille.
   Team: Object.freeze({
-    update: Object.freeze(['nom', 'email', 'role', 'capaciteHebdo', 'actif', 'n_1']),
-    add: Object.freeze(['nom', 'email', 'role', 'Domaine', 'capaciteHebdo', 'actif', 'n_1']),
+    update: Object.freeze(['nom', 'email', 'aph', 'role', 'capaciteHebdo', 'actif', 'n_1']),
+    add: Object.freeze(['nom', 'email', 'aph', 'role', 'Domaine', 'capaciteHebdo', 'actif', 'n_1']),
   }),
   // Lot 2d : indisponibilités d'une personne ISD ; membre fixé à la création.
   Disponibilites: Object.freeze({
@@ -111,6 +112,13 @@ export const NO_REMOVE = Object.freeze(['Team']);
 
 /** Capacité hebdomadaire maximale d'une personne (h), au pas de 0,5 h ; 0 exclu (vide = 35 h par défaut). */
 export const CAPACITY_MAX = 60;
+
+/** Longueur maximale d'un APH (Team.aph) : de 1 à 10 chiffres, 7 le plus souvent. */
+export const APH_MAX_DIGITS = 10;
+/** Longueur habituelle d'un APH (avertissement seulement). */
+export const APH_USUAL_DIGITS = 7;
+/** APH accepté à l'écriture : texte de 1 à 10 chiffres, sans espace (le formulaire nettoie les bords). */
+export const validAph = (v) => typeof v === 'string' && /^[0-9]{1,10}$/.test(v);
 
 /** Colonnes obligatoires à la création (non vides). */
 export const REQUIRED_ON_ADD = Object.freeze({
@@ -153,6 +161,7 @@ export const EXPECTED_TYPES = Object.freeze({
   'Chantiers.Criteres_de_succes': 'Text',
   'Team.nom': 'Text',
   'Team.email': 'Text',
+  'Team.aph': 'Text',
   'Team.role': 'Choice',
   'Team.Domaine': 'Choice',
   'Team.capaciteHebdo': 'Numeric',
@@ -273,7 +282,8 @@ function encodeCol(table, col, value) {
  * @param {Record<string,*>} changes valeurs du modèle, colonne → valeur
  * @param {Map<string,string>} [disabled] colonnes retirées pour la session
  * @param {{before?:object, refExists?:(table:string, id:number) => boolean, restoring?:string[],
- *          days?:number|null}} [ctx] days : jours de la période de la tâche après modification (borne 1 ETP)
+ *          days?:number|null, isEstimation?:(teamId:number) => boolean}} [ctx] days : jours de la période de la
+ *   tâche après modification (borne 1 ETP) ; isEstimation : personne estimation (Team.aph), exemptée de cette borne
  *   before : valeurs d'avant (les entrées de charges conservées telles quelles ne sont pas recontrôlées) ;
  *   refExists : existence d'une ligne (teamId des charges dans Team) ; restoring : colonnes remises à leur
  *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle).
@@ -296,6 +306,7 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
         ctx.before?.[col],
         (n) => Boolean(ctx.refExists?.('Team', n)),
         ctx.days ?? null,
+        ctx.isEstimation ?? null,
       );
       if (problem) throw new WriteRefused('charges', problem);
     }
@@ -592,6 +603,9 @@ function personProblem(it, after, touches, add, lookup, nameBad) {
   const choices = (col) => lookup.choices?.(`Team.${col}`) ?? null;
   if (touches('nom') && nameBad(after.nom)) return 'nom-personne';
   if (touches('email') && after.email && !isValidEmail(after.email)) return 'email';
+  // APH vide permis (non renseigné) ; sinon chiffres seulement, sans espace
+  if (touches('aph') && after.aph !== null && after.aph !== undefined && after.aph !== '' && !validAph(after.aph))
+    return 'aph';
   if (touches('role') && !(choices('role') ?? []).includes(after.role)) return 'role';
   if (touches('Domaine') && !(choices('Domaine') ?? []).includes(after.Domaine)) return 'domaine';
   // À la création, une capacité absente ou vide vaut 35 h par défaut
@@ -734,6 +748,8 @@ export function createWriter({
   const created = new Set(); // 'Table:id' créées dans la session (seules lignes supprimables, pour « Annuler »)
   const addRefused = new Set(); // tables où une règle d'accès refuse l'ajout
   const exists = refExists ?? (lookup ? (t, id) => Boolean(lookup.row(t, id)) : null);
+  // Personne estimation (Team.aph = ESTIMATION_APH dans les données chargées) : seule exemptée de la borne de 1 ETP
+  const isEstimation = (n) => isEstimationAph(lookup?.row('Team', n)?.aph);
   let seq = 0;
   let blocked = null; // refus sur tout le document : la session passe en lecture
   let undoing = false;
@@ -916,6 +932,7 @@ export function createWriter({
       refExists: exists,
       restoring,
       days,
+      isEstimation,
     });
     const also = opts.also ?? [];
     const derived = also.map((r) => buildUpdate(r.table, r.id, r.changes, disabled, { before: r.before }));

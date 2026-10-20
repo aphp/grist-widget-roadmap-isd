@@ -23,7 +23,7 @@ import {
 import { h, roleSpan, statusBadge } from '../ui/kit.js';
 import { raw } from '../core/sanitize.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
-import { activeBadge, capacityText, roleText, unavailabilityText } from './team.js';
+import { activeBadge, capacityText, estimationBadge, roleText, unavailabilityText } from './team.js';
 
 export const id = 'detail';
 
@@ -318,6 +318,7 @@ function personBody(model, p, today, canUnavEdit = false) {
       fields([
         ['person.field.role', roleText(p)],
         ['person.field.email', email],
+        ['person.field.aph', p.aph ? h`<span class="dt-aph">${p.aph}</span>${estimationBadge(p)}` : null],
         ['person.field.domaine', textOr(p.domaine)],
         [
           'person.field.n1',

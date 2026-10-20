@@ -1416,3 +1416,125 @@ for (const query of [
     },
   );
 }
+
+// ---------- APH (Team.aph) et personne estimation ----------
+
+test(
+  'APH : colonne formule vide de la Feuille, en lecture dans la fiche (raison affichée), absente de la création',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    assert.equal(await w(`return D.querySelectorAll('.tperson__aph').length;`), 0);
+    await clickOn('#btn-person-add');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-nom')`);
+    assert.equal(await w(`return Boolean(D.getElementById('pf-aph'));`), false);
+    await clickOn('#pf-cancel');
+    await until(`!D.querySelector('dialog.cdlg')`);
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').disabled;`), true);
+    assert.match(await w(`return D.getElementById('tf-aph-msgs').textContent;`), /Colonne vide/);
+    // Le reste de la fiche reste modifiable et s'enregistre sans toucher à l'APH
+    await typeIn('#tf-nom', 'Zoé DE modifiée');
+    await clickOn('#btn-form-save');
+    await until(`!D.getElementById('person-form') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [[['UpdateRecord', 'Team', 1, { nom: 'Zoé DE modifiée' }]]]);
+  },
+);
+
+test(
+  'APH : colonne de données, affiché dans la liste et la fiche, modifiable avec contrôle (chiffres seulement)',
+  { skip: SKIP },
+  async () => {
+    await openTeam('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
+    assert.equal(await w(`return D.querySelector('[data-aph="1"]').textContent.trim();`), 'APH 1000001');
+    // Personne estimation : badge « Estimation » ; aucune autre personne ne le porte
+    assert.match(await w(`return D.querySelector('[data-aph="19"]').textContent;`), /APH 9999999\s*Estimation/);
+    assert.equal(await w(`return D.querySelectorAll('.tperson .est-badge').length;`), 1);
+    await clickOn('[data-person="1"]');
+    await until(`D.getElementById('btn-edit-open')`);
+    assert.match(await w(`return D.getElementById('app-detail').textContent;`), /APH\s*1000001/);
+    await clickOn('#btn-edit-open');
+    await until(`D.getElementById('person-form')`);
+    assert.equal(await w(`return D.getElementById('tf-aph').disabled;`), false);
+    await typeIn('#tf-aph', '12a4567');
+    assert.match(await w(`return D.getElementById('tf-aph-msgs').textContent;`), /APH invalide/);
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    await typeIn('#tf-aph', ' 1234568 ');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    await clickOn('#btn-form-save');
+    await until(`!D.getElementById('person-form') && W.__writes.length === 1`);
+    assert.deepEqual(await writes(), [[['UpdateRecord', 'Team', 1, { aph: '1234568' }]]]);
+    await until(`/APH\\s*1234568/.test(D.getElementById('app-detail').textContent)`);
+    // Création : l'APH est proposé et envoyé nettoyé
+    await w(`D.getElementById('btn-detail-close').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'false'`);
+    await clickOn('#btn-person-add');
+    await until(`D.querySelector('dialog.cdlg[open] #pf-aph')`);
+    await typeIn('#pf-nom', 'Personne Aph');
+    await change('#pf-role', 'DA');
+    await typeIn('#pf-aph', ' 7000001 ');
+    await clickOn('#pf-submit');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 2`);
+    const [, [add]] = await writes();
+    assert.equal(add[0], 'AddRecord');
+    assert.equal(add[3].aph, '7000001');
+  },
+);
+
+test(
+  'estimation : 3 ETP acceptés pour la personne estimation (badge), refusés pour une autre personne',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire,aph-donnee');
+    await w(`localStorage.removeItem('roadmap-isd.chargesUnit'); return true;`);
+    const id = await openForm();
+    if (await w(`return D.getElementById('tf-type').checked;`))
+      await w(`const c = D.getElementById('tf-type'); c.click(); return true;`);
+    await until(`D.getElementById('tf-dateDebut')`);
+    const setDate = (f, iso) =>
+      w(
+        `const t = D.getElementById('tf-${f}'); t.value = '${iso}'; t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
+      );
+    // 14 jours : 1 ETP = 70 h, 3 ETP = 210 h
+    await setDate('dateDebut', '2026-11-02');
+    await setDate('dateEcheance', '2026-11-15');
+    const pick = (who) =>
+      w(`const s = D.getElementById('tf-assignees');
+        const o = [...s.querySelectorAll('optgroup option')].find((x) => ${who}); s.value = o.value;
+        s.dispatchEvent(new W.Event('change', { bubbles: true })); return Number(o.value);`);
+    const est = await pick(`x.textContent.trim() === 'Estimation DE'`);
+    await until(`D.getElementById('tf-ch-${est}')`);
+    assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est}"] .est-badge'));`));
+    await type(`tf-ch-${est}`, '3');
+    assert.equal(await w(`return D.getElementById('tf-ch-${est}-msg').textContent.trim();`), '');
+    assert.equal(await w(`return D.getElementById('tf-ch-${est}-eq').textContent.trim();`), '= 210 h');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    // Au-delà de 50 ETP : refusé même pour elle
+    await type(`tf-ch-${est}`, '51');
+    assert.match(await w(`return D.getElementById('tf-ch-${est}-msg').textContent;`), /50 ETP maximum/);
+    await type(`tf-ch-${est}`, '3');
+    // Une autre personne : 1 ETP au plus, sans badge
+    const other = await pick(`x.textContent.trim() !== 'Estimation DE'`);
+    await until(`D.getElementById('tf-ch-${other}')`);
+    assert.equal(await w(`return Boolean(D.querySelector('[data-charge="${other}"] .est-badge'));`), false);
+    await type(`tf-ch-${other}`, '3');
+    assert.match(
+      await w(`return D.getElementById('tf-ch-${other}-msg').textContent;`),
+      /1 ETP maximum par personne \(soit 70 h sur la période\)/,
+    );
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
+    await type(`tf-ch-${other}`, '1');
+    assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`W.__writes.length === 1`);
+    const [[[name, table, rowId, cells]]] = await writes();
+    assert.deepEqual([name, table, rowId], ['UpdateRecord', 'Tasks', id]);
+    assert.deepEqual(JSON.parse(cells.charges), [
+      { teamId: est, heures: 210 },
+      { teamId: other, heures: 70 },
+    ]);
+  },
+);

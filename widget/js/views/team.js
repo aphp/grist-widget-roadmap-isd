@@ -7,6 +7,7 @@
  * personne inactive (cochez « Inclure les inactifs »), seulement si l'édition est ouverte et que les droits le
  * permettent (ctx.team). Aucun rôle n'est créé ici : les rôles sont les choix existants de la Feuille.
  */
+import { ESTIMATION_APH, ESTIMATION_MAX_ETP, isEstimationPerson } from '../core/charges-edit.js';
 import { formatDateFr } from '../core/dates.js';
 import { groupUsersByRole, isdTeamSummary, roleShort, roleSummary, roleTone } from '../core/team-directory.js';
 import { raw } from '../core/sanitize.js';
@@ -38,6 +39,16 @@ export const roleText = (p) => roleShort(p.roleText) || label('team.role.none');
 /** Capacité hebdomadaire : celle de la Feuille, sinon 35 h par défaut. */
 export const capacityText = (p) =>
   p.capaciteHebdo ? label('team.capacity.value', { h: hours.format(p.capaciteHebdo) }) : label('team.capacity.default');
+
+/**
+ * Badge discret « Estimation » de la personne estimation (Team.aph = ESTIMATION_APH) : il explique pourquoi la
+ * limite de 1 ETP par personne ne s'applique pas à elle. Rien pour les autres personnes.
+ */
+export function estimationBadge(p) {
+  if (!isEstimationPerson(p)) return '';
+  const why = label('estimation.title', { aph: ESTIMATION_APH, etp: ESTIMATION_MAX_ETP });
+  return h` <span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--info est-badge" title="${why}">${label('estimation.badge')}<span class="fr-sr-only"> : ${why}</span></span>`;
+}
 
 export const activeBadge = (actif) =>
   actif
@@ -90,14 +101,20 @@ function isdCard(t) {
   </section>`;
 }
 
-/** Une personne : nom (fiche), Domaine, statut, capacité hebdomadaire ; « Réactiver » si elle est inactive. */
+/**
+ * Une personne : nom (fiche) et APH (discret), Domaine, statut, capacité hebdomadaire ; « Réactiver » si elle est
+ * inactive.
+ */
 function personRow(p, team) {
   const reactivate =
     !p.actif && team?.canReactivate?.(p.id)
       ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary tperson__action" data-person-reactivate="${p.id}" aria-label="${label('team.reactivate.aria', { nom: p.nom || label('common.untitled') })}">${label('team.reactivate')}</button>`
       : '';
   return h`<li class="tperson ${raw(p.actif ? '' : 'is-inactive')}" data-row="${p.id}">
-    <button type="button" class="tperson__name" data-person="${p.id}" aria-haspopup="dialog">${p.nom || label('common.untitled')}</button>
+    <span class="tperson__who">
+      <button type="button" class="tperson__name" data-person="${p.id}" aria-haspopup="dialog">${p.nom || label('common.untitled')}</button>
+      ${p.aph ? h`<span class="tperson__aph" data-aph="${p.id}">${label('team.aph', { aph: p.aph })}${estimationBadge(p)}</span>` : ''}
+    </span>
     <span class="tperson__team">${p.domaine || h`<span class="tperson__none" title="${label('team.none.aria')}">${label('team.noDomain')}</span>`}</span>
     <span class="tperson__status">${activeBadge(p.actif)}</span>
     <span class="tperson__cap"><span class="fr-sr-only">${label('team.capacity.sr')} </span>${capacityText(p)}</span>

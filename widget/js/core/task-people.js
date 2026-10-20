@@ -76,16 +76,17 @@ export function removePersonLine(draft, teamId) {
 }
 
 /**
- * Saisie de la charge d'une ligne (mêmes règles que la section des charges : 1 ETP au plus, ETP à une décimale,
- * valeur affichée ressaisie sans effet, moins de 0,25 h refusé…).
+ * Saisie de la charge d'une ligne (mêmes règles que la section des charges : 1 ETP au plus sauf pour la personne
+ * estimation, ETP à une décimale, valeur affichée ressaisie sans effet, moins de 0,25 h refusé…).
  * @param {object} draft brouillon (assignees, charges)
  * @param {number} teamId
  * @param {string} text valeur saisie
  * @param {'etp'|'heures'} unit
  * @param {number|null} days jours calendaires de la période
+ * @param {{estimation?:boolean}} [opts] estimation : la personne est la personne estimation (pas de borne de 1 ETP)
  * @returns {{charges:string, heures:number|null}|{error:{error:string, max?:number}}} heures null : charge vidée
  */
-export function lineInput(draft, teamId, text, unit, days) {
+export function lineInput(draft, teamId, text, unit, days, { estimation = false } = {}) {
   const cell = readChargesCell(draft.charges);
   if (!cell.ok) return { error: { error: 'nombre' } };
   const current = chargeRows(cell.entries).rows.find((r) => r.teamId === teamId) ?? null;
@@ -93,7 +94,7 @@ export function lineInput(draft, teamId, text, unit, days) {
     if (!draft.assignees.includes(teamId)) return { error: { error: 'vide' } };
     return { charges: current ? removePerson(draft.charges, teamId) : draft.charges, heures: null };
   }
-  const r = hoursFromInput(text, unit, days, current?.heures ?? null);
+  const r = hoursFromInput(text, unit, days, current?.heures ?? null, { estimation });
   if (r.error) return { error: r };
   // Valeur déjà affichée ressaisie : rien ne change (pas de dérive des heures stockées)
   if (current && r.heures === current.heures) return { charges: draft.charges, heures: r.heures };

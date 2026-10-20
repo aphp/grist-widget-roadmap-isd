@@ -15,6 +15,8 @@
 //   coupe           : flags.json répond { "edition": false } (arrêt d'urgence ; window.__coupe = true en cours de session) ;
 //   capacite-donnee : Team.capaciteHebdo devient une colonne de données (comme après sa conversion dans Grist par un
 //                     responsable) ; sans cette option, elle reste la colonne vide de la Feuille, non modifiable.
+//   aph-donnee      : Team.aph devient une colonne de données ; avec le jeu synthétique, des APH inventés et une
+//                     personne estimation « Estimation DE » (APH 9999999). Sans cette option : formule vide.
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -42,10 +44,18 @@
       const i = c.id.findIndex((_, k) => c.parentId[k] === team && c.colId[k] === 'capaciteHebdo');
       if (i >= 0) c.isFormula[i] = 0;
     }
+    if (has('aph-donnee')) {
+      const t = data._grist_Tables;
+      const team = t.id[t.tableId.indexOf('Team')];
+      const c = data._grist_Tables_column;
+      const i = c.id.findIndex((_, k) => c.parentId[k] === team && c.colId[k] === 'aph');
+      if (i >= 0) c.isFormula[i] = 0;
+    }
     return data;
   };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const synthetic = async () => (await import('/dev/synthetic-snapshot.js')).syntheticSnapshot();
+  const synthetic = async () =>
+    (await import('/dev/synthetic-snapshot.js')).syntheticSnapshot(undefined, { aph: has('aph-donnee') });
   async function readSnapshot() {
     if (params.get('donnees') === 'synthetiques') return synthetic();
     const r = await fetch('/dev/data/snapshot.json');

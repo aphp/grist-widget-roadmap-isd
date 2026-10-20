@@ -7,19 +7,19 @@
  * le Domaine ISD de la Feuille et un rôle parmi les profils ISD ou Management. Aucun rôle n'est créé : les rôles
  * sont les choix existants de Team.role. « Supprimer » une personne = la désactiver (Q9), jamais de suppression.
  *
- * Le brouillon contient les valeurs du modèle : textes (nom, email, role), nombre ou null (capaciteHebdo : null =
+ * Le brouillon contient les valeurs du modèle : textes (nom, email, aph, role), nombre ou null (capaciteHebdo : null =
  * 35 h par défaut), identifiant ou null (n_1). Indisponibilités : jours (dateDebut, dateFin), part disponible de 0
  * à 1 (dispo), textes (type, commentaire).
  */
-import { CAPACITY_MAX, NAME_MAX, validCapacity } from './grist-writer.js';
+import { APH_MAX_DIGITS, APH_USUAL_DIGITS, CAPACITY_MAX, NAME_MAX, validAph, validCapacity } from './grist-writer.js';
 import { ISD_ROLES } from './model.js';
 import { ROLE_ORDER, inIsdTeam, isValidEmail, isdDomain, pickerGroups } from './team-directory.js';
 import { sameValue } from './write-encode.js';
 
-export { CAPACITY_MAX };
+export { APH_MAX_DIGITS, CAPACITY_MAX };
 
 /** Champs du formulaire d'une personne (l'actif se change par « Désactiver » / « Réactiver »). */
-export const PERSON_FIELDS = Object.freeze(['nom', 'email', 'role', 'capaciteHebdo', 'n_1']);
+export const PERSON_FIELDS = Object.freeze(['nom', 'email', 'aph', 'role', 'capaciteHebdo', 'n_1']);
 /** Champs d'une indisponibilité (le membre est fixé à la création). */
 export const UNAV_FIELDS = Object.freeze(['dateDebut', 'dateFin', 'type', 'dispo', 'commentaire']);
 
@@ -79,6 +79,7 @@ export function personDraftFrom(base) {
   return {
     nom: base.nom ?? '',
     email: base.email ?? '',
+    aph: base.aph ?? '',
     role: base.role ?? '',
     capaciteHebdo: cap(base.capaciteHebdo),
     n_1: base.n_1 ?? null,
@@ -125,6 +126,10 @@ export function validatePerson(draft, { model, personId = null, domaine = '' }) 
   else if (nom.length > NAME_MAX) errors.nom = { key: 'form.error.titleLong', vars: { max: NAME_MAX } };
   const email = String(draft.email ?? '').trim();
   if (email && !isValidEmail(email)) errors.email = { key: 'person.error.email' };
+  const aph = String(draft.aph ?? '').trim();
+  if (aph && !validAph(aph)) errors.aph = { key: 'person.error.aph', vars: { max: APH_MAX_DIGITS } };
+  else if (aph && aph.length !== APH_USUAL_DIGITS)
+    warnings.push({ field: 'aph', key: 'person.warn.aphLength', vars: { n: APH_USUAL_DIGITS } });
   const choices = model.choices?.['Team.role'] ?? [];
   if (add && !draft.role) errors.role = { key: 'person.error.roleRequired' };
   else if (draft.role && (!choices.includes(draft.role) || (add && !ADD_ROLES.includes(draft.role))))
@@ -152,17 +157,19 @@ export function validatePerson(draft, { model, personId = null, domaine = '' }) 
 
 /** Brouillon d'une nouvelle personne. */
 export function newPersonDraft() {
-  return { nom: '', email: '', role: '', capaciteHebdo: null, n_1: null };
+  return { nom: '', email: '', aph: '', role: '', capaciteHebdo: null, n_1: null };
 }
 
 /**
- * Valeurs de création d'une personne : nom, rôle, Domaine ISD, actif ; e-mail, capacité et N+1 seulement s'ils
+ * Valeurs de création d'une personne : nom, rôle, Domaine ISD, actif ; e-mail, APH, capacité et N+1 seulement s'ils
  * sont renseignés et que la colonne peut être remplie (canAddField).
  */
 export function newPersonFields(draft, { model, canAddField = () => true }) {
   const out = { nom: String(draft.nom ?? '').trim(), role: draft.role, Domaine: isdDomainValue(model), actif: true };
   const email = String(draft.email ?? '').trim();
   if (email && canAddField('email')) out.email = email;
+  const aph = String(draft.aph ?? '').trim();
+  if (aph && canAddField('aph')) out.aph = aph;
   if (draft.capaciteHebdo !== null && canAddField('capaciteHebdo')) out.capaciteHebdo = draft.capaciteHebdo;
   if (draft.n_1 !== null && canAddField('n_1')) out.n_1 = draft.n_1;
   return out;

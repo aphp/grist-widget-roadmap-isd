@@ -25,11 +25,15 @@ function columnar(rows, cols) {
   return Object.fromEntries(['id', ...cols].map((c) => [c, rows.map((r) => (c in r ? r[c] : null))]));
 }
 
-/** Colonnes de chaque table : [colId, type, isFormula, choices?]. Formule vide pour Team.capaciteHebdo. */
+/**
+ * Colonnes de chaque table : [colId, type, isFormula, choices?]. Formule vide pour Team.capaciteHebdo et Team.aph
+ * (comme dans la Feuille) ; la variante { aph: true } fait de Team.aph une colonne de données.
+ */
 const SCHEMA = {
   Team: [
     ['nom', 'Text'],
     ['email', 'Text'],
+    ['aph', 'Text', 1],
     ['role', 'Choice', 0, ['Management', 'DS', 'DE', 'DA', 'PO Data']],
     ['actif', 'Bool'],
     ['Domaine', 'Choice', 0, [ISD, OTHER, 'Domaine voisin - VOI']],
@@ -125,11 +129,17 @@ const PEOPLE = [
   ['Yvon Voisin', '', 'Domaine voisin - VOI'],
 ];
 
+/** APH inventé de la personne estimation (même valeur que ESTIMATION_APH de widget/js/core/charges-edit.js). */
+const ESTIMATION_APH = '9999999';
+
 /**
  * @param {Date} [today] jour de référence (les dates sont placées autour de lui)
+ * @param {{aph?:boolean}} [opts] aph : Team.aph colonne de données (au lieu de la formule vide de la Feuille), avec
+ *   des APH inventés et une personne estimation « Estimation DE » (APH 9999999), ajoutée en dernier : les tâches
+ *   du jeu restent les mêmes
  * @returns {Record<string, object>} tables colonnaires, dont _grist_Tables et _grist_Tables_column
  */
-export function syntheticSnapshot(today = new Date()) {
+export function syntheticSnapshot(today = new Date(), { aph = false } = {}) {
   const random = rng(20261020);
   const pick = (arr) => arr[Math.floor(random() * arr.length)];
   const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) / 1000;
@@ -148,6 +158,7 @@ export function syntheticSnapshot(today = new Date()) {
     actif,
     Domaine,
     email: `${slug(nom)}@exemple.fr`,
+    aph: aph ? String(1000001 + i) : '',
     capaciteHebdo: 0,
     n_1: Domaine === ISD && role !== 'Management' ? 12 : 0,
   }));
@@ -283,6 +294,20 @@ export function syntheticSnapshot(today = new Date()) {
     }
   }
 
+  // Variante APH : la personne estimation (DE de l'ISD), sans tâche ; les tests lui ajoutent une charge
+  if (aph)
+    team.push({
+      id: team.length + 1,
+      nom: 'Estimation DE',
+      role: 'DE',
+      actif: true,
+      Domaine: ISD,
+      email: '',
+      aph: ESTIMATION_APH,
+      capaciteHebdo: 0,
+      n_1: 12,
+    });
+
   const dispos = [
     { id: 1, membre: 1, dateDebut: day(7), dateFin: day(11), dispo: 0, type: 'Congés' },
     { id: 2, membre: 5, dateDebut: day(21), dateFin: day(25), dispo: 0.5, type: 'Formation' },
@@ -317,7 +342,7 @@ export function syntheticSnapshot(today = new Date()) {
       parentId: ti + 1,
       colId,
       type,
-      isFormula,
+      isFormula: aph && t === 'Team' && colId === 'aph' ? 0 : isFormula,
       formula: '',
       widgetOptions: choices ? JSON.stringify({ choices }) : '',
     })),

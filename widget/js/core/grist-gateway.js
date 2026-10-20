@@ -59,11 +59,11 @@ export const REQUIRED = Object.freeze({
 });
 
 /**
- * Colonnes lues quand elles existent, jamais signalées si elles manquent (annuaire de l'équipe : adresse,
+ * Colonnes lues quand elles existent, jamais signalées si elles manquent (annuaire de l'équipe : adresse, APH,
  * domaine, N+1 ; nature de l'indisponibilité). Une colonne absente donne simplement une valeur vide.
  */
 export const OPTIONAL_COLUMNS = Object.freeze({
-  Team: ['email', 'n_1', 'Domaine'],
+  Team: ['email', 'aph', 'n_1', 'Domaine'],
   Tasks: ['progression', 'tags'],
   Disponibilites: ['type'],
 });

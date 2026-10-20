@@ -6,7 +6,7 @@
  * construite ici. Chaque enregistrement travaille sur un instantané : si le formulaire change pendant l'attente,
  * le résultat est quand même annoncé et appliqué au modèle, mais le nouveau formulaire n'est pas touché.
  */
-import { chargeRows, mergeDuplicates, periodDays, readChargesCell } from '../core/charges-edit.js';
+import { chargeRows, isEstimationPerson, mergeDuplicates, periodDays, readChargesCell } from '../core/charges-edit.js';
 import { addPersonLine, assignPerson, lineInput, removePersonLine } from '../core/task-people.js';
 import { conflictBatch, failureKind, runQuickStatus, runSave } from '../core/task-session.js';
 import { FORM_FIELDS, diffDraft, draftFrom, rebaseDraft, setMilestone, validateTask } from '../core/task-form.js';
@@ -56,6 +56,7 @@ const TEXT_FIELDS = new Set([
   'Criteres_de_succes',
   'nom',
   'email',
+  'aph',
 ]);
 const DATE_FIELDS = new Set(['dateDebut', 'dateEcheance', 'dateCloture', 'Debut', 'Fin']);
 
@@ -246,7 +247,9 @@ export function createTaskEditor(deps) {
   function chargeInput(t) {
     const id = Number(t.dataset.chargeInput);
     const days = periodDays(st.draft.dateDebut, st.draft.dateEcheance);
-    const r = lineInput(st.draft, id, t.value, st.chargesUnit, days);
+    // Personne estimation (Team.aph) : pas de borne de 1 ETP, seulement la borne de bon sens
+    const estimation = isEstimationPerson(model().people.get(id));
+    const r = lineInput(st.draft, id, t.value, st.chargesUnit, days, { estimation });
     if (r.error) {
       st.chargeErrors.set(id, r.error);
       st.chargeInputs.set(id, t.value);
