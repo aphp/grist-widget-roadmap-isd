@@ -1,8 +1,9 @@
 /** Vue Équipe : capacité, charge et taux par personne ISD et par mois, total par profil. Fonctions pures (spec §4.5). */
 import { personMonthCapacity, spreadHours } from './capacity.js';
+import { PROFILE_KEYS, profileKey } from './kanban-data.js';
 
-/** Ordre d'affichage des profils ISD. */
-export const TEAM_ROLES = Object.freeze(['PO', 'DA', 'DS', 'DE']);
+/** Ordre d'affichage des profils : profils ISD, puis Management de l'équipe ISD (« Mgmt »). */
+export const TEAM_ROLES = PROFILE_KEYS;
 export const TENSION_FROM = 85;
 export const OVER_FROM = 100;
 
@@ -32,8 +33,9 @@ function cellOf(ym, capacity, load, hours) {
 }
 
 /**
- * Plan de charge des personnes ISD sur les mois donnés. Chaque tâche de taskIds n'est comptée qu'une fois ;
- * les charges sur une tâche sans dates valides ou d'une personne hors ISD sont ignorées.
+ * Plan de charge des personnes actives de l'équipe ISD qui ont un profil (PO, DA, DS, DE ou Mgmt, voir
+ * profileKey) sur les mois donnés. Chaque tâche de taskIds n'est comptée qu'une fois ; les charges sur une tâche
+ * sans dates valides ou d'une autre personne sont ignorées.
  * @param {object} model modèle (core/model.js)
  * @param {Iterable<number>} taskIds tâches retenues par les filtres
  * @param {string[]} months clés 'YYYY-MM'
@@ -42,7 +44,7 @@ function cellOf(ym, capacity, load, hours) {
  */
 export function teamLoad(model, taskIds, months) {
   const wanted = new Set(months);
-  const isd = [...model.people.values()].filter((p) => p.isd && TEAM_ROLES.includes(p.role));
+  const isd = [...model.people.values()].map((p) => ({ ...p, role: profileKey(p, model) })).filter((p) => p.role);
   const acc = new Map(isd.map((p) => [p.id, new Map(months.map((ym) => [ym, {}]))]));
   for (const id of new Set(taskIds)) {
     const t = model.tasks.get(id);

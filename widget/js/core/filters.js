@@ -1,5 +1,5 @@
 /** Filtres (toutes vues) et préférences locales (navigateur). Voir spec §4.3 et §5. */
-import { GROUPS, SORTS } from './kanban-data.js';
+import { GROUPS, PROFILE_KEYS, SORTS, profileKey } from './kanban-data.js';
 import { COLUMNS, DEFAULT_COLUMNS, ROLE_ETP_COLUMNS } from './table-data.js';
 import { COLOR_BY, DEFAULT_LEVEL, GANTT_LEVELS, MAX_EXPANDED, SCALES } from './gantt-data.js';
 import { PORTFOLIO_MONTHS, PORTFOLIO_TABS } from './portfolio-data.js';
@@ -204,8 +204,7 @@ export function applyFilters(model, f, prefs) {
     const who = involved(task);
     if (onlyMine && !who.has(me)) return false;
     if (f.person && !who.has(f.person)) return false;
-    if (f.profile && ![...who].some((id) => model.people.get(id)?.isd && model.people.get(id).role === f.profile))
-      return false;
+    if (f.profile && ![...who].some((id) => profileKey(model.people.get(id), model) === f.profile)) return false;
     if (f.statuses.length && !f.statuses.includes(task.status)) return false;
     return true;
   };
@@ -366,7 +365,6 @@ export function activeFilterChips(f, model) {
 const isObject = (x) => typeof x === 'object' && x !== null && !Array.isArray(x);
 const textOr = (v, d) => (typeof v === 'string' ? v : d);
 const idOrNull = (v) => (Number.isFinite(v) ? v : null);
-const PROFILES = ['DE', 'DA', 'DS', 'PO'];
 
 /** Anciennes clés de colonnes (avant le vocabulaire de la Feuille) → nouvelles clés. */
 const RENAMED_COLUMNS = Object.freeze({ family: ['categorie'], product: ['projet'], task: ['tache', 'sousTache'] });
@@ -490,7 +488,7 @@ function sanitizePrefs(saved) {
       projet: textOr(f.projet, legacy.projet),
       chantier: textOr(f.chantier, legacy.chantier),
       person: idOrNull(f.person),
-      profile: PROFILES.includes(f.profile) ? f.profile : null,
+      profile: PROFILE_KEYS.includes(f.profile) ? f.profile : null,
       statuses: Array.isArray(f.statuses) && f.statuses.every((x) => typeof x === 'string') ? [...f.statuses] : [],
       // Ancien périmètre « Mes tâches » (tasks) et ancienne case « Mes chantiers » (mine) : « Mes chantiers », qui
       // couvre aussi les chantiers où l'on a une tâche (les tâches personnelles sont dans l'onglet « Mes tâches »)

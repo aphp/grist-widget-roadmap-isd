@@ -15,7 +15,7 @@ import {
   readChargesCell,
 } from '../core/charges-edit.js';
 import { formatDateFr } from '../core/dates.js';
-import { ETP_ROLES } from '../core/kanban-data.js';
+import { ETP_SPLIT } from '../core/kanban-data.js';
 import { priorityText, taskPriority } from '../core/kanban-data.js';
 import { breadcrumb } from '../core/detail-data.js';
 import { raw } from '../core/sanitize.js';
@@ -351,11 +351,9 @@ export function chargesFootHtml(st, model) {
   if (!rows.length) return '';
   const { hours, days, byRole } = chargesSummary(model, rows, st.draft.dateDebut, st.draft.dateEcheance);
   const parts = byRole
-    ? [...ETP_ROLES, 'Autre']
-        .filter((k) => byRole[k] > 0.0005)
-        .map(
-          (k) => `${k === 'Autre' ? label('kanban.etpOther') : label(`profile.${k}`)} ${etpFormat.format(byRole[k])}`,
-        )
+    ? ETP_SPLIT.filter((k) => byRole[k] > 0.0005).map(
+        (k) => `${k === 'Autre' ? label('kanban.etpOther') : label(`profile.${k}`)} ${etpFormat.format(byRole[k])}`,
+      )
     : [];
   const period = !days
     ? label('form.charges.periodNone')

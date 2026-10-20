@@ -91,11 +91,13 @@ const FR = Object.freeze({
   'profile.DS': 'DS',
   'profile.DE': 'DE',
   'profile.Management': 'Mgmt',
+  'profile.Mgmt': 'Mgmt',
   'profile.group.PO': 'PO',
   'profile.group.DA': 'DA',
   'profile.group.DS': 'DS',
   'profile.group.DE': 'DE',
   'profile.group.Management': 'Management',
+  'profile.group.Mgmt': 'Management',
 
   'status.todo': 'À faire',
   'status.inprogress': 'En cours',
@@ -272,7 +274,7 @@ const FR = Object.freeze({
   'portfolio.kpi.tasks.hint': 'Sous-tâches comprises',
   'portfolio.kpi.people': 'Personnes ISD impliquées',
   // ---- Portfolio : définition de l'équipe ISD (lot UX vues) ----
-  'portfolio.kpi.people.hint': 'Profils DE, DA, DS et PO assignés, responsables ou avec une charge (hors management)',
+  'portfolio.kpi.people.hint': 'Profils PO, DA, DS, DE et Management ISD assignés, responsables ou avec une charge',
   'portfolio.kpi.people.detail': '{profil} : {n}',
   'portfolio.tabs': 'Sous-vues du Portfolio',
   'portfolio.tab.projets': 'Projets',
@@ -1037,7 +1039,7 @@ const FR = Object.freeze({
   'heading.gantt.sub': 'Catégories, projets, chantiers et tâches dans le temps',
   'heading.portfolio.title': 'Portfolio',
   'heading.portfolio.sub':
-    'Projets, chantiers et charge de l’équipe ISD : profils DE, DA, DS et PO ayant une tâche, une responsabilité ou une charge',
+    'Projets, chantiers et charge de l’équipe ISD : profils PO, DA, DS, DE et Management ayant une tâche, une responsabilité ou une charge',
   'heading.synthesis.title': 'Synthèse',
   'heading.synthesis.sub': 'Tableau de pilotage et planning à copier dans un compte rendu',
 

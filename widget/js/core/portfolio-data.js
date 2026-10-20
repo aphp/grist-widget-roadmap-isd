@@ -1,7 +1,7 @@
 /** Portfolio : indicateurs, éléments des frises, échelle en mois, charge et capacité hebdomadaires par profil. Fonctions pures (spec §4.5, §5). */
 import { DAY_MS, MONTHS_FR, weekday } from './dates.js';
 import { personWeekCapacity } from './capacity.js';
-import { ETP_ROLES } from './kanban-data.js';
+import { PROFILE_KEYS, profileKey } from './kanban-data.js';
 import { normalize } from './text.js';
 
 /** Sous-onglets, dans l'ordre affiché. */
@@ -39,11 +39,11 @@ function walk(tree, fn) {
 
 /**
  * Indicateurs de l'en-tête : projets, chantiers (hors « (sans chantier) ») et tâches visibles (sous-tâches
- * comprises), chacun compté une fois même s'il apparaît sous plusieurs projets ; personnes ISD assignées,
- * responsables ou chargées sur une tâche visible, par profil.
+ * comprises), chacun compté une fois même s'il apparaît sous plusieurs projets ; personnes actives de l'équipe ISD
+ * (profils ISD et Management ISD) assignées, responsables ou chargées sur une tâche visible, par profil.
  * @param {object} model
  * @param {{tree:object[], taskIds:Set<number>}} view résultat de applyFilters
- * @returns {{projets:number, chantiers:number, taches:number, personnes:{total:number, PO:number, DA:number, DS:number, DE:number}}}
+ * @returns {{projets:number, chantiers:number, taches:number, personnes:{total:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number}}}
  */
 export function portfolioKpis(model, view) {
   const seen = { projet: new Set(), chantier: new Set(), tache: new Set() };
@@ -51,18 +51,17 @@ export function portfolioKpis(model, view) {
     const kind = n.kind === 'sous-tache' ? 'tache' : n.kind;
     if (n.ref && seen[kind]) seen[kind].add(refKey(n.ref));
   });
-  const people = new Set();
+  const people = new Map();
   for (const id of view.taskIds) {
     const t = model.tasks.get(id);
     if (!t) continue;
-    for (const p of [...t.assignees, t.responsable, ...t.charges.map((c) => c.personId)])
-      if (model.people.get(p)?.isd) people.add(p);
+    for (const p of [...t.assignees, t.responsable, ...t.charges.map((c) => c.personId)]) {
+      const key = profileKey(model.people.get(p), model);
+      if (key) people.set(p, key);
+    }
   }
-  const personnes = { total: people.size, PO: 0, DA: 0, DS: 0, DE: 0 };
-  for (const p of people) {
-    const role = model.people.get(p).role;
-    if (role in personnes) personnes[role]++;
-  }
+  const personnes = { total: people.size, PO: 0, DA: 0, DS: 0, DE: 0, Mgmt: 0 };
+  for (const key of people.values()) personnes[key]++;
   return {
     projets: seen.projet.size,
     chantiers: seen.chantier.size,
@@ -159,23 +158,22 @@ const round = (x) => Math.round(x * 1e6) / 1e6;
 
 /**
  * Charge et capacité hebdomadaires par profil, en heures, sur `weeks` semaines à partir du lundi de `startDay`.
- * Charge : heures des personnes ISD réparties sur les jours calendaires de chaque tâche (chaque tâche une fois).
- * Capacité : toutes les personnes ISD actives du profil (spec §4.5, jour par jour).
+ * Profils : PO, DA, DS, DE et Mgmt (Management de l'équipe ISD), personnes actives (profileKey).
+ * Charge : heures de ces personnes réparties sur les jours calendaires de chaque tâche (chaque tâche une fois).
+ * Capacité : toutes les personnes actives du profil (spec §4.5, jour par jour : capacité hebdomadaire ou 35 h,
+ * jours fériés, indisponibilités).
  * @param {object} model
  * @param {Iterable<number>} taskIds
  * @param {number} startDay
  * @param {number} weeks
- * @returns {{weekStart:number, PO:number, DA:number, DS:number, DE:number, capacity:{PO:number, DA:number, DS:number, DE:number}}[]}
+ * @returns {{weekStart:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, capacity:Record<string, number>}[]}
  */
 export function weeklyLoadByProfile(model, taskIds, startDay, weeks) {
   const first = mondayOf(startDay);
   const rows = Array.from({ length: weeks }, (_, i) => ({
     weekStart: first + 7 * i,
-    PO: 0,
-    DA: 0,
-    DS: 0,
-    DE: 0,
-    capacity: { PO: 0, DA: 0, DS: 0, DE: 0 },
+    ...Object.fromEntries(PROFILE_KEYS.map((k) => [k, 0])),
+    capacity: Object.fromEntries(PROFILE_KEYS.map((k) => [k, 0])),
   }));
   const last = first + 7 * weeks - 1;
   for (const id of new Set(taskIds)) {
@@ -183,19 +181,19 @@ export function weeklyLoadByProfile(model, taskIds, startDay, weeks) {
     if (!t || t.start === null || t.end === null || t.end < t.start || t.end < first || t.start > last) continue;
     const days = t.end - t.start + 1;
     for (const c of t.charges) {
-      const p = model.people.get(c.personId);
-      if (!p?.isd || !ETP_ROLES.includes(p.role)) continue;
+      const key = profileKey(model.people.get(c.personId), model);
+      if (!key) continue;
       const perDay = c.heures / days;
       for (const r of rows) {
         const n = Math.min(t.end, r.weekStart + 6) - Math.max(t.start, r.weekStart) + 1;
-        if (n > 0) r[p.role] += n * perDay;
+        if (n > 0) r[key] += n * perDay;
       }
     }
   }
-  const isd = [...model.people.values()].filter((p) => p.isd && ETP_ROLES.includes(p.role));
+  const team = [...model.people.values()].map((p) => ({ p, key: profileKey(p, model) })).filter((x) => x.key);
   for (const r of rows) {
-    for (const p of isd) r.capacity[p.role] += personWeekCapacity(p, r.weekStart);
-    for (const k of ETP_ROLES) {
+    for (const { p, key } of team) r.capacity[key] += personWeekCapacity(p, r.weekStart);
+    for (const k of PROFILE_KEYS) {
       r[k] = round(r[k]);
       r.capacity[k] = round(r.capacity[k]);
     }
@@ -221,12 +219,12 @@ export function loadRate(load, capacity) {
  * - nombre de semaines chargées, en dépassement et en tension ;
  * - moyenne des seules semaines chargées (heures de charge et de capacité par semaine), null sans charge.
  * @param {{weekStart:number, PO:number, DA:number, DS:number, DE:number, capacity:object}[]} rows
- * @returns {Record<'PO'|'DA'|'DS'|'DE', {weeks:number, loadedWeeks:number, overWeeks:number, tensionWeeks:number,
+ * @returns {Record<'PO'|'DA'|'DS'|'DE'|'Mgmt', {weeks:number, loadedWeeks:number, overWeeks:number, tensionWeeks:number,
  *   peak:{rate:number|null, weekStart:number, level:string}|null, level:string, avgLoaded:{load:number, capacity:number}|null}>}
  */
 export function summarizeWeeks(rows) {
   const out = {};
-  for (const k of ETP_ROLES) {
+  for (const k of PROFILE_KEYS) {
     const s = {
       weeks: rows.length,
       loadedWeeks: 0,

@@ -30,14 +30,14 @@ test('indicateurs : projets, chantiers et tâches visibles, personnes ISD impliq
   assert.equal(k.projets, 3); // Données Socle Commun EDS, ChatDPI, BI Gestion
   assert.equal(k.chantiers, 4); // 100, 200, 201 (partagé, une fois), 300 ; « (sans chantier) » exclu
   assert.equal(k.taches, 8); // tâches et sous-tâches : 1000, 1001, 1002, 1500, 2000, 2001, 2010 (une fois), 3000
-  assert.deepEqual(k.personnes, { total: 3, PO: 1, DA: 1, DS: 0, DE: 1 });
+  assert.deepEqual(k.personnes, { total: 3, PO: 1, DA: 1, DS: 0, DE: 1, Mgmt: 0 });
 });
 
 test('indicateurs : suivent les filtres', () => {
   const v = applyFilters(m, { ...DEFAULT_FILTERS, person: 5 }, DEFAULT_PREFS);
   const k = portfolioKpis(m, v);
   assert.deepEqual([k.projets, k.chantiers, k.taches], [2, 1, 2]);
-  assert.deepEqual(k.personnes, { total: 1, PO: 0, DA: 1, DS: 0, DE: 0 });
+  assert.deepEqual(k.personnes, { total: 1, PO: 0, DA: 1, DS: 0, DE: 0, Mgmt: 0 });
 });
 
 test('éléments de la frise : uniques, sans chantier virtuel, triés par début puis titre', () => {
@@ -158,7 +158,7 @@ test('taux : ok, tension, dépassement ; capacité nulle', () => {
 test('synthèse de la période : pic, semaines en dépassement / tension, moyenne des semaines chargées', () => {
   const w = weeklyLoadByProfile(m, view.taskIds, d('2026-10-26'), 3);
   const t = summarizeWeeks(w);
-  assert.deepEqual(Object.keys(t), ['PO', 'DA', 'DS', 'DE']);
+  assert.deepEqual(Object.keys(t), ['PO', 'DA', 'DS', 'DE', 'Mgmt']);
   // DE : 35 h pour 28,9 h la 1re semaine (121 %), 35 h sans capacité la 2e (Alice indisponible) → pic sans taux
   assert.deepEqual([t.DE.weeks, t.DE.loadedWeeks, t.DE.overWeeks, t.DE.tensionWeeks, t.DE.level], [3, 2, 2, 0, 'over']);
   assert.deepEqual([t.DE.peak.rate, isoOfDay(t.DE.peak.weekStart), t.DE.peak.level], [null, '2026-11-02', 'over']);

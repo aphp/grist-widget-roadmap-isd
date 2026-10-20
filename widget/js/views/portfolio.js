@@ -6,7 +6,7 @@
 import { raw } from '../core/sanitize.js';
 import { DAY_MS, MONTHS_FR, dayOfIso, formatDateFr, isoOfDay } from '../core/dates.js';
 import { hoursToEtp } from '../core/capacity.js';
-import { ETP_ROLES } from '../core/kanban-data.js';
+import { PROFILE_KEYS, profileKey } from '../core/kanban-data.js';
 import { barGeometry, isoWeek, pctOf, pdfFilenameOfDay } from '../core/gantt-data.js';
 import {
   PORTFOLIO_MONTHS,
@@ -32,8 +32,8 @@ export const id = 'portfolio';
 const PAGE = 150;
 /** Hauteurs de ligne (px), identiques au CSS : coupent les pages du PDF entre deux lignes. */
 const ROW_PX = Object.freeze({ timeline: 40, load: 44 });
-/** Couleur de chaque profil : rang dans la palette partagée (--viz-1 … --viz-4). */
-const PROFILE_SLOT = Object.freeze({ PO: 1, DA: 2, DS: 3, DE: 4 });
+/** Couleur de chaque profil : rang dans la palette partagée (--viz-1 … --viz-4), --viz-mgmt pour le Management. */
+const PROFILE_SLOT = Object.freeze({ PO: 1, DA: 2, DS: 3, DE: 4, Mgmt: 'mgmt' });
 /** État conservé entre deux rendus (rechargement des données) : recherche locale par sous-vue et génération. */
 const memory = { query: { projets: '', chantiers: '', taches: '' }, generation: 0 };
 
@@ -53,7 +53,7 @@ function datesText(bar) {
 function kpisHtml(k) {
   const tile = (name, value, hint) =>
     h`<li class="pf-kpi"><p class="pf-kpi__label">${label(name)}</p><p class="pf-kpi__value">${intFormat.format(value)}</p>${hint}</li>`;
-  const people = h`<ul class="list pf-kpi__profiles">${ETP_ROLES.map(
+  const people = h`<ul class="list pf-kpi__profiles">${PROFILE_KEYS.map(
     (r) =>
       h`<li><span class="pf-swatch pf-swatch--${r}" aria-hidden="true"></span>${label('portfolio.kpi.people.detail', { profil: label(`profile.${r}`), n: k.personnes[r] })}</li>`,
   )}</ul>`;
@@ -175,11 +175,11 @@ function cellHtml(load, capacity, extra = '') {
 }
 
 function loadRowHtml(row, max, today) {
-  const load = ETP_ROLES.reduce((s, k) => s + row[k], 0);
-  const capacity = ETP_ROLES.reduce((s, k) => s + row.capacity[k], 0);
+  const load = PROFILE_KEYS.reduce((s, k) => s + row[k], 0);
+  const capacity = PROFILE_KEYS.reduce((s, k) => s + row.capacity[k], 0);
   const { week } = isoWeek(row.weekStart);
   const current = today >= row.weekStart && today <= row.weekStart + 6;
-  const seg = ETP_ROLES.filter((k) => row[k] > 0).map(
+  const seg = PROFILE_KEYS.filter((k) => row[k] > 0).map(
     (k) => h`<span class="pf-seg pf-seg--${k}" style="width:${pct((row[k] / max) * 100)}"></span>`,
   );
   return h`<tr class="pf-load__row${current ? ' is-current' : ''}">
@@ -189,7 +189,7 @@ function loadRowHtml(row, max, today) {
     <td class="pf-load__chart" aria-hidden="true">
       <span class="pf-stack">${seg}${capacity > 0 ? h`<span class="pf-cap" style="left:${pct((capacity / max) * 100)}"></span>` : ''}</span>
     </td>
-    ${ETP_ROLES.map((k) => raw(cellHtml(row[k], row.capacity[k], ' pf-load__prof')))}
+    ${PROFILE_KEYS.map((k) => raw(cellHtml(row[k], row.capacity[k], ' pf-load__prof')))}
     ${raw(cellHtml(load, capacity))}
   </tr>`.toString();
 }
@@ -209,10 +209,13 @@ const weeksText = (n) => (n <= 1 ? label('portfolio.sum.week.one', { n }) : labe
 
 function summaryHtml(ctx, rows) {
   const t = summarizeWeeks(rows);
-  const people = Object.fromEntries(ETP_ROLES.map((k) => [k, 0]));
-  for (const p of ctx.model.people.values()) if (p.isd && p.role in people) people[p.role]++;
+  const people = Object.fromEntries(PROFILE_KEYS.map((k) => [k, 0]));
+  for (const p of ctx.model.people.values()) {
+    const key = profileKey(p, ctx.model);
+    if (key) people[key]++;
+  }
   return h`<ul class="list pf-sum" aria-label="${label('portfolio.load.summary')}">
-    ${ETP_ROLES.map((k) => {
+    ${PROFILE_KEYS.map((k) => {
       const s = t[k];
       const nb = people[k];
       const peak = s.peak;
@@ -242,8 +245,8 @@ function loadHtml(ctx, st, startDay) {
     1e-9,
     ...rows.map((r) =>
       Math.max(
-        ETP_ROLES.reduce((s, k) => s + r[k], 0),
-        ETP_ROLES.reduce((s, k) => s + r.capacity[k], 0),
+        PROFILE_KEYS.reduce((s, k) => s + r[k], 0),
+        PROFILE_KEYS.reduce((s, k) => s + r.capacity[k], 0),
       ),
     ),
   );
@@ -253,7 +256,7 @@ function loadHtml(ctx, st, startDay) {
     <h3 class="pf-subtitle">${label('portfolio.load.byWeek')}</h3>
     <div class="pf-info">
       <ul class="list pf-legend" aria-label="${label('portfolio.legend')}">
-        ${ETP_ROLES.map((k) => h`<li><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.group.${k}`)}</li>`)}
+        ${PROFILE_KEYS.map((k) => h`<li><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.group.${k}`)}</li>`)}
         <li><span class="pf-swatch pf-swatch--cap" aria-hidden="true"></span>${label('portfolio.load.capacity')}</li>
       </ul>
       <p class="pf-count">${label('portfolio.load.unit')} ${label('portfolio.load.thresholds')}</p>
@@ -264,7 +267,7 @@ function loadHtml(ctx, st, startDay) {
         <thead><tr>
           <th scope="col" class="pf-load__week">${label('portfolio.load.week')}</th>
           <th scope="col" class="pf-load__chart"><span aria-hidden="true">${label('portfolio.load.chart')}</span></th>
-          ${ETP_ROLES.map((k) => h`<th scope="col" class="pf-load__cell pf-load__prof"><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.${k}`)}</th>`)}
+          ${PROFILE_KEYS.map((k) => h`<th scope="col" class="pf-load__cell pf-load__prof"><span class="pf-swatch pf-swatch--${k}" aria-hidden="true"></span>${label(`profile.${k}`)}</th>`)}
           <th scope="col" class="pf-load__cell">${label('portfolio.load.total')}</th>
         </tr></thead>
         <tbody>${raw(rows.map((r) => loadRowHtml(r, max, ctx.today)).join(''))}</tbody>
@@ -273,12 +276,12 @@ function loadHtml(ctx, st, startDay) {
 }
 
 // ---------- PDF ----------
-const PROFILE_PRINT = Object.freeze(Object.fromEntries(ETP_ROLES.map((k) => [k, VIZ_PRINT[PROFILE_SLOT[k]]])));
+const PROFILE_PRINT = Object.freeze(Object.fromEntries(PROFILE_KEYS.map((k) => [k, VIZ_PRINT[PROFILE_SLOT[k]]])));
 
 function pdfLegend(tab) {
   if (tab === 'load')
     return [
-      ...ETP_ROLES.map((k) => ({ label: label(`profile.group.${k}`), color: PROFILE_PRINT[k], mark: 'box' })),
+      ...PROFILE_KEYS.map((k) => ({ label: label(`profile.group.${k}`), color: PROFILE_PRINT[k], mark: 'box' })),
       { label: label('portfolio.load.capacity'), color: VIZ_PRINT.summary, mark: 'line' },
     ];
   return [

@@ -14,14 +14,16 @@ const avail = 1 - 44 / workdaysInYear(2026);
 const near = (a, b) => Math.abs(a - b) < 1e-6;
 const cell = (rows, personId, ym) => rows.find((r) => r.personId === personId).months.find((x) => x.ym === ym);
 
-test('personnes ISD seulement, groupées par profil (PO, DA, DS, DE) puis par nom', () => {
+test('équipe ISD active seulement, groupée par profil (PO, DA, DS, DE, Mgmt) puis par nom', () => {
   const rows = teamLoad(m, view.taskIds, months);
+  // Fanny (6, Management ISD) a sa ligne « Mgmt » ; Gus (7, Management BNDMR), Carl (inactif), Dora (hors ISD) : non
   assert.deepEqual(
     rows.map((r) => [r.personId, r.role]),
     [
       [2, 'PO'],
       [5, 'DA'],
       [1, 'DE'],
+      [6, 'Mgmt'],
     ],
   );
   assert.equal(rows[0].months.length, 12);
@@ -107,6 +109,7 @@ test('total par profil : sommes de capacité et de charge, taux recalculé', () 
       ['PO', 1],
       ['DA', 1],
       ['DE', 1],
+      ['Mgmt', 1],
     ],
   );
   const de = totals.find((t) => t.role === 'DE').months.find((x) => x.ym === '2026-11');

@@ -87,6 +87,11 @@
 .pf-seg--DE {
   background: var(--viz-4);
 }
+/* Management de l'équipe ISD : même teinte que l'onglet Équipe, la ventilation des ETP et les Statistiques */
+.pf-swatch--Mgmt,
+.pf-seg--Mgmt {
+  background: var(--viz-mgmt);
+}
 /* Ambre sous 3:1 sur fond clair : fines rayures et contour pour détacher les segments DE (valeurs écrites à côté) */
 .pf-seg--DE,
 .pf-swatch--DE {
@@ -480,7 +485,8 @@
 }
 .pf-sum {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Une carte par profil : PO, DA, DS, DE, Mgmt */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--space-3);
 }
 .pf-sum__item {

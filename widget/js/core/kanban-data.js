@@ -30,11 +30,24 @@ function isdDomainOf(model) {
   return isdDomains.get(model);
 }
 
+/**
+ * Profils de l'équipe ISD (filtre Profil, charge et capacité par profil, plan de charge) : profils ISD, puis
+ * Management de l'équipe ISD (« Mgmt »).
+ */
+export const PROFILE_KEYS = Object.freeze([...ETP_ROLES, 'Mgmt']);
+
 /** Clé de la ventilation d'une personne : profil ISD, « Mgmt » (Management de l'équipe ISD), sinon « Autre ». */
 export function etpRoleKey(person, model) {
   if (person?.isd && ETP_ROLES.includes(person.role)) return person.role;
   if (person?.roleText === 'Management' && inIsdTeam(person, isdDomainOf(model))) return 'Mgmt';
   return 'Autre';
+}
+
+/** Profil d'une personne active de l'équipe ISD (PO, DA, DS, DE ou Mgmt) ; null sinon (inactive, hors ISD, sans rôle). */
+export function profileKey(person, model) {
+  if (!person?.isdTeam) return null;
+  const key = etpRoleKey(person, model);
+  return key === 'Autre' ? null : key;
 }
 
 /**

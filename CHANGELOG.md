@@ -10,6 +10,9 @@
   project lead, sponsor or key contributor. Projects and chantiers without tasks show "Aucune tâche" in the Gantt,
   which (like the Portfolio) no longer falls back to the empty state when only such items match. README: "Règles
   d'affichage".
+- Management ISD as a full profile "Mgmt": Profile filter (PO, DA, DS, DE, Mgmt), Portfolio KPIs and weekly load
+  and capacity per profile, load plan rows and totals in Statistics (same capacity rules), `--viz-mgmt` colour.
+  The charges footer of the task form now also shows the Mgmt share.
 
 ## [0.2.0] — 2026-10-20
 First published version.

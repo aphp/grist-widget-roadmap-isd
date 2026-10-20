@@ -41,7 +41,8 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
 - **Catégorie, Projet, Chantier** : limitent l'arbre à cet élément (listes en cascade, projets du périmètre). Ils
   s'appliquent aussi aux projets et chantiers sans tâche.
 - **Personne, Profil, Statut** (et Responsable sous « + Filtres ») : filtres de tâche. Personne : la personne est
-  assignée, responsable ou chargée ; Profil : une personne de ce profil l'est ; Statut : statut de la tâche. Dès
+  assignée, responsable ou chargée ; Profil (PO, DA, DS, DE ou Mgmt, le Management actif de l'équipe ISD) : une
+  personne active de ce profil l'est ; Statut : statut de la tâche. Dès
   qu'un de ces filtres est actif, seuls restent les projets et chantiers qui ont une tâche
   retenue.
 - **Éléments sans tâche** : un projet ou un chantier sans tâche apparaît dans le Gantt, avec la mention « Aucune

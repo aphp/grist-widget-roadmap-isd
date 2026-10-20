@@ -1995,3 +1995,21 @@ test(
     assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
   },
 );
+
+test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio', { skip: SKIP }, async () => {
+  await open('');
+  await w(
+    `const s = D.getElementById('f-profile'); s.value = 'Mgmt'; s.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
+  );
+  await until(`D.getElementById('chip-profile')`);
+  assert.match(await w(`return D.getElementById('chip-profile').textContent;`), /Profil : Management/);
+  assert.equal(await w(`return D.querySelector('#f-profile option[value="Mgmt"]').textContent.trim();`), 'Mgmt');
+  await until(`D.querySelector('#view-panel[data-view="kanban"] .kcard')`);
+  // Portfolio, charge : une colonne et une synthèse « Mgmt » avec sa capacité
+  await w(`D.getElementById('tab-portfolio').click(); return true;`);
+  await until(`D.querySelector('#view-panel[data-view="portfolio"]')`);
+  await until(`D.getElementById('pf-tab-load')`);
+  await w(`D.getElementById('pf-tab-load').click(); return true;`);
+  await until(`D.querySelector('.pf-load .pf-swatch--Mgmt') && D.querySelector('.pf-sum .pf-swatch--Mgmt')`);
+  assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
+});

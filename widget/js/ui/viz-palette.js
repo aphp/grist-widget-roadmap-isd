@@ -7,6 +7,7 @@ export const VIZ_PRINT = Object.freeze({
   2: '#eb6834',
   3: '#1a9e8a',
   4: '#8a5a00',
+  mgmt: '#5b21b6',
   neutral: '#6e7890',
   summary: '#5b6475',
   late: '#dc2626',

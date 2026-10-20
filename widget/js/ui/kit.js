@@ -16,7 +16,7 @@ export const TAB_ICONS = Object.freeze({
   synthesis: 'file-text-line',
   team: 'team-line',
 });
-export const PROFILES = Object.freeze(['PO', 'DA', 'DS', 'DE']);
+export const PROFILES = Object.freeze(['PO', 'DA', 'DS', 'DE', 'Mgmt']);
 export const THEMES = Object.freeze(['auto', 'light', 'dark']);
 const KNOWN_STATUSES = new Set(['todo', 'inprogress', 'review', 'done']);
 
