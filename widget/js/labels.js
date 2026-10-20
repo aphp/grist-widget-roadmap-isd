@@ -771,6 +771,8 @@ const FR = Object.freeze({
   'form.error.summary': 'Corrigez le champ signalé pour pouvoir enregistrer.',
   'form.error.summaryMany': 'Corrigez les {n} champs signalés pour pouvoir enregistrer.',
   'form.warn.outsideParent': 'Les dates sortent de celles de la tâche parente.',
+  'form.warn.chargesOverDates':
+    'Dates modifiées : {n} charge(s) au-dessus de 1 ETP sur la nouvelle période, conservée(s) telle(s) quelle(s) (le widget ne les contrôle pas à nouveau). Vérifiez-les ou ajustez-les.',
   'form.warn.chargesNoDates': 'Cette tâche porte des charges : sans début ni échéance, l’ETP ne peut pas être calculé.',
   'form.warn.doneNoClosure': 'Tâche terminée sans date de clôture.',
   'form.warn.reopened': 'Tâche rouverte : la date de clôture est conservée. Vous pouvez la vider ci-dessous.',
@@ -956,6 +958,8 @@ const FR = Object.freeze({
   'create.fail.missing': 'La tâche a été supprimée dans la Feuille entre-temps : rien n’a été envoyé.',
   'create.fail.reread':
     'Impossible de relire la tâche pour vérifier son rattachement : rien n’a été envoyé. Réessayez.',
+  'create.fail.people':
+    'La Feuille n’autorise plus les assignés ou les charges à la création : rien n’a été envoyé. Copiez votre saisie ci-dessous, puis fermez et rouvrez la fenêtre.',
   'create.fail.other': 'L’envoi a échoué. Votre saisie est conservée ; vérifiez dans la Feuille avant de réessayer.',
   'create.toast.task': 'Tâche créée.',
   'create.toast.taskDry': 'Mode essai : tâche notée, rien n’a été envoyé.',

@@ -16,7 +16,10 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   Disponibilites (lot équipe). `tags` en mise à jour seulement, jamais à la création. `charges` permis à la création
   d'une tâche (bloc « Personnes » des fenêtres de création) avec les contrôles de la mise à jour (`newChargesProblem` :
   JSON, personnes existantes, pas de 0,5 h, 1 ETP sur la période des dates du même AddRecord, exemption estimation)
-  et cohérent avec `assignees` (chaque personne chargée assignée, une entrée par personne). Projects et catégories :
+  et cohérent avec `assignees` (chaque personne chargée assignée, une entrée par personne, `charges` jamais sans assignés,
+  entrées exactement `{teamId, heures}`). Si le writer n'autorise plus assignés ou charges à l'envoi, la fenêtre bloque
+  et copie la saisie au lieu de la perdre en silence. Dates ajoutées ou changées ensuite (fiche) : les entrées déjà là
+  sont recopiées telles quelles (règle ci-dessous), la fiche avertit des lignes au-dessus de 1 ETP, sans les refuser. Projects et catégories :
   jamais. `RemoveRecord` seulement pour annuler une création de la session (ligne relue identique, aucune
   référence), jamais sur Team (une personne se désactive).
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente

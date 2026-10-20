@@ -225,3 +225,19 @@ test('charges : avertissements doublon, personne absente de l’équipe, charges
   // Contenu illisible : pas d'erreur bloquante (la section l'explique)
   assert.deepEqual(validateTask({ ...d, charges: 'oops' }, ctx(2010)).errors, {});
 });
+
+test('dates ajoutées ou changées : avertit des charges conservées au-dessus de 1 ETP sur la nouvelle période', () => {
+  const d = { ...draftFrom(base(2010)), dateDebut: dayOfIso('2026-10-01'), dateEcheance: dayOfIso('2026-10-14') };
+  const week = { ...d, dateEcheance: dayOfIso('2026-10-07') };
+  const charged = (x) => ({ ...x, charges: '[{"teamId":5,"heures":60}]' });
+  const keys = (x, b) => validateTask(x, { ...ctx(2010), base: b }).warnings.map((w) => w.key);
+  // 60 h sur 14 jours (70 h) : dans la borne ; sur 7 jours (35 h) : au-dessus, dates changées => avertissement
+  assert.deepEqual(keys(charged(d), d), []);
+  assert.ok(keys(charged(week), d).includes('form.warn.chargesOverDates'));
+  // Dates ajoutées à une tâche sans dates (créée sans dates : borne de 2 000 h)
+  const none = { ...week, dateDebut: null, dateEcheance: null };
+  assert.ok(keys(charged(week), none).includes('form.warn.chargesOverDates'));
+  // Dates inchangées ou sans période de référence : pas d'avertissement de ce type (la ligne le dit déjà)
+  assert.ok(!keys(charged(week), week).includes('form.warn.chargesOverDates'));
+  assert.ok(!keys(charged(week)).includes('form.warn.chargesOverDates'));
+});

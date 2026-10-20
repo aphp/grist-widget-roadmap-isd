@@ -5,7 +5,15 @@
  * Le brouillon contient les valeurs du modèle des colonnes modifiables : jours (dates), identifiants (Ref),
  * listes d'identifiants (RefList), textes et nombre (progression).
  */
-import { chargeRows, mergeCharges, readChargesCell, sameCharges } from './charges-edit.js';
+import {
+  chargeRows,
+  isEstimationPerson,
+  maxHours,
+  mergeCharges,
+  periodDays,
+  readChargesCell,
+  sameCharges,
+} from './charges-edit.js';
 import { chantierInScope } from './chantier-form.js';
 import { safeLink } from './detail-data.js';
 import { personInScope } from './person-form.js';
@@ -263,10 +271,12 @@ export function editAvailability(model, ref, edit) {
 /**
  * Règles du formulaire. Les erreurs bloquent l'enregistrement ; les avertissements non.
  * @param {object} draft brouillon
- * @param {{model:object, taskId:number, statuses?:string[], priorities?:string[]}} ctx
+ * @param {{model:object, taskId:number, statuses?:string[], priorities?:string[],
+ *   base?:{dateDebut:number|null, dateEcheance:number|null}}} ctx base : période de la tâche à l'ouverture (avertit
+ *   si des dates modifiées mettent des charges conservées au-dessus de 1 ETP)
  * @returns {{errors:Record<string,{key:string, vars?:object}>, warnings:{field:string, key:string, vars?:object}[]}}
  */
-export function validateTask(draft, { model, taskId, statuses = [], priorities = [] }) {
+export function validateTask(draft, { model, taskId, statuses = [], priorities = [], base = null }) {
   const errors = {};
   const warnings = [];
   const title = String(draft.titre ?? '').trim();
@@ -304,6 +314,13 @@ export function validateTask(draft, { model, taskId, statuses = [], priorities =
     warnings.push({ field: 'dateDebut', key: 'form.warn.chargesNoDates' });
   const dup = rows.filter((r) => r.count > 1).length;
   if (dup) warnings.push({ field: 'charges', key: 'form.warn.chargesDuplicate', vars: { n: dup } });
+  // Dates ajoutées ou modifiées : les charges déjà là sont recopiées telles quelles par le writer (jamais refusées),
+  // y compris celles créées sans dates (borne de 2 000 h) ; la fiche prévient donc des lignes au-dessus de 1 ETP
+  const days = periodDays(draft.dateDebut, draft.dateEcheance);
+  if (base && days && days !== periodDays(base.dateDebut, base.dateEcheance)) {
+    const over = rows.filter((r) => r.heures > maxHours(days, isEstimationPerson(model, r.teamId))).length;
+    if (over) warnings.push({ field: 'charges', key: 'form.warn.chargesOverDates', vars: { n: over } });
+  }
   const unknown = rows.filter((r) => !model.people.has(r.teamId)).length;
   if (unknown) warnings.push({ field: 'charges', key: 'form.warn.chargesUnknown', vars: { n: unknown } });
   if (draft.statut === DONE_STATUS && draft.dateCloture === null)

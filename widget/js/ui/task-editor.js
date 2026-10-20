@@ -72,6 +72,7 @@ const SPECS = Object.freeze({
         taskId: st.ref.id,
         statuses: model.statuses.tasks,
         priorities: model.choices?.['Tasks.priorite'] ?? [],
+        base: st.base,
       }),
     body: (st, model) => taskFormBody(st, model),
   },
