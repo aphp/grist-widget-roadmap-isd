@@ -1,0 +1,302 @@
+/*
+ * Variables de design du widget (spec §10). Le DSFR 1.15.3 fournit la structure et le comportement des
+ * composants (classes fr-*), mais son apparence est redéfinie ici : fond gris clair, cartes blanches
+ * arrondies, accent indigo pour la sélection et les liens, rouge pour les actions principales, police
+ * système. Clair et sombre suivent data-fr-theme sur <html>, posé par main.js (Automatique / Clair / Sombre).
+ * Grille de 4 px. Toutes les paires texte/fond sont ≥ 4,5:1 (rapport dans .superpowers/sdd/plan/theme-report.md).
+ */
+:root {
+  /* Fonds et surfaces */
+  --color-bg: var(--background-alt-grey);
+  --color-surface: var(--background-default-grey);
+  --color-surface-2: var(--background-contrast-grey);
+  --color-surface-hover: var(--background-default-grey-hover);
+  --color-surface-raised: var(--background-overlap-grey);
+  --color-border: var(--border-default-grey);
+  --color-border-strong: var(--border-plain-grey);
+  /* Contour des champs et boutons neutres (gris ardoise moyen, plus marqué que les bordures de carte) */
+  --color-border-field: #7c8ba1;
+
+  /* Texte */
+  --color-text: var(--text-default-grey);
+  --color-title: var(--text-title-grey);
+  --color-text-muted: var(--text-mention-grey);
+  --color-text-disabled: var(--text-disabled-grey);
+
+  /* Accent : indigo (sélection, liens, onglet actif) */
+  --color-accent: var(--background-action-high-blue-france);
+  --color-accent-text: #4f46e5;
+  --color-accent-soft: var(--background-action-low-blue-france);
+  --color-on-accent: var(--text-inverted-blue-france);
+  /* Indicateur de sélection (onglet actif, tête de colonne) : indigo vif, jamais porteur de texte */
+  --color-indicator: #6366f1;
+  --color-mark-dot: #ef4444;
+  --color-focus: #4f46e5;
+
+  /* Action principale : rouge, texte blanc (4,83:1 au repos, 6,47:1 au survol ; #ef4444 serait à 3,76:1) */
+  --color-primary: #dc2626;
+  --color-primary-hover: #b91c1c;
+  --color-primary-active: #991b1b;
+  --color-on-primary: #ffffff;
+
+  /* Badges : fond pastel, texte foncé (≥ 6:1) */
+  --badge-grey-bg: #f1f5f9;
+  --badge-grey-text: #334155;
+  --badge-info-bg: #dbeafe;
+  --badge-info-text: #1e40af;
+  --badge-success-bg: #f0fdf4;
+  --badge-success-text: #166534;
+  --badge-new-bg: #fef3c7;
+  --badge-new-text: #92400e;
+  --badge-error-bg: #fee2e2;
+  --badge-error-text: #991b1b;
+  --badge-purple-bg: #ede9fe;
+  --badge-purple-text: #5b21b6;
+
+  /*
+   * Données visualisées (Gantt, Portfolio, Statistiques, Équipe) : palette catégorielle validée
+   * (skill dataviz, paires voisines : daltonisme et vision normale) sur la surface claire #ffffff et la
+   * surface sombre #1e293b, toujours avec légende et libellé.
+   * --viz-1 à --viz-4 = profils PO, DA, DS, DE du Portfolio. Toutes les marques ≥ 3:1 sur la carte et sur
+   * le fond de page, en clair (#ffffff / #f8fafc) comme en sombre (#1e293b / #0f172a) ; les 4 teintes restent
+   * séparées deux à deux en protanopie et deutéranopie (ΔE OKLab ≥ 9, validateur dataviz, toutes paires).
+   * En sombre, --viz-4 est un ambre plus clair que la bande de luminosité du validateur, pour rester
+   * distinct de --viz-2 (orange). Neutres en gris ardoise, retard et aujourd'hui en rouge.
+   * Ratios mesurés : .superpowers/sdd/plan/ux-views-report.md.
+   * Copie imprimée (PDF) : widget/js/ui/viz-palette.js reprend les valeurs claires (test de cohérence).
+   */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1a9e8a;
+  --viz-4: #8a5a00;
+  --viz-neutral: #6e7890;
+  --viz-summary: #5b6475;
+  --viz-late: #dc2626;
+  --viz-today: #e11d48;
+
+  /*
+   * Statistiques : une couleur par statut (familles des badges : ardoise foncée à faire, bleu en cours, ambre
+   * en revue — hachuré, pour le distinguer de « terminé » en vision des couleurs altérée —, vert terminé,
+   * ardoise moyenne pour les autres statuts) et une rampe violette par priorité (badge de priorité), la plus
+   * foncée pour la plus urgente. Toutes les marques ≥ 3:1 sur la carte (#ffffff ici, #1e293b en sombre) ;
+   * valeur et libellé toujours écrits à côté de la barre.
+   */
+  --status-todo-mark: #475569;
+  --status-inprogress-mark: #3b82f6;
+  --status-review-mark: #c2770a;
+  --status-done-mark: #15803d;
+  --status-other-mark: #7a8aa0;
+  --prio-1-mark: #4c1d95;
+  --prio-2-mark: #6d28d9;
+  --prio-3-mark: #8b5cf6;
+  --prio-4-mark: #9b7bf7;
+
+  /*
+   * Taux de charge (vue Équipe) : couleurs d'état réservées (DSFR succès / avertissement / erreur),
+   * toujours accompagnées du pourcentage écrit et, pour tension et dépassement, d'un pictogramme.
+   */
+  --load-ok-bg: var(--background-alt-green-emeraude);
+  --load-ok-mark: var(--border-plain-success);
+  --load-tension-bg: var(--background-contrast-yellow-tournesol);
+  --load-tension-mark: var(--border-plain-warning);
+  --load-over-bg: var(--background-contrast-error);
+  --load-over-mark: var(--border-plain-error);
+  --load-text-over: var(--text-default-error);
+  --load-text-tension: var(--text-default-warning);
+
+  /* Squelette */
+  --color-skeleton: var(--background-contrast-grey);
+  --color-skeleton-shine: var(--background-default-grey);
+
+  /* Espacements (grille 4 px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  /* Typographie : police système (Marianne n'est plus utilisée, donc plus téléchargée) */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --line-height-tight: 1.25;
+  --line-height-base: 1.5;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  /* Arrondis : badges, champs et boutons, cartes et panneaux, étiquettes en pilule */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* Ombres douces */
+  --shadow-1: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-3: 0 10px 24px -6px rgb(15 23 42 / 0.16), 0 2px 6px rgb(15 23 42 / 0.08);
+  /* Voile sous la fiche détail (modale) */
+  --color-backdrop: rgb(15 23 42 / 0.32);
+
+  /* Divers */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --drawer-width: 440px;
+
+  /*
+   * Teintes primitives du DSFR redéfinies (gris neutres → gris ardoise, bleu France → indigo) : tous les
+   * composants fr-* qui en dépendent (boutons secondaires, onglets, cases, contrôle segmenté, étiquettes…)
+   * suivent sans règle supplémentaire. Les variables -hover / -active servent aux états de survol du DSFR.
+   */
+  --grey-1000-50: #ffffff;
+  --grey-1000-50-hover: #f8fafc;
+  --grey-1000-50-active: #f1f5f9;
+  --grey-975-75: #f8fafc;
+  --grey-975-75-hover: #f1f5f9;
+  --grey-975-75-active: #e2e8f0;
+  --grey-950-100: #f1f5f9;
+  --grey-950-100-hover: #e2e8f0;
+  --grey-950-100-active: #cbd5e1;
+  --grey-200-850: #1e293b;
+  --grey-200-850-hover: #334155;
+  --grey-200-850-active: #475569;
+  --grey-925-125: #e2e8f0;
+  --grey-1000-75: #ffffff;
+  --grey-1000-75-hover: #f8fafc;
+  --grey-1000-75-active: #f1f5f9;
+  --grey-1000-100: #ffffff;
+  --grey-1000-100-hover: #f8fafc;
+  --grey-1000-100-active: #f1f5f9;
+  --grey-975-100: #f8fafc;
+  --grey-975-100-hover: #f1f5f9;
+  --grey-975-100-active: #e2e8f0;
+  --grey-975-125: #f8fafc;
+  --grey-975-125-hover: #f1f5f9;
+  --grey-975-125-active: #e2e8f0;
+  --grey-950-125: #f1f5f9;
+  --grey-950-125-hover: #e2e8f0;
+  --grey-950-125-active: #cbd5e1;
+  --grey-950-150: #f1f5f9;
+  --grey-950-150-hover: #e2e8f0;
+  --grey-950-150-active: #cbd5e1;
+  --grey-50-1000: #0f172a;
+  --grey-425-625: #475569;
+  --grey-625-425: #94a3b8;
+  --grey-900-175: #e2e8f0;
+  --blue-france-975-75: #eef2ff;
+  --blue-france-975-75-hover: #e0e7ff;
+  --blue-france-975-75-active: #d4dcfe;
+  --blue-france-950-100: #eef2ff;
+  --blue-france-950-100-hover: #e0e7ff;
+  --blue-france-950-100-active: #d4dcfe;
+  --blue-france-sun-113-625: #4f46e5;
+  --blue-france-sun-113-625-hover: #4338ca;
+  --blue-france-sun-113-625-active: #3730a3;
+  --blue-france-925-125: #e0e7ff;
+  --blue-france-925-125-hover: #d4dcfe;
+  --blue-france-925-125-active: #c7d2fe;
+  --blue-france-975-sun-113: #ffffff;
+  --blue-france-main-525: #6366f1;
+  --blue-france-850-200: #c7d2fe;
+}
+
+:root[data-fr-theme='dark'] {
+  color-scheme: dark;
+  --color-border-field: #64748b;
+  --color-accent-text: #a5b4fc;
+  --color-mark-dot: #f87171;
+  --color-focus: #a5b4fc;
+  --color-indicator: #818cf8;
+
+  --badge-grey-bg: #334155;
+  --badge-grey-text: #cbd5e1;
+  --badge-info-bg: #1e3a5f;
+  --badge-info-text: #bfdbfe;
+  --badge-success-bg: #14432a;
+  --badge-success-text: #bbf7d0;
+  --badge-new-bg: #4a3410;
+  --badge-new-text: #fde68a;
+  --badge-error-bg: #4c1d1d;
+  --badge-error-text: #fecaca;
+  --badge-purple-bg: #3b2a6b;
+  --badge-purple-text: #ddd6fe;
+
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #d6a000;
+  --viz-neutral: #74839a;
+  --viz-summary: #94a3b8;
+  --viz-late: #f87171;
+  --viz-today: #fb7185;
+  --status-todo-mark: #cbd5e1;
+  --status-inprogress-mark: #3b82f6;
+  --status-review-mark: #c98a08;
+  --status-done-mark: #178a4a;
+  --status-other-mark: #7b8aa1;
+  --prio-1-mark: #ddd6fe;
+  --prio-2-mark: #c4b5fd;
+  --prio-3-mark: #a78bfa;
+  --prio-4-mark: #8b5cf6;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-3: 0 12px 28px -6px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
+
+  /* Ardoise sombre : page #0f172a, cartes #1e293b, menus et panneau #243247 */
+  --grey-1000-50: #1e293b;
+  --grey-1000-50-hover: #273449;
+  --grey-1000-50-active: #314058;
+  --grey-975-75: #0f172a;
+  --grey-975-75-hover: #1e293b;
+  --grey-975-75-active: #273449;
+  --grey-950-100: #162033;
+  --grey-950-100-hover: #22304a;
+  --grey-950-100-active: #2c3b56;
+  --grey-200-850: #e2e8f0;
+  --grey-200-850-hover: #cbd5e1;
+  --grey-200-850-active: #b6c2d2;
+  --grey-925-125: #273449;
+  --grey-1000-75: #223047;
+  --grey-1000-75-hover: #2b3a53;
+  --grey-1000-75-active: #34445f;
+  --grey-1000-100: #243247;
+  --grey-1000-100-hover: #2d3c55;
+  --grey-1000-100-active: #364660;
+  --grey-975-100: #1e293b;
+  --grey-975-100-hover: #273449;
+  --grey-975-100-active: #314058;
+  --grey-975-125: #223047;
+  --grey-975-125-hover: #2b3a53;
+  --grey-975-125-active: #34445f;
+  --grey-950-125: #1b2638;
+  --grey-950-125-hover: #263349;
+  --grey-950-125-active: #304058;
+  --grey-950-150: #22304a;
+  --grey-950-150-hover: #2c3b56;
+  --grey-950-150-active: #364662;
+  --grey-50-1000: #f8fafc;
+  --grey-425-625: #94a3b8;
+  --grey-625-425: #64748b;
+  --grey-900-175: #334155;
+  --blue-france-975-75: #1c2045;
+  --blue-france-975-75-hover: #2a2f63;
+  --blue-france-975-75-active: #353b75;
+  --blue-france-950-100: #20254f;
+  --blue-france-950-100-hover: #2e3468;
+  --blue-france-950-100-active: #3a417a;
+  --blue-france-sun-113-625: #a5b4fc;
+  --blue-france-sun-113-625-hover: #c7d2fe;
+  --blue-france-sun-113-625-active: #e0e7ff;
+  --blue-france-925-125: #262b5c;
+  --blue-france-925-125-hover: #333a78;
+  --blue-france-925-125-active: #3f4790;
+  --blue-france-975-sun-113: #1e1b4b;
+  --blue-france-main-525: #818cf8;
+  --blue-france-850-200: #3730a3;
+  --color-backdrop: rgb(0 0 0 / 0.56);
+}

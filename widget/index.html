@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr" data-fr-scheme="system" data-fr-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https://grist.numerique.gouv.fr; frame-src 'self'"
+    />
+    <title>Roadmap ISD</title>
+    <link rel="icon" href="data:," />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="vendor/dsfr/dsfr.min.css" />
+    <link rel="stylesheet" href="vendor/dsfr/icons.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/shell.css" />
+    <link rel="stylesheet" href="css/kanban.css" />
+    <link rel="stylesheet" href="css/table.css" />
+    <link rel="stylesheet" href="css/gantt.css" />
+    <link rel="stylesheet" href="css/portfolio.css" />
+    <link rel="stylesheet" href="css/stats.css" />
+    <link rel="stylesheet" href="css/synthesis.css" />
+    <link rel="stylesheet" href="css/load-plan.css" />
+    <link rel="stylesheet" href="css/team.css" />
+    <link rel="stylesheet" href="css/my-tasks.css" />
+    <link rel="stylesheet" href="css/detail.css" />
+    <link rel="stylesheet" href="css/edit.css" />
+    <script src="vendor/grist-plugin-api.js"></script>
+    <script type="module" src="js/main.js"></script>
+  </head>
+  <body>
+    <div id="app" class="app" aria-busy="true">
+      <header id="app-header" class="app-header"></header>
+      <div id="app-alerts" class="app-alerts"></div>
+      <nav id="app-tabs" class="app-tabs"></nav>
+      <section id="app-filters" class="app-filters"></section>
+      <main id="app-main" class="app-main"></main>
+    </div>
+    <aside id="app-detail" class="drawer" role="dialog" aria-modal="false" aria-labelledby="detail-title"></aside>
+  </body>
+</html>

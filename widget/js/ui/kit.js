@@ -1,0 +1,100 @@
+/** Briques communes de la coquille : gabarit sûr, icônes, badges, constantes, personnes ISD, focus. */
+import { html, raw } from '../core/sanitize.js';
+import { pickerGroups } from '../core/team-directory.js';
+import { label, statusLabel } from '../labels.js';
+
+/** Onglets, dans l'ordre de la spec ; « Mes tâches » (vue personnelle, P-UX-1) en tête. */
+export const TABS = Object.freeze(['mytasks', 'kanban', 'table', 'gantt', 'portfolio', 'stats', 'synthesis', 'team']);
+/** Icône DSFR de chaque onglet (décorative, devant le libellé). */
+export const TAB_ICONS = Object.freeze({
+  mytasks: 'calendar-todo-line',
+  kanban: 'layout-column-line',
+  table: 'table-line',
+  gantt: 'road-map-line',
+  portfolio: 'stack-line',
+  stats: 'bar-chart-box-line',
+  synthesis: 'file-text-line',
+  team: 'team-line',
+});
+export const PROFILES = Object.freeze(['PO', 'DA', 'DS', 'DE']);
+export const THEMES = Object.freeze(['auto', 'light', 'dark']);
+const KNOWN_STATUSES = new Set(['todo', 'inprogress', 'review', 'done']);
+
+/** Gabarit html`` dont le résultat est un fragment sûr, imbriquable sans double échappement. */
+export const h = (strings, ...values) => raw(html(strings, ...values));
+
+/** Icône du Système de design de l'État (classe fr-icon-*), décorative. */
+export const icon = (name, extra = '') =>
+  raw(`<span class="fr-icon-${name}${extra ? ` ${extra}` : ''}" aria-hidden="true"></span>`);
+
+export const ICONS = Object.freeze({
+  mark: raw(
+    '<svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">' +
+      '<rect width="32" height="32" rx="4" class="brand__mark-bg"/>' +
+      '<path d="M6 21h20" class="brand__mark-line"/>' +
+      '<rect x="7" y="9" width="10" height="4" rx="2" class="brand__mark-bar"/>' +
+      '<rect x="13" y="15" width="12" height="4" rx="2" class="brand__mark-bar brand__mark-bar--2"/>' +
+      '<circle cx="22" cy="21" r="2.5" class="brand__mark-dot"/></svg>',
+  ),
+  warning: icon('error-warning-line', 'fr-icon--lg'),
+  lock: icon('lock-line', 'fr-icon--lg'),
+  empty: icon('search-line', 'fr-icon--lg'),
+  people: icon('team-line', 'fr-icon--lg'),
+  grist: icon('table-line', 'fr-icon--lg'),
+});
+
+/** Variante de badge DSFR par statut connu ; les autres statuts restent gris. Le libellé est toujours affiché. */
+const BADGE = Object.freeze({
+  todo: '',
+  inprogress: 'fr-badge--info',
+  review: 'fr-badge--new',
+  done: 'fr-badge--success',
+});
+
+/** Badge de statut : couleur ET libellé (jamais la couleur seule). */
+export function statusBadge(status) {
+  const variant = KNOWN_STATUSES.has(status) ? BADGE[status] : '';
+  return h`<span class="fr-badge fr-badge--sm fr-badge--no-icon ${raw(variant)}">${statusLabel(status)}</span>`;
+}
+
+/** Personnes des sélecteurs groupées par profil (PO, DA, DS, DE) puis Management (voir pickerGroups). */
+export const isdPeopleByProfile = pickerGroups;
+
+/**
+ * Badge écrit du rôle d'une personne (« PO », « DE », « Mgmt »…) ; « Mgmt » porte le libellé complet
+ * « Management » en infobulle et pour les lecteurs d'écran.
+ */
+export function roleSpan(cls, role) {
+  const short = label(`profile.${role}`);
+  const full = label(`profile.group.${role}`);
+  return full === short
+    ? h`<span class="${raw(cls)}">${short}</span>`
+    : h`<span class="${raw(cls)}" title="${full}"><span aria-hidden="true">${short}</span><span class="fr-sr-only">${full}</span></span>`;
+}
+
+/** Texte complet d'un rôle (infobulles, lecteurs d'écran) : « Management » plutôt que « Mgmt ». */
+export const roleFullText = (role) => label(`profile.group.${role}`);
+
+/** Options d'une liste de personnes ISD groupées par profil. */
+export function personOptions(model, selected, emptyLabel) {
+  const groups = isdPeopleByProfile(model).map(
+    (g) =>
+      h`<optgroup label="${label(`profile.group.${g.role}`)}">
+        ${g.people.map(
+          (p) =>
+            h`<option value="${p.id}" ${raw(p.id === selected ? 'selected' : '')}>
+              ${p.nom || label('common.untitled')}
+            </option>`,
+        )}
+      </optgroup>`,
+  );
+  return h`<option value="">${emptyLabel}</option>${raw(groups.join(''))}`;
+}
+
+/** Rend un contenu en gardant le focus sur l'élément de même id (les filtres sont redessinés à chaque changement). */
+export function keepFocus(container, markup) {
+  const active = document.activeElement;
+  const id = active && container.contains(active) ? active.id : '';
+  container.innerHTML = markup;
+  if (id) document.getElementById(id)?.focus();
+}

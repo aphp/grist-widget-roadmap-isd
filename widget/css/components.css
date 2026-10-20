@@ -1,0 +1,375 @@
+/*
+ * Composants que le DSFR ne couvre pas sans son JavaScript : carte simple, menu surgissant, infobulle,
+ * panneau latéral, squelette, état vide. Boutons, champs, étiquettes, badges, onglets, contrôle segmenté,
+ * alertes et bandeau viennent du DSFR (classes fr-*), réhabillés ci-dessous (formes et couleurs du thème).
+ */
+
+/* ---- Habillage des composants DSFR ---- */
+/* Police système partout (le DSFR impose Marianne sur body et les champs) */
+body,
+input,
+select,
+textarea {
+  font-family: var(--font-sans);
+}
+/* Anneau de focus aux couleurs du thème (le DSFR le fixe en bleu #0a76f6) */
+:is(a, button, input, select, textarea, summary, [tabindex]):focus,
+input[type='checkbox']:focus ~ label::before,
+input[type='radio']:focus ~ label::before,
+.fr-segmented__element input:focus ~ label {
+  outline-color: var(--color-focus);
+}
+
+/* Densité compacte : libellés, champs et boutons en 14 px, hauteur 36 px */
+.fr-label,
+.fr-segmented__legend {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Boutons : arrondis ; action principale en rouge, secondaire en contour indigo, tertiaire neutre */
+.fr-btn {
+  border-radius: var(--radius-md);
+}
+.fr-btn:not(.fr-btn--sm, .fr-btn--lg) {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.875rem;
+  font-size: var(--font-size-sm);
+}
+/* :where() garde la spécificité de .fr-btn : les états :hover et :disabled du DSFR s'appliquent toujours */
+.fr-btn:where(:not(.fr-btn--secondary, .fr-btn--tertiary, .fr-btn--tertiary-no-outline, .fr-btn--close)) {
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+  --hover: var(--color-primary-hover);
+  --active: var(--color-primary-active);
+}
+.fr-btn--tertiary {
+  background-color: var(--color-surface);
+  color: var(--color-title);
+  box-shadow: inset 0 0 0 1px var(--color-border-field);
+  --hover: var(--color-surface-hover);
+  --active: var(--background-default-grey-active);
+}
+
+/* Champs : fond de carte, contour fin arrondi (au lieu du champ gris souligné du DSFR) */
+.fr-input,
+.fr-select {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: var(--font-size-sm);
+  line-height: 1.25rem;
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-border-field);
+}
+.fr-input-wrap[class*='fr-icon-']::before {
+  top: 0.625rem;
+}
+.fr-input:disabled,
+.fr-select:disabled {
+  background-color: var(--color-surface-2);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+/* Étiquettes en pilule, badges légèrement arrondis : fond pastel, texte foncé */
+.fr-tag {
+  border-radius: var(--radius-pill);
+}
+.fr-badge {
+  border-radius: var(--radius-sm);
+  text-transform: none;
+  font-weight: var(--font-weight-bold);
+  color: var(--badge-grey-text);
+  background-color: var(--badge-grey-bg);
+}
+.fr-badge--sm {
+  padding: 0 var(--space-2);
+}
+.fr-badge--info {
+  color: var(--badge-info-text);
+  background-color: var(--badge-info-bg);
+}
+.fr-badge--success {
+  color: var(--badge-success-text);
+  background-color: var(--badge-success-bg);
+}
+.fr-badge--new {
+  color: var(--badge-new-text);
+  background-color: var(--badge-new-bg);
+}
+.fr-badge--error {
+  color: var(--badge-error-text);
+  background-color: var(--badge-error-bg);
+}
+.fr-badge--purple-glycine {
+  color: var(--badge-purple-text);
+  background-color: var(--badge-purple-bg);
+}
+
+/* Contrôle segmenté : pilules, segment choisi en indigo doux */
+.fr-segmented__elements {
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-border-field);
+}
+.fr-segmented input ~ label {
+  border-radius: var(--radius-md);
+}
+.fr-segmented:not(.fr-segmented--sm) input ~ label {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.875rem;
+  font-size: var(--font-size-sm);
+}
+.fr-segmented__element input:checked ~ label {
+  background-color: var(--color-accent-soft);
+  font-weight: var(--font-weight-bold);
+}
+
+/* Bandeaux et alertes : arrondis */
+.fr-notice,
+.fr-alert {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Tableau : cadre arrondi */
+.fr-table__wrapper {
+  border-radius: var(--radius-lg);
+}
+
+/* ---- Carte ---- */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-4);
+}
+
+/* ---- Titre de vue commun (viewHeading) : une ligne, filet d'accent, contrôles à droite ---- */
+.view-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  /* Pas de marge propre : chaque vue est une colonne flex dont le gap espace déjà le titre du contenu */
+  margin: 0;
+  padding: 2px 0 2px var(--space-3);
+  border-left: 3px solid var(--color-primary);
+}
+.view-heading__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+  min-width: 0;
+}
+.view-heading__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-title);
+}
+.view-heading__sub,
+.view-heading__sub > p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.view-heading__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.view-heading__controls .fr-btn {
+  margin: 0;
+}
+/* Listes d'une vue dans le titre : libellé à gauche de la liste, pour rester sur une ligne */
+.view-heading__controls .fr-select-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.view-heading__controls .fr-select-group .fr-label {
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+}
+.view-heading__controls .fr-select-group .fr-select {
+  margin: 0;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+  font-size: var(--font-size-sm);
+}
+
+/* ---- Liste ---- */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- Menu surgissant ---- */
+.popover-anchor {
+  position: relative;
+}
+.popover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 30;
+  width: 340px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-3);
+}
+.popover--end {
+  left: auto;
+  right: 0;
+}
+.popover[hidden] {
+  display: none;
+}
+
+/* ---- Infobulle (survol ET focus) ---- */
+.has-tooltip {
+  position: relative;
+}
+.tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 30;
+  width: max-content;
+  max-width: 260px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-title);
+  color: var(--color-surface);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
+  box-shadow: var(--shadow-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast);
+}
+.has-tooltip:hover > .tooltip,
+.has-tooltip:focus-within > .tooltip {
+  opacity: 1;
+}
+
+/* ---- Panneau latéral (aspect de la modale DSFR, sans son JavaScript) ---- */
+.drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--drawer-width), 100vw);
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition:
+    transform var(--duration-base) ease-out,
+    visibility 0s linear var(--duration-base);
+}
+.drawer[data-open='true'] {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--duration-base) ease-out;
+}
+.drawer__head {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+.drawer__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-title);
+  overflow-wrap: anywhere;
+}
+.drawer__kind {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+.drawer__body {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-4) var(--space-6);
+  color: var(--color-text-muted);
+}
+
+/* ---- Squelette ---- */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--color-skeleton) 0%,
+    var(--color-skeleton-shine) 50%,
+    var(--color-skeleton) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shine {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* ---- État vide ---- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 520px;
+  margin: var(--space-8) auto;
+  padding: var(--space-6);
+  text-align: center;
+}
+.empty__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.empty__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+.empty > [class*='fr-icon-'] {
+  color: var(--color-accent-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .drawer,
+  .tooltip {
+    transition: none;
+  }
+}
