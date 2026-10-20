@@ -198,7 +198,9 @@ export function createTaskEditor(deps) {
       foot.innerHTML = html;
       return;
     }
-    foot.querySelector('#tf-pending').innerHTML = next.querySelector('#tf-pending').innerHTML;
+    const pending = foot.querySelector('#tf-pending');
+    if (pending.innerHTML !== next.querySelector('#tf-pending').innerHTML)
+      pending.innerHTML = next.querySelector('#tf-pending').innerHTML;
     for (const b of foot.querySelectorAll('button[id]')) {
       const n = next.querySelector(`#${b.id}`);
       for (const a of ['disabled', 'aria-busy']) {
@@ -754,8 +756,10 @@ export function createTaskEditor(deps) {
       if (f === 'dateCloture') {
         // Le bouton « Vider la date de clôture » suit la date : seule cette ligne est mise à jour (pied et focus intacts)
         const row = t.closest('.tf-inline');
-        row?.querySelector('.tf-clear')?.remove();
-        row?.insertAdjacentHTML('beforeend', closureClearHtml(st).toString());
+        const has = Boolean(row?.querySelector('.tf-clear'));
+        const want = closureClearHtml(st).toString() !== '';
+        if (has && !want) row.querySelector('.tf-clear').remove();
+        else if (!has && want) row?.insertAdjacentHTML('beforeend', closureClearHtml(st).toString());
         refresh();
       }
     } else if (f === 'type') {

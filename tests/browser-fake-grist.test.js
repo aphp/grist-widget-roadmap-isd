@@ -3328,3 +3328,36 @@ test(
     assert.equal(await w(`return W.__writes.length;`), 1);
   },
 );
+
+test(
+  'Fiche tâche : « Vider la date de clôture » pressé pendant le blur de la date n’est pas détaché et vide la date',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    await w(`if (!D.getElementById('tf-more').open) D.querySelector('#tf-more > summary').click(); return true;`);
+    await until(`D.getElementById('tf-more').open`);
+    const setDate = (v) =>
+      w(`const t = D.getElementById('tf-dateCloture'); t.focus(); t.value = '${v}';
+        t.dispatchEvent(new W.Event('input', { bubbles: true })); return true;`);
+    const change = () =>
+      w(`D.getElementById('tf-dateCloture').dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+    await setDate('2025-10-20');
+    await change();
+    await until(`D.querySelector('.tf-clear')`);
+    // Date de clôture existante modifiée : le bouton reste le même élément
+    await w(`D.querySelector('.tf-clear').dataset.mark = 'same'; return true;`);
+    await setDate('2025-10-21');
+    await w(`D.querySelector('.tf-clear').scrollIntoView({ block: 'center' }); return true;`);
+    await sleep(400);
+    const at = await w(`const r = D.querySelector('.tf-clear').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await change();
+    assert.equal(await w(`return D.querySelector('.tf-clear')?.dataset.mark ?? null;`), 'same');
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await until(`!D.querySelector('.tf-clear')`);
+    assert.equal(await w(`return D.getElementById('tf-dateCloture').value;`), '');
+  },
+);
