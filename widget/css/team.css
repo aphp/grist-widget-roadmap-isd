@@ -168,7 +168,7 @@
 }
 .tpill--mgmt,
 .tdot--mgmt {
-  --role-tone: var(--badge-purple-text);
+  --role-tone: var(--viz-mgmt);
 }
 .tpill--other,
 .tdot--other {
@@ -244,7 +244,7 @@
   --role-tone: var(--viz-4);
 }
 .trole--mgmt {
-  --role-tone: var(--badge-purple-text);
+  --role-tone: var(--viz-mgmt);
 }
 .trole--other {
   --role-tone: var(--viz-neutral);

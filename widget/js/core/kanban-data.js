@@ -31,7 +31,7 @@ function isdDomainOf(model) {
 }
 
 /** Clé de la ventilation d'une personne : profil ISD, « Mgmt » (Management de l'équipe ISD), sinon « Autre ». */
-function etpKey(person, model) {
+export function etpRoleKey(person, model) {
   if (person?.isd && ETP_ROLES.includes(person.role)) return person.role;
   if (person?.roleText === 'Management' && inIsdTeam(person, isdDomainOf(model))) return 'Mgmt';
   return 'Autre';
@@ -49,7 +49,7 @@ export function taskEtpByRole(task, model) {
   const out = { total: 0, PO: 0, DA: 0, DS: 0, DE: 0, Mgmt: 0, Autre: 0 };
   for (const c of task.charges) {
     const person = model.people.get(c.personId);
-    const key = etpKey(person, model);
+    const key = etpRoleKey(person, model);
     const etp = hoursToEtp(c.heures, days);
     out[key] += etp;
     out.total += etp;

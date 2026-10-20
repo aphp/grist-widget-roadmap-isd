@@ -49,7 +49,7 @@ const ratio = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 const darkBlock = tokens.slice(tokens.indexOf(':root[data-fr-theme'));
-const MARKS = ['viz-1', 'viz-2', 'viz-3', 'viz-4', 'viz-neutral', 'status-other-mark'];
+const MARKS = ['viz-1', 'viz-2', 'viz-3', 'viz-4', 'viz-mgmt', 'viz-neutral', 'status-other-mark'];
 for (const [theme, block, surfaces] of [
   ['clair', lightBlock, ['#ffffff', '#f8fafc']],
   ['sombre', darkBlock, ['#1e293b', '#0f172a']],
