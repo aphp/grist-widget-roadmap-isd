@@ -78,6 +78,8 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
     closeStatusPopover(true);
     onPick(value);
   };
+  // Menu du navigateur jamais par-dessus le nôtre (« contextmenu » d'une touche relâchée dans le menu)
+  root.addEventListener('contextmenu', (e) => e.preventDefault());
   root.addEventListener('click', (e) => {
     const b = e.target.closest('.qs-menu__item');
     if (b) pick(b);
@@ -113,11 +115,20 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
 }
 
 /**
- * Menu contextuel du navigateur sur une carte ou un bouton qui ouvre le menu de statut : Maj+F10 et la touche Menu
- * émettent aussi « contextmenu » (au relâchement sous Windows), qui ouvrirait le menu du navigateur par-dessus.
+ * « contextmenu » sur une carte ou un bouton de statut (clic droit, Maj+F10, touche Menu) : le menu de statut
+ * s'ouvre à la place du menu du navigateur. Ces éléments n'existent qu'en édition : en lecture seule, le menu du
+ * navigateur reste intact. Un menu déjà ouvert sur ce contrôle (ouvert au clavier, « contextmenu » arrivant au
+ * relâchement sous Windows) n'est pas refermé.
+ * @param {MouseEvent} e
+ * @param {(control:Element) => HTMLElement|null} anchorOf bouton qui porte le menu pour l'élément visé
+ * @param {(anchor:HTMLElement, control:Element) => void} open ouverture du menu
  */
-export function blockContextMenu(e) {
-  if (e.target instanceof Element && e.target.closest('[data-qs-open], [data-qs-focus]')) e.preventDefault();
+export function statusContextMenu(e, anchorOf, open) {
+  const t = e.target instanceof Element ? e.target.closest('[data-qs-open], [data-qs-focus]') : null;
+  const anchor = t ? anchorOf(t) : null;
+  if (!anchor) return;
+  e.preventDefault();
+  if (current?.anchor !== anchor) open(anchor, t);
 }
 
 /** Vrai si un menu de statut est ouvert. */

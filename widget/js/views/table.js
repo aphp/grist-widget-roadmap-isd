@@ -33,7 +33,7 @@ import {
 import { h, icon, roleFullText } from '../ui/kit.js';
 import { limitToReveal } from '../core/quick-status.js';
 import { viewHeading } from '../ui/heading.js';
-import { blockContextMenu } from '../ui/status-popover.js';
+import { statusContextMenu } from '../ui/status-popover.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 
 export const id = 'table';
@@ -349,7 +349,13 @@ export function render(el, ctx) {
     const r = t.closest('tr[data-task]');
     if (r) ctx.openDetail({ table: 'Tasks', id: Number(r.dataset.task) });
   };
-  el.oncontextmenu = blockContextMenu;
+  // Clic droit sur le bouton de statut : menu de statut à la place du menu du navigateur
+  el.oncontextmenu = (e) =>
+    statusContextMenu(
+      e,
+      (t) => (ctx.quickStatus && t.matches('[data-qs-open]') ? t : null),
+      (b) => ctx.quickStatus.open(b, Number(b.dataset.qsOpen)),
+    );
   el.onchange = (e) => {
     const c = e.target.closest('input[data-col]')?.dataset.col;
     if (!c) return;

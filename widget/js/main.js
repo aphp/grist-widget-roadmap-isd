@@ -333,7 +333,10 @@ function restoreViewFocus(selectors) {
     target.focus({ preventScroll: true });
     const r = target.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
-    if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > vw)
+    // Hors de l'écran, ou hors de la partie visible du plateau du Kanban (défilement horizontal)
+    const board = target.closest('.kanban__board')?.getBoundingClientRect();
+    const outBoard = board && (r.left < board.left - 1 || r.right > board.right + 1);
+    if (outBoard || r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > vw)
       target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     return;
   }
@@ -556,14 +559,21 @@ async function undoLast() {
   const quick = lastQuick && lastQuick.entry === writer.lastUndoable() ? lastQuick : null;
   lastQuick = null;
   try {
-    const undo = () => writer.undoLast((table, id) => gateway.fetchRow(table, id));
+    // Rendu fait dans le même appel que l'annulation : le focus (le bouton du message vient de disparaître) et la
+    // tâche à garder visible sont encore connus à ce moment-là
+    const undo = async () => {
+      const res = await writer.undoLast((table, id) => gateway.fetchRow(table, id));
+      if (!res.busy && res.entry) {
+        if (res.undoEntry) onWritten(res.undoEntry);
+        else renderAll();
+      }
+      return res;
+    };
     const r = quick
       ? await withViewFocus({ keys: quick.keys, reveal: quick.taskId, untilReload: false }, undo)
       : await undo();
     if (r.busy) return; // annulation déjà en cours
     if (!r.entry) return toast.show(label('toast.nothing'));
-    if (r.undoEntry) onWritten(r.undoEntry);
-    else renderAll();
     const names = r.skipped.map((c) => label(`form.field.${c}`)).join(', ');
     if (r.entry.kind === 'add')
       return toast.show(label(r.undoEntry ? 'toast.undoneAdd' : `toast.undoAdd.${r.reason ?? 'modifiee'}`));
