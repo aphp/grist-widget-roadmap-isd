@@ -141,6 +141,7 @@ const FROZEN = {
       'Cree_par',
       'Responsable',
       'assignees',
+      'charges',
       'dateDebut',
       'dateEcheance',
       'description',

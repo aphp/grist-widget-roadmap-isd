@@ -2384,3 +2384,148 @@ test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio',
   await until(`D.querySelector('.pf-load .pf-swatch--Mgmt') && D.querySelector('.pf-sum .pf-swatch--Mgmt')`);
   assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
 });
+
+// ---------- Bloc « Personnes » des fenêtres de création ----------
+
+/** Choisit une valeur d'un bouton radio (unité de saisie) comme au clic. */
+const pickRadio = (sel) =>
+  w(
+    `const t = D.querySelector(${JSON.stringify(sel)}); t.checked = true; t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
+  );
+/** Première personne proposée par « Ajouter une personne… » autre que `skip`. */
+const otherPerson = (skip) =>
+  w(
+    `return Number([...D.querySelectorAll('#cf-assignees optgroup option')].map((o) => o.value).find((v) => v && Number(v) !== ${skip}));`,
+  );
+const cfDay = (y, m, d) => Date.UTC(y, m - 1, d) / 1000;
+
+test(
+  'nouvelle tâche : bloc « Personnes », deux personnes (0,5 ETP et des heures), UN AddRecord avec assignés et charges',
+  { skip: SKIP },
+  async () => {
+    await openView(EDIT, 'kanban', 5);
+    await w(`D.getElementById('btn-new-task').focus(); D.getElementById('btn-new-task').click(); return true;`);
+    await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
+    // Juste après les dates, visible (hors de « Plus d'options »), plus de champ « Assignés » simple
+    assert.ok(
+      await w(`const p = D.getElementById('cf-people'); const e = D.getElementById('cf-dateEcheance');
+        return !p.closest('details') && Boolean(e.compareDocumentPosition(p) & W.Node.DOCUMENT_POSITION_FOLLOWING)
+          && p.previousElementSibling.contains(e);`),
+    );
+    assert.equal(await w(`return D.querySelectorAll('[data-cf-add-assignee], #cf-assignees-label').length;`), 0);
+    // « Je suis… » : une ligne, charge vide ; sans dates, saisie en ETP impossible (message), heures seulement
+    assert.deepEqual(
+      await w(`return [...D.querySelectorAll('#cf-people [data-charge]')].map((l) => Number(l.dataset.charge));`),
+      [5],
+    );
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '');
+    assert.ok(
+      await w(`return D.getElementById('cf-ch-5').disabled && Boolean(D.getElementById('cf-charges-nodates'));`),
+    );
+    // Sélecteurs : équipe ISD seulement, Management compris
+    const groups = await w(`return [...D.querySelectorAll('#cf-assignees optgroup')].map((g) => g.label);`);
+    assert.ok(groups.length && groups.every((g) => g.startsWith('ISD')), groups.join(', '));
+    assert.ok(groups.includes('ISD — Management'), groups.join(', '));
+    await typeIn('#cf-titre', 'Tâche avec personnes');
+    await change('#cf-cible', await firstOption('#cf-cible'));
+    // 14 jours : 0,5 ETP = 35 h
+    await change('#cf-dateDebut', '2026-11-02');
+    await change('#cf-dateEcheance', '2026-11-15');
+    await until(`!D.getElementById('cf-ch-5').disabled && !D.getElementById('cf-charges-nodates')`);
+    await typeIn('#cf-ch-5', '0,5');
+    assert.equal(await w(`return D.getElementById('cf-ch-5-eq').textContent;`), '= 35 h');
+    // Deuxième personne, en heures
+    const b = await otherPerson(5);
+    await change('#cf-assignees', String(b));
+    await until(`D.getElementById('cf-ch-${b}')`);
+    assert.equal(await w(`return D.activeElement.id;`), `cf-ch-${b}`);
+    await pickRadio('#cf-charges-unit-heures');
+    await until(`D.getElementById('cf-ch-5').value === '35'`);
+    await typeIn(`#cf-ch-${b}`, '12');
+    assert.equal(await w(`return D.getElementById('cf-ch-${b}-eq').textContent;`), '= 0,2 ETP');
+    assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 47 h/);
+    // Dates changées dans la fenêtre : les équivalents ETP suivent (7 jours : 35 h = 1 ETP)
+    await change('#cf-dateEcheance', '2026-11-08');
+    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 1,0 ETP'`);
+    await change('#cf-dateEcheance', '2026-11-15');
+    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 0,5 ETP'`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await clickOn('#cf-create');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+    const batch = (await writes())[0];
+    assert.equal(batch.length, 1);
+    const [kind, table, id, cells] = batch[0];
+    assert.deepEqual([kind, table, id], ['AddRecord', 'Tasks', null]);
+    assert.equal(cells.titre, 'Tâche avec personnes');
+    assert.equal(cells.dateDebut, cfDay(2026, 11, 2));
+    assert.equal(cells.dateEcheance, cfDay(2026, 11, 15));
+    assert.deepEqual(cells.assignees, ['L', 5, b]);
+    assert.equal(
+      cells.charges,
+      JSON.stringify([
+        { teamId: 5, heures: 35 },
+        { teamId: b, heures: 12 },
+      ]),
+    );
+  },
+);
+
+test(
+  'nouvelle tâche : au-delà de 1 ETP refusé dans la fenêtre, rien n’est envoyé ; « Créer et ouvrir » ouvre la fiche',
+  { skip: SKIP },
+  async () => {
+    await openView(EDIT, 'kanban', 5);
+    await w(`try { localStorage.removeItem('roadmap-isd.chargesUnit'); } catch {} return true;`);
+    await clickOn('#btn-new-task');
+    await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
+    await typeIn('#cf-titre', 'Tâche trop chargée');
+    await change('#cf-cible', await firstOption('#cf-cible'));
+    await change('#cf-dateDebut', '2026-11-02');
+    await change('#cf-dateEcheance', '2026-11-15');
+    await until(`!D.getElementById('cf-ch-5').disabled`);
+    await w(
+      `D.getElementById('cf-charges-unit-etp').checked || D.getElementById('cf-charges-unit-etp').click(); return true;`,
+    );
+    await typeIn('#cf-ch-5', '1,5');
+    assert.match(await w(`return D.getElementById('cf-ch-5-msg').textContent;`), /1 ETP maximum/);
+    assert.equal(await w(`return D.getElementById('cf-create').disabled;`), true);
+    // Ctrl+Entrée ne passe pas non plus
+    await w(
+      `D.getElementById('cf-ch-5').dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); return true;`,
+    );
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // 1 ETP accepté, puis dates raccourcies : la charge dépasse la borne, création bloquée
+    await typeIn('#cf-ch-5', '1');
+    await until(`!D.getElementById('cf-create').disabled`);
+    await change('#cf-dateEcheance', '2026-11-08');
+    await until(`D.getElementById('cf-create').disabled`);
+    assert.match(await w(`return D.getElementById('cf-charges-msgs').textContent;`), /dépasse la borne/);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    await change('#cf-dateEcheance', '2026-11-15');
+    await until(`!D.getElementById('cf-create').disabled`);
+    await clickOn('#cf-create-open');
+    await until(`D.getElementById('task-form') && W.__writes.length === 1`);
+    assert.equal((await writes())[0][0][3].charges, JSON.stringify([{ teamId: 5, heures: 70 }]));
+    // La fiche complète montre la même personne et sa charge
+    await until(`D.getElementById('tf-ch-5')`);
+  },
+);
+
+test('nouvelle tâche en mode essai : personnes et charges notées, rien n’est envoyé', { skip: SKIP }, async () => {
+  await openView('?edition=essai', 'kanban', 5);
+  await clickOn('#btn-new-task');
+  await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
+  await typeIn('#cf-titre', 'Essai avec charges');
+  await change('#cf-cible', await firstOption('#cf-cible'));
+  await pickRadio('#cf-charges-unit-heures');
+  await until(`D.getElementById('cf-ch-5') && !D.getElementById('cf-ch-5').disabled`);
+  await typeIn('#cf-ch-5', '10');
+  const b = await otherPerson(5);
+  await change('#cf-assignees', String(b));
+  await until(`D.getElementById('cf-ch-${b}')`);
+  await clickOn('#cf-create');
+  await until(`!D.querySelector('dialog.cdlg')`);
+  assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Mode essai/);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+});

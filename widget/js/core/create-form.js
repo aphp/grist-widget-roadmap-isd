@@ -10,6 +10,7 @@ import {
   taskLinksFromModel,
   validateChantier,
 } from './chantier-form.js';
+import { chargeRows, isEstimationPerson, maxHours, periodDays, readChargesCell } from './charges-edit.js';
 import { TITLE_MAX, chantierOf } from './task-form.js';
 
 /** Champs de la fenêtre « Nouvelle tâche » : obligatoires d'abord, puis « Plus d'options ». */
@@ -21,6 +22,7 @@ export const NEW_TASK_MAIN = Object.freeze([
   'dateDebut',
   'dateEcheance',
   'assignees',
+  'charges',
 ]);
 export const NEW_TASK_MORE = Object.freeze(['Responsable', 'priorite', 'description']);
 /** Champs de la fenêtre « Nouveau chantier ». */
@@ -103,7 +105,7 @@ function projectFor(model, chantier, wanted) {
  * Brouillon d'une nouvelle tâche ou sous-tâche.
  * - Sous-tâche (parentId) : chantier et projet copiés du parent, dates du parent proposées.
  * - Sinon : chantier et projet du contexte (filtres), statut du contexte, sinon « todo ».
- * - Assignés : « Je suis… » par défaut.
+ * - Bloc « Personnes » : « Je suis… » assigné par défaut, charge vide (aucune entrée).
  * @param {object} model
  * @param {{chantierId?:number|null, projectId?:number|null, parentId?:number|null, status?:string|null,
  *          me?:number|null, statuses?:string[]}} ctx
@@ -132,6 +134,7 @@ export function newTaskDraft(model, ctx = {}) {
     dateDebut: parent?.start ?? null,
     dateEcheance: parent?.end ?? null,
     assignees: ctx.me && model.people.has(ctx.me) ? [ctx.me] : [],
+    charges: '',
     Responsable: null,
     priorite: '',
     description: '',
@@ -174,6 +177,8 @@ export function validateNewTask(draft, { model, statuses = [] }) {
   if (draft.Responsable !== null && !model.people.has(draft.Responsable))
     errors.Responsable = { key: 'form.error.missingRef' };
   if (draft.assignees.some((a) => !model.people.has(a))) errors.assignees = { key: 'form.error.missingRef' };
+  const charges = newChargesError(draft, model);
+  if (charges) errors.charges = charges;
 
   if (title && chantier) {
     const same = [...model.tasks.values()].some(
@@ -190,6 +195,28 @@ export function validateNewTask(draft, { model, statuses = [] }) {
   if (draft.statut && statuses.length && !statuses.includes(draft.statut))
     warnings.push({ field: 'statut', key: 'form.warn.choice', vars: { valeur: draft.statut } });
   return { errors, warnings };
+}
+
+/**
+ * Charges d'une nouvelle tâche, avec les règles du writer à la création : chaque personne chargée est assignée et
+ * existe, au plus 1 ETP sur la période des dates saisies (2 000 h sans dates), la personne estimation bornée à
+ * ESTIMATION_MAX_ETP. Une charge déjà saisie qui dépasse la borne après un changement de dates bloque la création.
+ * @returns {{key:string, vars?:object}|null}
+ */
+export function newChargesError(draft, model) {
+  const cell = readChargesCell(draft.charges);
+  if (!cell.ok) return { key: 'form.error.charges' };
+  const { rows, invalid } = chargeRows(cell.entries);
+  if (
+    invalid.length ||
+    rows.some((r) => r.count > 1 || !model.people.has(r.teamId) || !draft.assignees.includes(r.teamId))
+  )
+    return { key: 'form.error.charges' };
+  const days = periodDays(draft.dateDebut, draft.dateEcheance);
+  const over = rows.find((r) => r.heures > maxHours(days, isEstimationPerson(model, r.teamId)));
+  return over
+    ? { key: 'create.error.chargesOver', vars: { h: maxHours(days, isEstimationPerson(model, over.teamId)) } }
+    : null;
 }
 
 /**
@@ -211,12 +238,17 @@ export function newTaskFields(draft, opts = {}) {
   if (draft.dateDebut !== null) out.dateDebut = draft.dateDebut;
   if (draft.dateEcheance !== null) out.dateEcheance = draft.dateEcheance;
   if (draft.assignees.length) out.assignees = [...draft.assignees];
+  // Charges (bloc « Personnes ») : seulement s'il y a au moins une entrée
+  const cell = readChargesCell(draft.charges);
+  if (cell.ok && cell.entries.length) out.charges = draft.charges;
   if (draft.Responsable !== null) out.Responsable = draft.Responsable;
   if (draft.priorite) out.priorite = draft.priorite;
   const desc = String(draft.description ?? '').trim();
   if (desc) out.description = desc;
   if (opts.creePar) out.Cree_par = opts.creePar;
   for (const c of Object.keys(out)) if (!['titre', 'Chantier', 'projet'].includes(c) && !ok(c)) delete out[c];
+  // Charges et assignés vont ensemble : sans assignés permis, aucune charge n'est envoyée
+  if (!out.assignees) delete out.charges;
   return out;
 }
 
