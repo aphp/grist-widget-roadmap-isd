@@ -32,7 +32,8 @@ const FIRST = Object.freeze({
   add: 'pf-nom',
   'unav-add': 'pf-dateDebut',
   'unav-edit': 'pf-dateDebut',
-  off: 'pf-submit',
+  // Confirmation d'une action à conséquence : focus sur l'action sûre (« Annuler »), motif Alert Dialog de l'APG
+  off: 'pf-cancel',
 });
 const ORDER = Object.freeze(['nom', 'email', 'role', 'capaciteHebdo', 'n_1', 'dateDebut', 'dateFin', 'dispo', 'type']);
 const TEXT = new Set(['nom', 'email', 'type', 'commentaire']);

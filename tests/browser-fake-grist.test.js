@@ -1180,6 +1180,8 @@ test(
     await clickOn('#btn-person-active');
     await until(`D.querySelector('dialog.cdlg[open] #pf-submit')`);
     assert.match(await w(`return D.querySelector('dialog.cdlg').textContent;`), /restent intacts/);
+    // Focus initial sur l'action sûre « Annuler » (APG), jamais sur « Désactiver »
+    assert.equal(await w(`return D.activeElement.id;`), 'pf-cancel');
     await clickOn('#pf-submit');
     await until(`W.__writes.length === 3`);
     await until(`D.querySelector('#btn-person-active[data-person-active="1"]')`);
