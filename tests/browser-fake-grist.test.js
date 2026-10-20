@@ -3087,3 +3087,60 @@ test(
     );
   },
 );
+
+// ---------- Gantt : couleur par chantier (mode par défaut) ----------
+test(
+  'Gantt : couleur par chantier par défaut (pastille, tâches de la teinte du chantier), bascule sur « Étape » mémorisée',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.querySelector('.grow--chantier .grow__chip')`);
+    assert.equal(await w(`return D.getElementById('gantt-color-chantier').checked;`), true);
+    // Deux chantiers voisins d'un même projet : teintes différentes, pastille devant le nom
+    const pair =
+      await w(`const rows = [...D.querySelectorAll('.grow--chantier')].filter((r) => r.querySelector('.grow__chip'));
+      for (let i = 0; i + 1 < rows.length; i++) {
+        const a = rows[i], b = rows[i + 1];
+        if (a.nextElementSibling === b) {
+          const c = (r) => getComputedStyle(r.querySelector('.grow__chip')).backgroundColor;
+          return { a: c(a), b: c(b), chipFirst: a.querySelector('.grow__label').firstElementChild.nextElementSibling.classList.contains('grow__chip') };
+        }
+      }
+      return null;`);
+    assert.ok(pair, 'deux chantiers voisins attendus au niveau « Chantiers »');
+    assert.notEqual(pair.a, pair.b);
+    assert.equal(pair.chipFirst, true);
+    // Une tâche a la couleur de son chantier (barre, trait), une ligne de projet n'a pas de bande
+    await w(`D.getElementById('gantt-level-tache').click(); return true;`);
+    await until(`D.querySelector('.grow--tache .gbar')`);
+    const same =
+      await w(`const t = [...D.querySelectorAll('.grow--tache.grow--ch')].find((r) => r.querySelector('.gbar:not(.gbar--deduced)'));
+      let c = t.previousElementSibling; while (!c.classList.contains('grow--chantier')) c = c.previousElementSibling;
+      const bar = getComputedStyle(t.querySelector('.gbar')).backgroundColor;
+      const chip = getComputedStyle(c.querySelector('.grow__chip')).backgroundColor;
+      const trait = getComputedStyle(t.querySelector('.grow__title')).borderLeftColor;
+      const proj = getComputedStyle(D.querySelector('.grow--projet > .grow__track')).backgroundImage;
+      const band = getComputedStyle(t.querySelector('.grow__track')).backgroundImage;
+      return { bar, chip, trait, proj, band, text: !!D.querySelector('.gbar__text'),
+        label: t.querySelector('.gbar').getAttribute('aria-label'), chantier: c.querySelector('.grow__title').textContent };`);
+    assert.equal(same.bar, same.chip);
+    assert.equal(same.trait, same.chip);
+    assert.equal(same.proj, 'none');
+    assert.notEqual(same.band, 'none');
+    assert.equal(same.text, false, 'pas de texte d’étape dans les barres en mode chantier');
+    assert.ok(same.label.includes(`Chantier : ${same.chantier}`), same.label);
+    // Bascule sur « Étape » : texte d'étape dans les barres, plus de pastille ; choix gardé au rechargement
+    // (étapes : titres des sous-tâches du jeu synthétique)
+    await w(`D.getElementById('gantt-level-sous-tache').click(); return true;`);
+    assert.equal(await w(`return D.querySelectorAll('.gbar__text').length;`), 0);
+    await w(`D.getElementById('gantt-color-phase').click(); return true;`);
+    await until(`D.querySelector('.gbar__text') && !D.querySelector('.grow__chip')`);
+    assert.equal(await w(`return JSON.parse(W.localStorage.getItem('roadmap-isd:prefs')).ganttColorBy;`), 'phase');
+    await send('Page.reload');
+    await until(`D.querySelector('.view [data-task]')`);
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.getElementById('gantt-color-phase')?.checked`);
+    assert.equal(await w(`return !!D.querySelector('.grow__chip');`), false);
+  },
+);

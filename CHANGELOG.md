@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Gantt: new "Chantier" color mode, now the default ("Couleur par": Étape · Statut · Chantier). Each chantier gets one
+  of 7 hues (`--viz-ch-1..7`, light and dark themes, with a darker `-deep` edge and a 7 % `-band` row tint), assigned
+  per project over all its chantiers sorted by title, recycled after 7 (`chantierSlots`, `chantierTone` in
+  `core/gantt-data.js`), so a filter never changes a color. Dot before the chantier name, colored stroke before its
+  task names, light band on its rows, task bars in its hue, chantier bar in the deep hue, done tasks faded; projects,
+  categories and "(sans chantier)" stay neutral. No phase text in bars; tooltip and accessible name keep the phase
+  and add "Chantier : <title>". Small-screen list and PDF export follow (light hues, adapted legend). A `ganttColorBy`
+  saved as `phase` before this version was the old default, not a choice: it becomes `chantier` once
+  (`ganttColorByV: 2` marker); `status` is kept.
 - The widget always opens on the Gantt tab: the last viewed tab is no longer restored at load (`DEFAULT_PREFS.view`
   is now `gantt`; other preferences are kept). The first "Je suis…" no longer sets a profile home view (Management
   used to land on Synthèse); home views saved before this are reset once (`homeViewV: 2` marker in the prefs). A home

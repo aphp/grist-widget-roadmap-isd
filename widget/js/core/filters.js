@@ -54,7 +54,9 @@ export const DEFAULT_PREFS = Object.freeze({
   /** Tri choisi ; null = ordre par défaut (projet, chantier, début). */
   tableSort: null,
   ganttScale: 'month',
-  ganttColorBy: 'phase',
+  ganttColorBy: 'chantier',
+  /** Version de ganttColorBy : 2 = depuis le mode « chantier » (avant, « phase » enregistré n'était pas un choix). */
+  ganttColorByV: 2,
   /** Niveau d'ouverture du Gantt (GANTT_LEVELS), ou « custom » : dépliage ligne par ligne (ganttExpanded). */
   ganttLevel: DEFAULT_LEVEL,
   /** Clés des nœuds dépliés, lues seulement si ganttLevel = « custom ». */
@@ -514,7 +516,12 @@ function sanitizePrefs(saved) {
     tableColumnsV: 3,
     tableSort: sanitizeSort(s.tableSort),
     ganttScale: SCALES.includes(s.ganttScale) ? s.ganttScale : DEFAULT_PREFS.ganttScale,
-    ganttColorBy: COLOR_BY.includes(s.ganttColorBy) ? s.ganttColorBy : DEFAULT_PREFS.ganttColorBy,
+    // « phase » d'avant la version 2 : valeur par défaut d'alors, enregistrée avec le reste, pas un choix
+    ganttColorBy:
+      COLOR_BY.includes(s.ganttColorBy) && (s.ganttColorByV === 2 || s.ganttColorBy !== 'phase')
+        ? s.ganttColorBy
+        : DEFAULT_PREFS.ganttColorBy,
+    ganttColorByV: 2,
     ganttLevel:
       GANTT_LEVELS.includes(s.ganttLevel) || s.ganttLevel === 'custom' ? s.ganttLevel : DEFAULT_PREFS.ganttLevel,
     ganttExpanded: sanitizeExpanded(s.ganttExpanded),
