@@ -171,10 +171,10 @@
 .gantt__resizer {
   position: absolute;
   top: 0;
-  right: -5px;
+  right: -8px;
   bottom: 0;
   z-index: 6;
-  width: 10px;
+  width: 16px;
   cursor: col-resize;
   touch-action: none;
 }
@@ -183,7 +183,7 @@
   position: absolute;
   top: 6px;
   bottom: 6px;
-  left: 4px;
+  left: 7px;
   width: 2px;
   border-radius: 1px;
   background: var(--color-border-strong);

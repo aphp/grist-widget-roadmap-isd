@@ -51,7 +51,7 @@ const NARROW = '(max-width: 767.98px)';
 /** Nombre maximal d'éléments de la liste chronologique. */
 const LIST_MAX = 300;
 /** État conservé entre deux rendus de la vue (rechargement des données) : période affichée et génération. */
-const memory = { anchor: null, scale: null, generation: 0 };
+const memory = { anchor: null, scale: null, generation: 0, drag: null, applyWidth: null };
 /** Écouteurs focusin / focusout par conteneur, pour ne jamais les empiler. */
 const listeners = new WeakMap();
 
@@ -227,7 +227,7 @@ const widthText = (w) => label('gantt.width.value', { n: w });
 
 /** Poignée de la colonne des noms (séparateur focalisable : flèches, Maj, Début / Fin ; double-clic : défaut). */
 function resizerHtml(width) {
-  return h`<div class="gantt__resizer" id="gantt-resizer" role="separator" aria-orientation="vertical" tabindex="0" aria-label="${label('gantt.resizer')}" aria-valuemin="${width.min}" aria-valuemax="${width.max}" aria-valuenow="${width.value}" aria-valuetext="${widthText(width.value)}" title="${label('gantt.resizer.title')}" data-resizer></div>`;
+  return h`<div class="gantt__resizer" id="gantt-resizer" role="separator" aria-orientation="vertical" tabindex="0" aria-label="${label('gantt.resizer')}" aria-describedby="gantt-resizer-help" aria-valuemin="${width.min}" aria-valuemax="${width.max}" aria-valuenow="${width.value}" aria-valuetext="${widthText(width.value)}" title="${label('gantt.resizer.title')}" data-resizer></div>`;
 }
 
 /** Curseur « Largeur des noms » de la barre d'outils (mêmes bornes et même pas que la poignée). */
@@ -244,7 +244,7 @@ function widthSliderHtml(width) {
 function headHtml(scale, today, width) {
   const showToday = today >= scale.start && today <= scale.end;
   return h`<div class="gantt__head" role="row">
-    <div class="gantt__corner" role="columnheader">${label('gantt.element')}${resizerHtml(width)}</div>
+    <div class="gantt__corner" role="columnheader" aria-labelledby="gantt-corner-label"><span id="gantt-corner-label">${label('gantt.element')}</span>${resizerHtml(width)}<span class="fr-sr-only" id="gantt-resizer-help">${label('gantt.resizer.help')}</span></div>
     <div class="gantt__scale" role="columnheader" aria-label="${label('gantt.period', { debut: formatDateFr(scale.start), fin: formatDateFr(scale.end) })}">
       <div class="gantt__groups">${scale.groups.map((g) => h`<span class="gantt__group" style="left:${pct(pctOf(scale, g.start))};width:${pct(((g.end - g.start + 1) / scale.days) * 100)}">${g.label}</span>`)}</div>
       <div class="gantt__cols">${scale.columns.map((c) => h`<span class="gantt__col${today >= c.start && today <= c.end ? ' is-current' : ''}" style="left:${pct(pctOf(scale, c.start))};width:${pct(((c.end - c.start + 1) / scale.days) * 100)}" title="${c.title}">${c.label}</span>`)}</div>
@@ -292,7 +292,8 @@ export function render(el, ctx) {
           : levelExpanded(tree, level),
     ),
     /** Largeur choisie pour la colonne des noms (px) ; null = largeur par défaut de l'écran. */
-    labelWidth: Number.isFinite(saved.ganttLabelWidth) ? saved.ganttLabelWidth : null,
+    // Glisser en cours pendant un nouveau rendu (relecture) : la largeur en cours est gardée
+    labelWidth: memory.drag ? memory.drag.last : Number.isFinite(saved.ganttLabelWidth) ? saved.ganttLabelWidth : null,
     /** Ligne qui porte le focus itinérant (seul arrêt de tabulation de l'arbre). */
     focusKey: null,
     notice: '',
@@ -569,7 +570,7 @@ export function render(el, ctx) {
     copy.style.width = `${live.offsetWidth}px`;
     // Même largeur de colonne des noms qu'à l'écran ; la poignée n'est pas imprimée
     host.style.setProperty('--gantt-label', `${widthInfo().value}px`);
-    for (const n of copy.querySelectorAll('[data-resizer]')) n.remove();
+    for (const n of copy.querySelectorAll('[data-resizer], .gantt__corner .fr-sr-only')) n.remove();
     for (const n of copy.querySelectorAll('[id]')) n.removeAttribute('id');
     for (const b of copy.querySelectorAll('.grow__toggle[data-expanded]')) {
       b.className = 'grow__toggle';
@@ -714,33 +715,43 @@ export function render(el, ctx) {
   };
 
   // ---------- Poignée de la colonne des noms : glisser (souris, stylet, doigt), double-clic = largeur par défaut ----------
+  // Le glisser vit dans memory et ses écouteurs sur la fenêtre : un nouveau rendu pendant le glisser (relecture des
+  // données) le poursuit sur la vue redessinée (memory.applyWidth), et la largeur est enregistrée au relâcher.
+  memory.applyWidth = applyWidth;
+  if (memory.drag) el.querySelector('[data-resizer]')?.classList.add('is-dragging');
   el.onpointerdown = (e) => {
     const handle = e.target.closest?.('[data-resizer]');
-    if (!handle || e.button !== 0) return;
+    if (!handle || e.button !== 0 || memory.drag) return;
     e.preventDefault();
     handle.focus({ preventScroll: true });
-    const startX = e.clientX;
     const startW = widthInfo().value;
-    let last = startW;
-    handle.setPointerCapture?.(e.pointerId);
+    const drag = { startX: e.clientX, startW, last: startW };
+    memory.drag = drag;
     handle.classList.add('is-dragging');
+    const stop = new AbortController();
     const move = (m) => {
-      last = applyWidth(startW + (m.clientX - startX), false);
+      drag.last = memory.applyWidth(drag.startW + (m.clientX - drag.startX), false);
     };
     const end = () => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', end);
-      handle.removeEventListener('pointercancel', end);
-      handle.classList.remove('is-dragging');
-      if (last !== startW) applyWidth(last, true);
+      stop.abort();
+      memory.drag = null;
+      document.querySelector('[data-resizer].is-dragging')?.classList.remove('is-dragging');
+      if (drag.last !== drag.startW) memory.applyWidth(drag.last, true);
     };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', end);
-    handle.addEventListener('pointercancel', end);
+    window.addEventListener('pointermove', move, { signal: stop.signal });
+    window.addEventListener('pointerup', end, { signal: stop.signal });
+    window.addEventListener('pointercancel', end, { signal: stop.signal });
   };
   el.ondblclick = (e) => {
     if (e.target.closest?.('[data-resizer]')) applyWidth(null, true);
   };
+
+  // Fenêtre redimensionnée : largeur affichée rebornée à 60 % de la nouvelle vue (préférence inchangée)
+  window.addEventListener?.(
+    'resize',
+    () => el.isConnected && gen === memory.generation && !memory.drag && applyWidth(st.labelWidth, false),
+    { passive: true, signal: off.signal },
+  );
 
   // Passage liste ↔ arbre quand la largeur franchit 768 px (écouteur retiré au rendu suivant)
   narrow?.addEventListener?.('change', () => el.isConnected && gen === memory.generation && paint(), {

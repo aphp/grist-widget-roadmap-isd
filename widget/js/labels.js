@@ -219,6 +219,8 @@ const FR = Object.freeze({
   'gantt.width': 'Largeur des noms',
   'gantt.width.value': '{n} px',
   'gantt.resizer': 'Largeur de la colonne des noms',
+  'gantt.resizer.help':
+    'Flèches gauche et droite pour régler par pas de 16 pixels, avec Maj par pas de 64 ; Début et Fin pour les bornes ; double-clic pour la largeur par défaut.',
   'gantt.resizer.title': 'Glisser pour régler la largeur des noms ; double-clic : largeur par défaut',
   'gantt.rows': '{n} lignes affichées',
   'gantt.rows.one': '1 ligne affichée',

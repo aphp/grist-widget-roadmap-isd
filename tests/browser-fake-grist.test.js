@@ -2986,3 +2986,91 @@ test(
     assert.equal(await w(`return W.__writes.length;`), 0);
   },
 );
+
+test(
+  'relecture (onRecords) : après l’écran « accès », des données inchangées redessinent la vue',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await remoteChange();
+    await w(`W.__accesRefuse = true; return true;`);
+    await remoteChange();
+    assert.equal(await w(`return Boolean(D.querySelector('.view [data-task]'));`), false);
+    // Accès rendu, données identiques à celles affichées avant l'écran : la vue revient quand même
+    await w(`W.__accesRefuse = false; return true;`);
+    await remoteChange();
+    await until(`D.querySelector('.view [data-task]') && D.getElementById('btn-refresh')`);
+  },
+);
+
+test(
+  'relecture forcée (« Actualiser ») : redessine même sans donnée changée, défilement gardé',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-table').click(); return true;`);
+    await until(`D.querySelector('.tbl__table .fr-table__wrapper')`);
+    await w(`D.querySelector('.tbl__table .fr-table__wrapper').scrollTop = 200; return true;`);
+    const before = await scrolls(['.tbl__table .fr-table__wrapper']);
+    await markPanel();
+    const n = await w(`return W.__reads.length;`);
+    await w(`D.getElementById('btn-refresh').click(); return true;`);
+    await until(`W.__reads.length >= ${n + 7} && !D.getElementById('btn-refresh')?.disabled`);
+    await sleep(200);
+    assert.equal(await panelKept(), false, 'Actualiser doit redessiner la vue');
+    assertSameScroll(await scrolls(['.tbl__table .fr-table__wrapper']), before, 'Actualiser');
+  },
+);
+
+test('statistiques : chaque zone défilante a sa propre clé (data-scroll-key unique)', { skip: SKIP }, async () => {
+  await open('');
+  await w(`D.getElementById('tab-stats').click(); return true;`);
+  await until(`D.querySelector('#view-panel[data-view="stats"] .vbars')`);
+  const keys = await w(
+    `return [...D.querySelectorAll('#view-panel [data-scroll-key]')].map((e) => e.dataset.scrollKey);`,
+  );
+  assert.ok(keys.length >= 2, keys.join(', '));
+  assert.equal(new Set(keys).size, keys.length, `clés en double : ${keys.join(', ')}`);
+});
+
+test(
+  'Gantt : un rendu complet pendant le glisser de la poignée garde la largeur, enregistrée au relâcher',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-gantt').click(); return true;`);
+    await until(`D.getElementById('gantt-resizer') && D.querySelector('.grow__label')`);
+    const at = await w(`const r = D.getElementById('gantt-resizer').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + 64, y: at.y, button: 'left', buttons: 1 });
+    // Modification faite ailleurs pendant le glisser : la vue est redessinée, la largeur en cours reste
+    await markPanel();
+    await retitleFirstTask('Titre changé pendant le glisser');
+    assert.equal(await panelKept(), false);
+    assert.equal(await w(`return Number(D.getElementById('gantt-resizer').getAttribute('aria-valuenow'));`), 384);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + 128, y: at.y, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + 128,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    assertWidth(await labelWidth(), 448, 448, 'glisser poursuivi après le rendu');
+    // Accessibilité : nom de l'en-tête sans celui de la poignée, aide clavier en description
+    assert.equal(
+      await w(
+        `return D.getElementById(D.querySelector('.gantt__corner').getAttribute('aria-labelledby')).textContent;`,
+      ),
+      'Élément',
+    );
+    assert.match(
+      await w(
+        `return D.getElementById(D.getElementById('gantt-resizer').getAttribute('aria-describedby')).textContent;`,
+      ),
+      /Flèches gauche et droite/,
+    );
+  },
+);
