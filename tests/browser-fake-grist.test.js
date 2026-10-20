@@ -1333,6 +1333,41 @@ test(
 );
 
 test(
+  'message : un nouveau message garde le focus sur son bouton ; à sa fermeture, le focus revient',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    // Page considérée comme active : les événements focusin sont émis comme pour un utilisateur
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    // Module du message chargé dans la page hôte (même origine) : instance isolée de celle du widget
+    const top = async (body) => {
+      const r = await send('Runtime.evaluate', {
+        expression: `(async () => { ${body} })()`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails.exception?.description));
+      return r.result?.result?.value;
+    };
+    const focused = `const a = document.activeElement; return a.id || (a.hasAttribute('data-toast-action') ? 'action' : a.hasAttribute('data-toast-close') ? 'close' : a.tagName);`;
+    await top(`
+    const { createToast } = await import('/js/ui/toast.js');
+    const b = document.createElement('button'); b.id = 'origine'; document.body.append(b); b.focus();
+    window.__t = createToast();
+    window.__t.show('Un', { onAction() {} });
+    document.querySelector('.toast-region:last-of-type [data-toast-action]').focus();
+    window.__t.show('Deux', { onAction() {} });
+    return true;`);
+    assert.equal(await top(focused), 'action');
+    await top(`window.__t.show('Trois'); return true;`);
+    assert.equal(await top(focused), 'close');
+    await top(`window.__t.hide(); return true;`);
+    assert.equal(await top(focused), 'origine');
+    await send('Emulation.setFocusEmulationEnabled', { enabled: false });
+  },
+);
+
+test(
   'fiche ouverte : le bouton « Annuler » du message est atteignable au Tab, la fiche reste modale',
   { skip: SKIP },
   async () => {
