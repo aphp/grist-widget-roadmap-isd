@@ -73,6 +73,12 @@
   --viz-summary: #5b6475;
   --viz-late: #dc2626;
   --viz-today: #e11d48;
+  /*
+   * Management ISD dans les graphiques empilés (Statistiques, charge par profil) : en clair, le violet des badges
+   * (teinte « mgmt » de l'Équipe) ; en sombre, un violet moyen (le texte de badge #ddd6fe, trop clair et peu
+   * saturé, sortait de la bande du validateur dataviz et se confondait avec le gris « Autre »).
+   */
+  --viz-mgmt: #5b21b6;
 
   /*
    * Statistiques : une couleur par statut (familles des badges : ardoise foncée à faire, bleu en cours, ambre
@@ -235,6 +241,7 @@
   --viz-summary: #94a3b8;
   --viz-late: #f87171;
   --viz-today: #fb7185;
+  --viz-mgmt: #a46cf5;
   --status-todo-mark: #cbd5e1;
   --status-inprogress-mark: #3b82f6;
   --status-review-mark: #c98a08;

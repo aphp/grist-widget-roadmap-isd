@@ -4,7 +4,7 @@
  * puis le plan de charge personnes × mois.
  */
 import { raw } from '../core/sanitize.js';
-import { MONTHS_FR } from '../core/dates.js';
+import { MONTHS_FR, monthKey } from '../core/dates.js';
 import {
   barPercent,
   countBy,
@@ -12,6 +12,8 @@ import {
   delays,
   priorityTones,
   qualityRows,
+  roleLoad,
+  roleSeries,
   statusTone,
   timeline,
   topN,
@@ -20,7 +22,7 @@ import {
 } from '../core/stats-data.js';
 import { h } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
-import { label, taskCount } from '../labels.js';
+import { etpLabel, label, taskCount } from '../labels.js';
 import { mountLoadPlan } from './load-plan.js';
 
 export const id = 'stats';
@@ -104,6 +106,61 @@ function timelineBars(line) {
   </ul>`;
 }
 
+const etp1 = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const roleName = (k) => (k === 'Mgmt' ? label('stats.roles.Mgmt') : etpLabel(k));
+const roleTone = (k) => `role-${k.toLowerCase()}`;
+
+/**
+ * Charge par profil : une ligne par mois, barre empilée par profil (ordre fixe PO DA DS DE Mgmt Autre, mêmes
+ * teintes que l'onglet Équipe), total écrit au bout ; le mois courant est marqué. Infobulle par segment.
+ */
+function roleBars(rows, keys, current) {
+  const max = Math.max(...rows.map((r) => r.total));
+  return h`<div class="rbars">
+    <p class="rbars__axis rbars__axis--y" aria-hidden="true">${label('stats.roles.axisMonth')}</p>
+    <ul class="list hbars rbars__list" aria-label="${label('stats.chart.roles')}">
+      ${rows.map((r) => {
+        const m = monthLabel(r.month);
+        const cur = r.month === current;
+        return h`<li class="hbars__row${raw(cur ? ' rbars__row--current' : '')}">
+          <span class="hbars__label">${m}${cur ? h`<span class="fr-sr-only"> (${label('stats.roles.current')})</span>` : ''}</span>
+          <span class="hbars__track">
+            <span class="rbars__stack" style="--p:${barPercent(r.total, max).toFixed(1)}">
+              ${keys
+                .filter((k) => r[k] > 0)
+                .map(
+                  (k) =>
+                    h`<span class="rbars__seg tone--${roleTone(k)}" style="flex-grow:${r[k].toFixed(4)}" title="${label('stats.roles.tip', { mois: m, profil: roleName(k), valeur: etp1(r[k]) })}"></span>`,
+                )}
+            </span>
+            <span class="hbars__value" title="${label('stats.roles.totalTip', { mois: m, valeur: etp1(r.total) })}">${etp1(r.total)}</span>
+          </span>
+        </li>`;
+      })}
+    </ul>
+    <p class="rbars__axis rbars__axis--x" aria-hidden="true">${label('stats.roles.axisEtp')}</p>
+  </div>`;
+}
+
+function rolesCard(rows, keys, ctx) {
+  const T = label('stats.chart.roles');
+  if (!rows.length) return card('roles', T, empty(), { wide: true });
+  const sub = label('stats.roles.sub', { debut: monthLabel(rows[0].month), fin: monthLabel(rows.at(-1).month) });
+  const other = keys.includes('Autre') ? label('stats.roles.other') : label('stats.roles.noOther');
+  return card(
+    'roles',
+    T,
+    h`${legend(keys.map((k) => [roleTone(k), roleName(k)]))}${roleBars(rows, keys, monthKey(ctx.today))}
+      <p class="stats__foot">${other}</p>
+      ${dataTable(
+        T,
+        [label('stats.col.month'), ...keys.map(roleName), label('stats.roles.total')],
+        rows.map((r) => [monthLabel(r.month), ...keys.map((k) => etp1(r[k])), etp1(r.total)]),
+      )}`,
+    { wide: true, sub },
+  );
+}
+
 function legend(items) {
   return h`<ul class="list stats__legend">${items.map(([tone, text]) => h`<li><span class="stats__swatch tone--${tone}" aria-hidden="true"></span>${text}</li>`)}</ul>`;
 }
@@ -176,6 +233,7 @@ export function render(el, ctx) {
   const person = countBy(ctx.model, ids, 'person');
   const line = timeline(ctx.model, ids, ctx.today);
   const dl = delays(ctx.model, ids);
+  const roles = roleLoad(ctx.model, ids, ctx.today);
   const people = topN(person, TOP_PEOPLE);
   const T = (k) => label(`stats.chart.${k}`);
 
@@ -242,6 +300,7 @@ export function render(el, ctx) {
             : '',
         },
       )}
+      ${rolesCard(roles, roleSeries(roles), ctx)}
       <section class="stats__card stats__card--wide card" aria-labelledby="stats-plan">
         <h3 class="stats__card-title" id="stats-plan">${label('plan.title')}</h3>
         <div data-plan></div>

@@ -1301,3 +1301,28 @@ for (const query of [
     },
   );
 }
+
+test('statistiques : charge par profil tracée sur 12 mois, légende et tableau de valeurs', { skip: SKIP }, async () => {
+  await open('');
+  await w(`D.getElementById('tab-stats').click(); return true;`);
+  await until(`D.querySelector('#stats-roles')`);
+  const r = await w(`const c = D.getElementById('stats-roles').closest('section');
+    return {
+      legend: [...c.querySelectorAll('.stats__legend li')].map((li) => li.textContent.trim()),
+      rows: c.querySelectorAll('.rbars__list > li').length,
+      segs: c.querySelectorAll('.rbars__seg').length,
+      current: c.querySelectorAll('.rbars__row--current').length,
+      table: c.querySelectorAll('.stats__table tbody tr').length,
+      heads: [...c.querySelectorAll('.stats__table thead th')].map((th) => th.textContent.trim()),
+      axes: [...c.querySelectorAll('.rbars__axis')].map((p) => p.textContent.trim()),
+    };`);
+  assert.deepEqual(r.legend.slice(0, 5), ['PO', 'DA', 'DS', 'DE', 'Management ISD']);
+  assert.equal(r.rows, 12);
+  assert.equal(r.table, 12);
+  assert.equal(r.current, 1);
+  assert.ok(r.segs > 0, 'aucun segment tracé');
+  assert.equal(r.heads[0], 'Mois');
+  assert.equal(r.heads.at(-1), 'Total');
+  assert.equal(r.axes.length, 2);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+});

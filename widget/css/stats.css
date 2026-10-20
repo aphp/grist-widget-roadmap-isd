@@ -157,6 +157,24 @@
 .tone--viz-3 {
   background: var(--viz-3);
 }
+.tone--role-po {
+  background: var(--viz-1);
+}
+.tone--role-da {
+  background: var(--viz-2);
+}
+.tone--role-ds {
+  background: var(--viz-3);
+}
+.tone--role-de {
+  background: var(--viz-4);
+}
+.tone--role-mgmt {
+  background: var(--viz-mgmt);
+}
+.tone--role-autre {
+  background: var(--viz-neutral);
+}
 .tone--late {
   background: var(--viz-late);
 }
@@ -328,6 +346,7 @@
 }
 .stats__alt {
   margin-top: var(--space-3);
+  overflow-x: auto;
   font-size: var(--font-size-sm);
 }
 .stats__alt summary {
@@ -349,7 +368,46 @@
   border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
+.stats__table th[scope='row'] {
+  white-space: nowrap;
+}
 .stats__table td {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Charge par profil : une ligne par mois, barre empilée (écart de 2 px entre profils) ---- */
+.rbars__axis {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.rbars__axis--x {
+  margin: var(--space-2) 0 0;
+  padding-left: calc(6rem + var(--space-3));
+}
+.rbars__list .hbars__row {
+  grid-template-columns: 6rem minmax(0, 1fr);
+}
+/* La barre la plus longue laisse 3,5 rem au total écrit au bout */
+.rbars__stack {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  width: calc((100% - 3.5rem) * var(--p) / 100);
+  height: 16px;
+  overflow: hidden;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.rbars__seg {
+  flex: 1 1 0;
+  min-width: 2px;
+}
+.rbars__row--current {
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+.rbars__row--current .hbars__label {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
 }
