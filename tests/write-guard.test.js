@@ -7,6 +7,7 @@ import {
   CHOICE_COLUMNS,
   EXPECTED_TYPES,
   NO_REMOVE,
+  REMOVABLE,
   WRITABLE,
 } from '../widget/js/core/grist-writer.js';
 import { readEditMode } from '../widget/js/core/edit-switch.js';
@@ -216,14 +217,23 @@ test('liste blanche figée : Tasks, Chantiers, Team et Disponibilites (lots 2a �
   assert.deepEqual(ALLOWED_ACTIONS, ['UpdateRecord', 'BulkUpdateRecord', 'AddRecord', 'RemoveRecord']);
 });
 
-test('RemoveRecord n’est produit qu’à un endroit du writer : l’annulation d’une création de la session', () => {
+test('RemoveRecord n’est produit qu’à deux endroits du writer : annuler une création, supprimer depuis la fiche', () => {
   const src = sources.find(([f]) => f === WRITER)[1];
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  assert.equal(code.match(/'RemoveRecord'/g).length, 4); // ALLOWED_ACTIONS, contrôle du lot, correction locale, undoAdd
+  // ALLOWED_ACTIONS, contrôle du lot, correction locale, undoAdd, remove (lot d'une suppression depuis la fiche)
+  assert.equal(code.match(/'RemoveRecord'/g).length, 5);
   assert.match(code, /actions = \[\['RemoveRecord', entry\.table, entry\.id\]\]/);
-  // Jamais sur Team : refusé par le contrôle du lot et avant toute annulation de création
-  assert.match(code, /if \(NO_REMOVE\.includes\(table\)\) throw new WriteRefused\('suppression'/);
+  assert.match(code, /const actions = plan\.rows\.map\(\(r\) => \['RemoveRecord', r\.table, r\.id\]\)/);
+  // Suppression depuis la fiche : Tasks et Chantiers seulement (jamais Team, Projects ni Disponibilites)
+  assert.deepEqual(REMOVABLE, ['Tasks', 'Chantiers']);
+  assert.ok(Object.isFrozen(REMOVABLE));
+  // Jamais sur Team : refusé par le contrôle du lot (suppression et restauration) et avant toute annulation
+  assert.equal(code.match(/if \(NO_REMOVE\.includes\(table\)\) throw new WriteRefused\('suppression'/g).length, 2);
   assert.match(code, /if \(NO_REMOVE\.includes\(entry\.table\)\) return keep\('personne'\)/);
+  assert.match(code, /if \(!REMOVABLE\.includes\(table\) \|\| NO_REMOVE\.includes\(table\)\) return \{ ok: false/);
+  // AddRecord à identifiant fixe : seulement l'instantané exact d'une suppression de la session (restorable)
+  assert.match(code, /if \(!isId\(id\) \|\| !opts\.restorable\?\.\(table, id, fields\)\) throw new WriteRefused/);
+  assert.equal(code.match(/\['AddRecord', r\.table, r\.id, \{ \.\.\.r\.values \}\]/g).length, 1);
 });
 
 test('interrupteur d’édition coupé par défaut ; seul un paramètre explicite l’ouvre', () => {

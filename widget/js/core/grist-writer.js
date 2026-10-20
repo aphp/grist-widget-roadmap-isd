@@ -10,8 +10,10 @@
  *   existantes, projet compris dans les projets du chantier, tâche parente du même chantier et sans cycle, ordre
  *   des dates, sous-tâches qui suivent leur tâche quand elle change de chantier, tâches qui gardent un projet du
  *   chantier quand ses projets changent ; règle de périmètre ISD (canWriteRow, canWriteValues).
- * - Suppression : seulement pour annuler une création faite dans la session (Q9), jamais autrement, et jamais
- *   dans Team (NO_REMOVE) : une personne se désactive (actif à faux).
+ * - Suppression : pour annuler une création faite dans la session (Q9), ou depuis la fiche, après confirmation, d'une
+ *   tâche avec toutes ses sous-tâches ou d'un chantier vide (REMOVABLE, remove) ; refusée si une ligne hors du lot en
+ *   dépend. Jamais dans Team (NO_REMOVE) : une personne se désactive (actif à faux). Les lignes supprimées sont
+ *   relues juste avant (toutes les colonnes de données) et « Annuler » les recrée au même identifiant.
  * - Modes : 'off' (toute écriture refusée, défaut), 'dry-run' (mode essai : journalisé, rien n'est envoyé),
  *   'on' (envoi). Le mode vient de edit-switch.js (paramètre d'adresse, flags.json, verrou de document).
  * - Contrôle des colonnes au chargement : une colonne absente, devenue formule ou de type inattendu est retirée
@@ -117,6 +119,12 @@ export const READ_ALSO = Object.freeze({
 /** Tables dont aucune ligne n'est jamais supprimée, même pour annuler une création (une personne se désactive). */
 export const NO_REMOVE = Object.freeze(['Team']);
 
+/**
+ * Tables où une ligne se supprime depuis sa fiche (remove) : une tâche avec toutes ses sous-tâches, un chantier vide.
+ * Jamais Team, Projects ni Disponibilites.
+ */
+export const REMOVABLE = Object.freeze(['Tasks', 'Chantiers']);
+
 /** Capacité hebdomadaire maximale d'une personne (h), au pas de 0,5 h ; 0 exclu (vide = 35 h par défaut). */
 export const CAPACITY_MAX = 60;
 
@@ -199,8 +207,10 @@ const acceptedType = (k, type) => type === EXPECTED_TYPES[k] || Boolean(ALSO_ACC
 export const CHOICE_COLUMNS = Object.freeze([]);
 
 /**
- * Seules actions que le writer sait produire. RemoveRecord : uniquement pour annuler une création de la session.
- * BulkUpdateRecord : lignes dérivées d'un même enregistrement (sous-tâches qui suivent leur tâche).
+ * Seules actions que le writer sait produire. RemoveRecord : pour annuler une création de la session, ou pour une
+ * suppression depuis la fiche (lignes du lot en cours). AddRecord à identifiant fixe : seulement pour « Annuler » une
+ * suppression (instantané exact). BulkUpdateRecord : lignes dérivées d'un même enregistrement (sous-tâches qui
+ * suivent leur tâche).
  */
 export const ALLOWED_ACTIONS = Object.freeze(['UpdateRecord', 'BulkUpdateRecord', 'AddRecord', 'RemoveRecord']);
 
@@ -468,9 +478,12 @@ export function groupRows(actions) {
 
 /**
  * Vérifie un lot avant envoi : actions connues, tables et colonnes de la liste blanche ; RemoveRecord seulement
- * sur une ligne créée dans la session (removable). Lève WriteRefused.
+ * sur une ligne créée dans la session ou d'une suppression en cours (removable) ; AddRecord à identifiant fixe
+ * seulement s'il reproduit exactement l'instantané d'une suppression de la session (restorable), seule création
+ * qui porte des colonnes hors de la liste de création. Lève WriteRefused.
  * @param {any[]} actions
- * @param {{removable?:(table:string, id:number) => boolean}} [opts]
+ * @param {{removable?:(table:string, id:number) => boolean,
+ *          restorable?:(table:string, id:number, fields:object) => boolean}} [opts]
  */
 export function assertActions(actions, opts = {}) {
   if (!Array.isArray(actions) || !actions.length) throw new WriteRefused('vide');
@@ -480,8 +493,12 @@ export function assertActions(actions, opts = {}) {
     if (typeof table !== 'string' || table.startsWith('_grist') || !has(WRITABLE, table))
       throw new WriteRefused('table', String(table));
     if (name === 'AddRecord') {
-      if (id !== null) throw new WriteRefused('identifiant', String(id));
       if (!fields || typeof fields !== 'object') throw new WriteRefused('vide');
+      if (id !== null) {
+        if (NO_REMOVE.includes(table)) throw new WriteRefused('suppression', `${table} ${id}`);
+        if (!isId(id) || !opts.restorable?.(table, id, fields)) throw new WriteRefused('identifiant', String(id));
+        continue;
+      }
       for (const col of Object.keys(fields))
         if (!WRITABLE[table].add.includes(col)) throw new WriteRefused('colonne', key(table, col));
       continue;
@@ -753,6 +770,7 @@ export function lookupFromTables(tables, base = null) {
   const ids = (pred) => (tasks()?.id ?? []).filter((_, i) => pred(i));
   return {
     choices: (k) => base?.choices?.(k) ?? null,
+    table: (t) => tables[t] ?? base?.table?.(t) ?? null,
     row: (t, id) => (tables[t] ? decodeRow(tables[t], t, id) : (base?.row(t, id) ?? null)),
     estimationIds: () => (tables.Team ? estimationIdsOfTable(tables.Team) : (base?.estimationIds?.() ?? new Set())),
     childIds: (id) => (tasks() ? ids((i) => col('parentTask')[i] === id) : (base?.childIds?.(id) ?? [])),
@@ -800,22 +818,125 @@ export function changedSinceCreation(fresh, snapshot, written, formula = () => f
   });
 }
 
+const refId = (v) => (isId(v) ? v : null);
+const refList = (v) => (Array.isArray(v) && v[0] === 'L' ? v.slice(1).filter(isId) : []);
+
 /**
- * Lignes qui référencent une ligne (relues dans la Feuille) : sous-tâches (parentTask), dépendances (dependDe des
- * tâches et des chantiers) pour une tâche ; tâches du chantier (Chantier) pour un chantier. Fonction pure.
+ * Liens entre lignes, depuis les tables brutes relues : tâche (parent, chantier, dépendances) et dépendances des
+ * chantiers (dependDe : vers des tâches). Même forme que delete-plan.js:linksFromModel. Fonction pure.
+ * @returns {{tasks:{id:number, parentId:number|null, chantierId:number|null, dependDe:number[]}[],
+ *   chantiers:{id:number, dependDe:number[]}[]}}
  */
-export function referencesTo(tables, table, id) {
-  // Une indisponibilité n'est référencée par aucune ligne
+export function linksFromTables(tables) {
+  const t = tables?.Tasks ?? { id: [] };
+  const c = tables?.Chantiers ?? { id: [] };
+  return {
+    tasks: t.id.map((id, i) => ({
+      id,
+      parentId: refId(t.parentTask?.[i]),
+      chantierId: refId(t.Chantier?.[i]),
+      dependDe: refList(t.dependDe?.[i]),
+    })),
+    chantiers: c.id.map((id, i) => ({ id, dependDe: refList(c.dependDe?.[i]) })),
+  };
+}
+
+/**
+ * Lignes qui référencent des lignes d'une table (seul scanner des références) : sous-tâches (parentTask) et
+ * dépendances (dependDe des tâches et des chantiers) pour des tâches ; tâches rattachées (Chantier) pour des
+ * chantiers. Les lignes d'exclude ('Table:id', lot d'une suppression) ne comptent pas. Fonction pure.
+ * @returns {{table:'Tasks'|'Chantiers', id:number}[]}
+ */
+export function referencesIn(links, table, ids, exclude = new Set()) {
+  // Une indisponibilité, une personne ou un projet ne sont jamais visés ici
   if (table !== 'Tasks' && table !== 'Chantiers') return [];
-  const t = tables.Tasks ?? { id: [] };
-  const list = (v) => Array.isArray(v) && v[0] === 'L' && v.includes(id);
-  if (table === 'Chantiers') return t.id.filter((_, i) => t.Chantier?.[i] === id);
-  const c = tables.Chantiers ?? { id: [] };
+  const set = new Set(ids);
+  const outside = (t) => (l) => !exclude.has(`${t}:${l.id}`);
+  const hits = (t, list, pred) =>
+    list
+      .filter(outside(t))
+      .filter(pred)
+      .map((l) => ({ table: t, id: l.id }));
+  if (table === 'Chantiers') return hits('Tasks', links.tasks, (l) => set.has(l.chantierId));
   return [
-    ...t.id.filter((_, i) => t.parentTask?.[i] === id || list(t.dependDe?.[i])),
-    ...c.id.filter((_, i) => list(c.dependDe?.[i])).map((x) => `chantier ${x}`),
+    ...hits('Tasks', links.tasks, (l) => set.has(l.parentId) || l.dependDe.some((d) => set.has(d))),
+    ...hits('Chantiers', links.chantiers, (l) => l.dependDe.some((d) => set.has(d))),
   ];
 }
+
+/**
+ * Lignes qui référencent une ligne (relues dans la Feuille), pour annuler une création : tâches par leur
+ * identifiant, chantiers en « chantier n ». Fonction pure.
+ */
+export function referencesTo(tables, table, id) {
+  return referencesIn(linksFromTables(tables), table, [id]).map((r) =>
+    r.table === 'Tasks' ? r.id : `chantier ${r.id}`,
+  );
+}
+
+/**
+ * Lot d'une suppression depuis la fiche (même règle pour la fenêtre, delete-plan.js, et pour le writer, sur les
+ * tables relues) : une tâche puis toutes ses sous-tâches à toute profondeur, chaque parent avant ses enfants ; un
+ * chantier seul, s'il est vide. Refus : 'table' (hors REMOVABLE), 'ligne' (absente), 'chantier-non-vide' (n tâches
+ * rattachées), 'reference' (une ligne hors du lot en dépend, refs). Fonction pure.
+ * @returns {{ok:true, rows:{table:string, id:number}[]}|{ok:false, reason:string, n?:number,
+ *   refs?:{table:string, id:number}[]}}
+ */
+export function deletionBatch(links, table, id) {
+  if (!REMOVABLE.includes(table)) return { ok: false, reason: 'table' };
+  let ids;
+  if (table === 'Chantiers') {
+    if (!links.chantiers.some((l) => l.id === id)) return { ok: false, reason: 'ligne' };
+    const n = links.tasks.filter((l) => l.chantierId === id).length;
+    if (n) return { ok: false, reason: 'chantier-non-vide', n };
+    ids = [id];
+  } else {
+    if (!links.tasks.some((l) => l.id === id)) return { ok: false, reason: 'ligne' };
+    const kids = new Map();
+    for (const l of links.tasks) if (l.parentId) kids.set(l.parentId, [...(kids.get(l.parentId) ?? []), l.id]);
+    // Parcours en largeur : un parent toujours avant ses enfants (ordre de la restauration)
+    ids = [id];
+    const seen = new Set(ids);
+    for (let k = 0; k < ids.length; k++)
+      for (const c of kids.get(ids[k]) ?? [])
+        if (!seen.has(c)) {
+          seen.add(c);
+          ids.push(c);
+        }
+  }
+  const rows = ids.map((x) => ({ table, id: x }));
+  const refs = referencesIn(links, table, ids, new Set(ids.map((x) => `${table}:${x}`)));
+  return refs.length ? { ok: false, reason: 'reference', refs } : { ok: true, rows };
+}
+
+/** Cellule qu'une restauration ne saurait pas réécrire telle quelle (erreur, valeur masquée, en attente…). */
+const UNRESTORABLE = new Set(['E', 'C', 'P', 'U']);
+
+/**
+ * Cellules de DONNÉES d'une ligne brute relue, gardées pour la recréer telle quelle (« Annuler » une suppression) :
+ * toutes les colonnes sauf id, les colonnes formules (d'après les métadonnées lues) et les colonnes d'affichage
+ * calculées. null si une colonne est inconnue des métadonnées ou une cellule non réécrivable. Fonction pure.
+ * @param {Record<string,{isFormula?:boolean}>|null} columns métadonnées 'Table.colonne'
+ */
+export function dataCells(table, row, columns) {
+  if (!row || !columns) return null;
+  const out = {};
+  for (const [c, v] of Object.entries(row)) {
+    if (c === 'id' || c.startsWith('gristHelper_')) continue;
+    const m = columns[key(table, c)];
+    if (!m) return null;
+    if (m.isFormula) continue;
+    if (Array.isArray(v) && UNRESTORABLE.has(v[0])) return null;
+    out[c] = v;
+  }
+  return out;
+}
+
+/** Mêmes cellules, colonne par colonne (une restauration reproduit exactement l'instantané). */
+const sameCells = (a, b) =>
+  Boolean(a && b) &&
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.keys(a).every((c) => Object.hasOwn(b, c) && JSON.stringify(a[c]) === JSON.stringify(b[c]));
 
 /** Colonnes dont un changement modifie le périmètre d'une ligne (contrôlé sur les valeurs d'après). */
 const SCOPE_COLUMNS = Object.freeze({
@@ -833,12 +954,14 @@ const SCOPE_COLUMNS = Object.freeze({
  *          canWriteValues?:(table:string, values:object, opts:{add:boolean}) => boolean,
  *          refExists?:(table:string, id:number) => boolean,
  *          lookup?:{row(table:string, id:number):object|null, childIds?(id:number):number[],
- *                   chantierTasks?(id:number):number[], referenced?(table:string, id:number):boolean},
+ *                   chantierTasks?(id:number):number[], referenced?(table:string, id:number):boolean,
+ *                   table?(name:string):object|null},
  *          readTable?:(table:string) => Promise<object>,
  *          tempId?:(table:string) => number,
  *          periodOf?:(table:string, id:number) => {start:number|null, end:number|null}|null,
  *          preflight?:() => Promise<boolean>}} opts
  *   lookup.choices(cle) : choix de la colonne 'Table.colonne' lus dans la Feuille (rôle et Domaine d'une personne) ;
+ *   lookup.table(nom) : table brute chargée (suppression en mode essai : lot et instantané sur les données chargées) ;
  *   canWriteRow : règle de périmètre (Q15 B, Q14 A) d'une ligne existante, contrôlée ici aussi, pas seulement dans
  *   l'interface ; canWriteValues : la même règle sur les valeurs d'une ligne créée ou rattachée ailleurs ;
  *   lookup : lignes lues (contrôle strict des créations, des chantiers et des changements de rattachement : sans
@@ -866,8 +989,11 @@ export function createWriter({
   // Métadonnées des colonnes (type d'écriture de Team.aph, Text ou Int), remplacées à chaque relecture lisible
   let meta = columns;
   const journal = [];
-  const created = new Set(); // 'Table:id' créées dans la session (seules lignes supprimables, pour « Annuler »)
+  const created = new Set(); // 'Table:id' créées dans la session (supprimables pour « Annuler » la création)
   const addRefused = new Set(); // tables où une règle d'accès refuse l'ajout
+  const removeRefused = new Set(); // tables où une règle d'accès refuse la suppression
+  const removing = new Set(); // 'Table:id' du lot d'une suppression en cours (remove), vidé après l'envoi
+  const restorable = new Map(); // 'Table:id' supprimées dans la session → cellules relues avant (instantané)
   const exists = refExists ?? (lookup ? (t, id) => Boolean(lookup.row(t, id)) : null);
   // Personnes estimation (lignes actives qui portent ESTIMATION_APH dans les données chargées, lookup.estimationIds) :
   // seules exemptées de la borne de 1 ETP ; sans lookup, personne ne l'est
@@ -903,10 +1029,23 @@ export function createWriter({
   const canAddField = (table, col) =>
     canAdd(table).ok && WRITABLE[table].add.includes(col) && !disabled.has(key(table, col));
 
-  const removable = (table, id) => created.has(`${table}:${id}`);
+  /** Peut-on supprimer une ligne de cette table depuis sa fiche (remove) ? */
+  function canRemove(table) {
+    if (mode === 'off') return { ok: false, reason: 'off' };
+    if (blocked) return { ok: false, reason: blocked };
+    if (!REMOVABLE.includes(table) || NO_REMOVE.includes(table)) return { ok: false, reason: 'table' };
+    if (removeRefused.has(table)) return { ok: false, reason: 'acl' };
+    // Sans métadonnées, l'instantané (colonnes de données) ne peut pas être pris : rien ne serait restaurable
+    if (!meta) return { ok: false, reason: 'meta' };
+    return { ok: true, reason: 'ok' };
+  }
+
+  const removable = (table, id) => created.has(`${table}:${id}`) || removing.has(`${table}:${id}`);
+  const canRestore = (table, id, fields) => sameCells(restorable.get(`${table}:${id}`), fields);
+  const guards = { removable, restorable: canRestore };
 
   async function send(actions) {
-    assertActions(actions, { removable });
+    assertActions(actions, guards);
     try {
       return await withTimeout(
         docApi.applyUserActions(actions),
@@ -1222,6 +1361,156 @@ export function createWriter({
     return hits.length === 1 ? hits[0] : null;
   }
 
+  /**
+   * Tables Tasks et Chantiers d'une suppression ou de son annulation : relues dans la Feuille (envoi réel, délai de
+   * 10 s ; WriteRefused 'relecture'), sinon les données chargées (mode essai). WriteRefused 'verification' sans
+   * moyen de les lire.
+   */
+  async function deletionTables() {
+    if (mode === 'on') {
+      if (!readTable) throw new WriteRefused('verification');
+      return { Tasks: await readFresh('Tasks'), Chantiers: await readFresh('Chantiers') };
+    }
+    const out = { Tasks: lookup?.table?.('Tasks'), Chantiers: lookup?.table?.('Chantiers') };
+    if (!out.Tasks?.id || !out.Chantiers?.id) throw new WriteRefused('verification');
+    return out;
+  }
+
+  /**
+   * Supprime depuis la fiche une tâche avec toutes ses sous-tâches, ou un chantier vide : un seul lot, un
+   * RemoveRecord par ligne. Lot calculé sur les tables relues juste avant (deletionBatch) ; refus si une ligne hors
+   * du lot en dépend, hors périmètre, ou si le lot n'est plus celui que l'utilisateur a confirmé (expect).
+   * Toutes les colonnes de données de chaque ligne sont gardées dans l'entrée (snapshot) : « Annuler » les recrée.
+   * @param {string} table 'Tasks' ou 'Chantiers'
+   * @param {number} id
+   * @param {{expect?:number[]}} [opts] expect : identifiants listés dans la fenêtre de confirmation
+   * @returns {Promise<{seq:number, kind:'delete', table:string, id:number, snapshot:object[], actions:any[],
+   *   sent:boolean}>}
+   */
+  async function remove(table, id, opts = {}) {
+    const right = canRemove(table);
+    if (!right.ok) {
+      const why = { acl: 'suppression-refusee', meta: 'verification' }[right.reason] ?? right.reason;
+      throw new WriteRefused(why, why === 'table' ? String(table) : '');
+    }
+    if (!isId(id)) throw new WriteRefused('identifiant', String(id));
+    const tables = await deletionTables();
+    const plan = deletionBatch(linksFromTables(tables), table, id);
+    if (!plan.ok) {
+      const detail = plan.refs?.map((r) => `${r.table} ${r.id}`).join(', ') ?? (plan.n ? String(plan.n) : '');
+      throw new WriteRefused(plan.reason, detail || `${table} ${id}`);
+    }
+    const ids = plan.rows.map((r) => r.id);
+    if (opts.expect && (opts.expect.length !== ids.length || !opts.expect.every((x) => ids.includes(x))))
+      throw new WriteRefused('lot-change', `${table} ${id}`);
+    for (const r of plan.rows)
+      if (canWriteRow && !canWriteRow(r.table, r.id)) throw new WriteRefused('perimetre', `${r.table} ${r.id}`);
+    const snapshot = plan.rows.map((r) => {
+      const raw = rawRow(tables[r.table], r.id);
+      const values = dataCells(r.table, raw, meta);
+      if (!values) throw new WriteRefused('instantane', `${r.table} ${r.id}`);
+      return { table: r.table, id: r.id, values, raw };
+    });
+    const actions = plan.rows.map((r) => ['RemoveRecord', r.table, r.id]);
+    const nameCol = table === 'Tasks' ? 'titre' : 'Nom_du_chantier';
+    const entry = {
+      seq: ++seq,
+      kind: 'delete',
+      table,
+      id,
+      before: { [nameCol]: decodeRow(tables[table], table, id)?.[nameCol] ?? '' },
+      after: {},
+      rows: [],
+      snapshot,
+      actions,
+      applied: actions,
+      sent: false,
+      undone: false,
+    };
+    for (const r of plan.rows) removing.add(`${r.table}:${r.id}`);
+    try {
+      if (mode === 'on') {
+        await checkFlags();
+        try {
+          await send(actions);
+        } catch (err) {
+          if (err instanceof WriteFailed && err.document) blocked = 'viewer';
+          else if (err instanceof WriteFailed && err.kind === 'acl') removeRefused.add(table);
+          // Sans réponse : si toutes les lignes ont disparu à la relecture, la suppression a eu lieu (annulable)
+          if (!(err instanceof WriteFailed && err.kind === 'timeout' && (await allGone(plan.rows)))) throw err;
+          entry.recovered = true;
+        }
+        entry.sent = true;
+      } else assertActions(actions, guards);
+    } finally {
+      removing.clear();
+    }
+    for (const r of snapshot) restorable.set(`${r.table}:${r.id}`, r.values);
+    journal.push(entry);
+    return entry;
+  }
+
+  /** Après une suppression sans réponse : toutes les lignes du lot ont-elles disparu des tables relues ? */
+  async function allGone(rows) {
+    try {
+      const tables = await deletionTables();
+      return rows.every((r) => !tables[r.table].id.includes(r.id));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Annule une suppression : chaque ligne est recréée au même identifiant avec les cellules relues avant la
+   * suppression (AddRecord, parents avant enfants). Refus 'reutilise' si un identifiant existe de nouveau dans les
+   * tables relues, 'relecture' si elles ne peuvent pas être lues. Une restauration ne s'annule pas.
+   */
+  async function undoDelete(entry) {
+    const keep = (reason) => ({ entry, skipped: [], undoEntry: null, busy: false, reason });
+    let tables;
+    try {
+      tables = await deletionTables();
+    } catch {
+      return keep('relecture');
+    }
+    if (entry.snapshot.some((r) => tables[r.table]?.id?.includes(r.id))) return keep('reutilise');
+    const actions = entry.snapshot.map((r) => ['AddRecord', r.table, r.id, { ...r.values }]);
+    const undoEntry = {
+      seq: ++seq,
+      kind: 'restore',
+      table: entry.table,
+      id: entry.id,
+      before: {},
+      after: { ...entry.before },
+      rows: [],
+      actions,
+      // Correction locale du modèle : la ligne entière relue avant la suppression (formules comprises)
+      applied: entry.snapshot.map((r) => [
+        'AddRecord',
+        r.table,
+        r.id,
+        Object.fromEntries(Object.entries(r.raw).filter(([c]) => c !== 'id')),
+      ]),
+      sent: false,
+      undone: false,
+      undoOf: entry.seq,
+    };
+    if (mode === 'on') {
+      await checkFlags();
+      try {
+        await send(actions);
+      } catch (err) {
+        if (err instanceof WriteFailed && err.document) blocked = 'viewer';
+        throw err;
+      }
+      undoEntry.sent = true;
+    } else assertActions(actions, guards);
+    for (const r of entry.snapshot) restorable.delete(`${r.table}:${r.id}`);
+    journal.push(undoEntry);
+    entry.undone = true;
+    return { entry, skipped: [], undoEntry, busy: false };
+  }
+
   /** Dernière écriture qui peut être annulée (ni déjà annulée, ni elle-même une annulation). */
   const lastUndoable = () => [...journal].reverse().find((e) => !e.undone && !e.undoOf) ?? null;
 
@@ -1282,7 +1571,7 @@ export function createWriter({
       await checkFlags();
       await send(actions);
       undoEntry.sent = true;
-    } else assertActions(actions, { removable });
+    } else assertActions(actions, guards);
     created.delete(`${entry.table}:${entry.id}`);
     journal.push(undoEntry);
     entry.undone = true;
@@ -1301,6 +1590,7 @@ export function createWriter({
     undoing = true;
     try {
       if (entry.kind === 'add') return await undoAdd(entry);
+      if (entry.kind === 'delete') return await undoDelete(entry);
       // Mode essai : rien n'a été envoyé, la valeur écrite est celle du journal
       const fresh = mode === 'on' ? await reread(readRow, entry.table, entry.id) : entry.after;
       const { changes, skipped } = planUndo(entry, fresh);
@@ -1331,10 +1621,12 @@ export function createWriter({
     can,
     canAdd,
     canAddField,
+    canRemove,
     /** Type d'écriture de la colonne (columnTypeOf) : 'Int' pour un Team.aph converti en entier, sinon le type attendu. */
     columnType: (table, col) => columnTypeOf(meta, table, col),
     update,
     add,
+    remove,
     undoLast,
     lastUndoable,
     /** Copie du journal de la session (mode essai : actions non envoyées). */
