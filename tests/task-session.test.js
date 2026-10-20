@@ -14,7 +14,14 @@ import {
 } from '../widget/js/core/grist-writer.js';
 import { applyToTables } from '../widget/js/core/grist-writer.js';
 import { diffDraft, draftFrom, rebaseDraft } from '../widget/js/core/task-form.js';
-import { conflictBatch, failureKind, runQuickStatus, runSave } from '../widget/js/core/task-session.js';
+import {
+  batchWithCharges,
+  conflictBatch,
+  failureKind,
+  runQuickStatus,
+  runSave,
+} from '../widget/js/core/task-session.js';
+import { periodConflictCols } from '../widget/js/core/conflicts.js';
 import { resolveEditState, writerMode } from '../widget/js/core/edit-switch.js';
 import { dayOfIso } from '../widget/js/core/dates.js';
 
@@ -683,4 +690,53 @@ test('R4 : la borne de 1 ETP suit les dates de la ligne relue, pas celles des do
   assert.equal(r.kind, 'failed');
   assert.match(r.error.message, /15 h/);
   assert.equal(g.batches.length, 0);
+});
+
+test('periodConflictCols : charges et date de la période envoyées, période changée ailleurs', () => {
+  const seen = { dateDebut: 10, dateEcheance: 23 };
+  const ch = { dateEcheance: 37, charges: '[]' };
+  assert.deepEqual(periodConflictCols(seen, seen, ch), []);
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 17, dateEcheance: 23 }, ch), ['dateEcheance']);
+  // Échéance changée ailleurs aussi : la saisie la remplace, même période
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 10, dateEcheance: 30 }, ch), []);
+  // Sans charges ou sans date dans le lot : rien
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 17 }, { dateEcheance: 37 }), []);
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 17 }, { charges: '[]' }), []);
+});
+
+test('ETP gardé : date de début changée ailleurs pendant un allongement, fenêtre de conflit puis heures recalculées sur les dates envoyées', async () => {
+  const { g, writer, fetchRow } = setup();
+  const day = (iso) => dayOfIso(iso);
+  g.otherUserSets('Tasks', 1002, {
+    dateDebut: 86400 * day('2026-11-02'),
+    dateEcheance: 86400 * day('2026-11-15'),
+    charges: '[{"teamId":1,"heures":70}]',
+  });
+  const base = await fetchRow(1002);
+  // Saisie : échéance + 14 jours, 1 ETP gardé (70 h → 140 h) ; ailleurs, début au 9 novembre
+  const draft = { ...draftFrom(base), dateEcheance: day('2026-11-29'), charges: '[{"teamId":1,"heures":140}]' };
+  g.otherUserSets('Tasks', 1002, { dateDebut: 86400 * day('2026-11-09') });
+  const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
+  assert.equal(r.kind, 'conflict');
+  assert.ok(r.cols.includes('dateEcheance'));
+  assert.equal(g.batches.length, 0);
+  // « Garder la mienne » : 9 au 29 novembre (21 jours) → 105 h
+  const batch = batchWithCharges(
+    conflictBatch(base, draft, r.fresh, { dateEcheance: 'mine' }),
+    '[{"teamId":1,"heures":105}]',
+    r.fresh,
+  );
+  assert.equal(batch.chargesBase, r.fresh.charges);
+  // La période bouge encore ailleurs avant l'envoi : nouvelle fenêtre, rien n'est envoyé
+  g.otherUserSets('Tasks', 1002, { dateDebut: 86400 * day('2026-11-16') });
+  const again = await runSave({ taskId: 1002, base: r.fresh, draft, writer, fetchRow, ...batch });
+  assert.deepEqual([again.kind, again.cols], ['conflict', ['dateEcheance']]);
+  g.otherUserSets('Tasks', 1002, { dateDebut: 86400 * day('2026-11-09') });
+  const saved = await runSave({ taskId: 1002, base: r.fresh, draft, writer, fetchRow, ...batch });
+  assert.equal(saved.kind, 'saved');
+  const cells = g.batches.at(-1)[0][3];
+  assert.equal(cells.charges, '[{"teamId":1,"heures":105}]');
+  assert.equal(cells.dateEcheance, 86400 * day('2026-11-29'));
+  // Charges identiques à la ligne relue : retirées du lot
+  assert.equal('charges' in batchWithCharges({ changes: { charges: 'x' } }, r.fresh.charges, r.fresh).changes, false);
 });

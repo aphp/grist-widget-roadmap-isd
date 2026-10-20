@@ -4,7 +4,7 @@
  * n'écrit jamais dans une autre ligne que celle de l'instantané, même si le formulaire a changé entre-temps.
  */
 import { mergeCharges, sameCharges } from './charges-edit.js';
-import { detectConflicts, mergeChargesChange } from './conflicts.js';
+import { detectConflicts, mergeChargesChange, periodConflictCols } from './conflicts.js';
 import { DEFAULT_TIMEOUT_MS, WriteFailed, WriteRefused, withTimeout } from './grist-writer.js';
 import { chantierStatusChanges, reattachRows, taskLinksFromTable } from './chantier-form.js';
 import { moveRows } from './create-form.js';
@@ -77,6 +77,9 @@ export async function runSave(snap) {
     }
     if (fresh === null) return { kind: 'missing' };
     source = fresh;
+    // Période changée ailleurs depuis la fenêtre : les charges recalculées ne valent plus, nouvelle fenêtre
+    const moved = snap.datesSeen ? periodConflictCols(snap.datesSeen, fresh, changes) : [];
+    if (moved.length) return { kind: 'conflict', cols: moved, fresh, mine: {} };
     if (rechecksCharges) {
       // Cellule que l'utilisateur a vue dans la fenêtre de conflit (ou à l'ouverture) et ce qu'il a choisi d'écrire
       // par rapport à elle (sa saisie l'emporte sur une même personne : choix déjà fait)
@@ -128,6 +131,8 @@ export async function runSave(snap) {
     delete others.charges;
     delete others.tags;
     const cols = detectConflicts(base, fresh, others);
+    // Charges recalculées et date de la période envoyées, période changée ailleurs : conflit sur les dates
+    for (const c of periodConflictCols(base, fresh, changes)) if (!cols.includes(c)) cols.push(c);
     if (merged.conflict) cols.push('charges');
     if (cols.length)
       return { kind: 'conflict', cols, fresh, mine: merged.mine === null ? {} : { charges: merged.mine } };
@@ -180,9 +185,10 @@ export async function runSave(snap) {
  * charges partent avec chargesBase, pour être refusionnées sur la ligne relue au moment de l'envoi.
  * chargesSeen : cellule montrée dans la fenêtre ; une modification de la même personne faite après elle rouvre la
  * fenêtre au lieu d'être écrasée en silence.
- * tagsSeen : cellule de tags montrée dans la fenêtre (refusion sur la ligne relue à l'envoi).
+ * tagsSeen : cellule de tags montrée dans la fenêtre (refusion sur la ligne relue à l'envoi). datesSeen : dates
+ * de la ligne montrée (tâche) ; une période changée ailleurs ensuite rouvre la fenêtre (periodConflictCols).
  * @returns {{changes:object, before:object, chargesBase:string|null|undefined, chargesSeen:string|null|undefined,
- *   tagsSeen?:string[]}}
+ *   tagsSeen?:string[], datesSeen?:object}}
  */
 export function conflictBatch(oldBase, draft, fresh, choices, diff = diffDraft) {
   const changes = {};
@@ -198,6 +204,28 @@ export function conflictBatch(oldBase, draft, fresh, choices, diff = diffDraft) 
     chargesBase: oldBase.charges,
     chargesSeen: fresh.charges,
     ...('tags' in changes ? { tagsSeen: fresh.tags ?? [] } : {}),
+    ...('dateDebut' in fresh ? { datesSeen: { dateDebut: fresh.dateDebut, dateEcheance: fresh.dateEcheance } } : {}),
+  };
+}
+
+/**
+ * Lot de la fenêtre de conflit avec les charges finales du brouillon (déjà décidées par rapport à la ligne relue,
+ * puis recalculées sur les dates qui partent) : envoyées si elles diffèrent de la ligne relue, refusionnées à l'envoi
+ * sur ce qui aura changé depuis (chargesBase = chargesSeen = cellule relue).
+ * @param {ReturnType<typeof conflictBatch>} batch
+ * @param {string|null} charges cellule finale du brouillon
+ * @param {object} fresh ligne relue de la fenêtre
+ */
+export function batchWithCharges(batch, charges, fresh) {
+  const changes = { ...batch.changes };
+  if (sameCharges(charges, fresh.charges)) delete changes.charges;
+  else changes.charges = charges;
+  return {
+    ...batch,
+    changes,
+    before: pick(fresh, Object.keys(changes)),
+    chargesBase: fresh.charges,
+    chargesSeen: fresh.charges,
   };
 }
 
