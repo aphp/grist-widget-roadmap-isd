@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Charges are typed in ETP or in hours per week ("h/semaine", the quotité: 35 h/week = 1 ETP) instead of total
+  hours. Total hours = ETP × standard capacity of the period (leave, public holidays and slowdowns deducted), rounded
+  to 0.5 h; storage unchanged (`Tasks.charges` keeps total hours). h/week shown from storage = hours ÷ capacity × 35,
+  one decimal; retyping the shown value keeps the stored hours; bound 35 h/week (50 × 35 for estimation people);
+  errors say the bound in h/week with the matching total. Each line shows "= {h} h au total" in both units. Without a
+  usable period (dates missing, inverted, or no working day), no charge can be typed; stored hours stay shown and
+  kept. An h/week entry records its exact ETP as reference, so "the ETP holds" when dates change. The saved unit
+  preference `heures` migrates to `hsem`. ETP and h/week entries at exactly 1 ETP are accepted even when the period
+  capacity rounds down to the 0.5 h step (the bound now compares the typed ETP).
 - Tooltips (WCAG 1.4.13): a shown tooltip can be hovered without vanishing, and Escape hides it without moving the
   focus (and without closing the panel or dialog behind it) until the pointer leaves and the focus moves.
   Charge messages name the actual reason when ETP cannot be computed: dates missing, due date before the start, or no

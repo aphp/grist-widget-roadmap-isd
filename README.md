@@ -15,7 +15,9 @@ affiché suit la formule (une charge qui dépasse désormais 1 ETP est signalée
 « i » rappelle la règle dans le bloc des charges, la charge par profil des Statistiques et le plan de charge.
 Par défaut, **lecture seule** : le widget ne modifie jamais le document. La phase 2 (lots 2a à 2d) permet de modifier
 une tâche depuis sa fiche, dont le bloc « Personnes » (assignés et charges réunis ; charge facultative en ETP ou en
-heures, heures stockées à 0,5 h près ; si la capacité de la période change, l'ETP de chaque personne est conservé
+heures par semaine, « h/semaine », la quotité : 35 h/semaine = 1 ETP ; heures totales = ETP × capacité standard de
+la période, congés, fériés et ralentissements déduits, affichées « = … h au total » et stockées à 0,5 h près ; sans
+période exploitable, aucune saisie, les heures déjà stockées restent montrées et conservées ; si la capacité de la période change, l'ETP de chaque personne est conservé
 et ses heures recalculées, avec l'écart « 52 h → 110 h (ETP conservé) » sous la ligne ; une date vidée ramène chaque ligne aux heures de sa référence ; une charge qui
 dépasserait la borne sur la nouvelle période garde ses heures et est signalée), de modifier un chantier, de créer
 tâches, sous-tâches et chantiers (« Nouvelle tâche » et « Nouveau chantier » au bout de la ligne des onglets,
