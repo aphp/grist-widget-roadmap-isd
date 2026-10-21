@@ -142,3 +142,25 @@ test('saveDates : refus du writer (date au-delà de la borne) → refused:date-m
   assert.match(s.toasts[0].text, /refusé cette modification/);
   assert.equal(s.g.batches.length, 0);
 });
+
+test('saveDates : charges en double et capacité qui change → message de correction dans la fiche', async () => {
+  const s = setup();
+  s.place(OCT1, '[{"teamId":1,"heures":7},{"teamId":1,"heures":7}]');
+  const july = { start: day('2027-07-05'), end: day('2027-07-11') };
+  assert.equal(await s.editor.saveDates(T, COLS, OCT1, july), 'refused:charges-illisibles');
+  assert.match(s.toasts[0].text, /doivent être corrigées dans la fiche/);
+  assert.equal(s.g.batches.length, 0);
+});
+
+test('saveDates : jalon → « Échéance enregistrée » (une seule date)', async () => {
+  const s = setup();
+  s.g.otherUserSets('Tasks', 1002, { type: 'jalon', dateDebut: null, dateEcheance: D * OCT1.end, charges: null });
+  const r = await s.editor.saveDates(
+    T,
+    ['dateEcheance'],
+    { start: null, end: OCT1.end },
+    { start: OCT2.end, end: OCT2.end },
+  );
+  assert.equal(r, 'saved');
+  assert.match(s.toasts[0].text, /^Échéance enregistrée : 17 oct\.\.?$/);
+});

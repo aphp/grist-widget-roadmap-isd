@@ -942,12 +942,12 @@ test('runDates : étirement → charges recalculées sur la cellule RELUE (une p
     { teamId: 1, heures: 29 },
     { teamId: 5, heures: 7 },
   ]);
-  // Cellule illisible : jamais touchée, seules les dates partent
+  // Cellule illisible et capacité qui change : rien n'est envoyé (ETP qui changerait sans message)
   const { g: g3, writer: w3, fetchRow: f3 } = datesSetup();
   place(g3, OCT1, 'oops');
   const u = await runDates({ ...snap, writer: w3, fetchRow: f3 });
-  assert.equal(u.kind, 'saved');
-  assert.deepEqual(Object.keys(g3.batches[0][0][3]), ['dateEcheance']);
+  assert.deepEqual(u, { kind: 'refused', reason: 'charges-illisibles' });
+  assert.equal(g3.batches.length, 0);
 });
 
 test('runDates : charges non modifiables et recalcul nécessaire → refused', async () => {
@@ -1047,4 +1047,30 @@ test('runDates : jalon à la seule échéance (cols [dateEcheance]) → seule l�
   g.otherUserSets('Tasks', 1002, { dateEcheance: D * day('2027-10-20') });
   assert.equal((await runDates(snap)).kind, 'changed');
   assert.equal(g.batches.length, 1);
+});
+
+test('runDates : charges en double ou illisibles et capacité qui change → refused charges-illisibles, rien d’envoyé', async () => {
+  const JUL = { start: day('2027-07-05'), end: day('2027-07-11') };
+  for (const charges of ['[{"teamId":1,"heures":7},{"teamId":1,"heures":7}]', '{pas du json']) {
+    const { g, writer, fetchRow } = datesSetup();
+    place(g, OCT1, charges);
+    const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, next: JUL, fetchRow, maxOf };
+    assert.deepEqual(await runDates(snap), { kind: 'refused', reason: 'charges-illisibles' }, charges);
+    assert.equal(g.batches.length, 0);
+  }
+  // Capacité égale : les dates partent, la cellule illisible n'est pas touchée
+  const { g, writer, fetchRow } = datesSetup();
+  place(g, OCT1, '{pas du json');
+  const r = await runDates({
+    writer,
+    table: 'Tasks',
+    id: 1002,
+    cols: TASK_COLS,
+    seen: OCT1,
+    next: OCT2,
+    fetchRow,
+    maxOf,
+  });
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(Object.keys(g.batches[0][0][3]).sort(), ['dateDebut', 'dateEcheance']);
 });

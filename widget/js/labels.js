@@ -1149,6 +1149,8 @@ const FR = Object.freeze({
   'toast.undo': 'Annuler',
   'toast.dates': 'Dates enregistrées : {debut} → {fin}.',
   'toast.datesDry': 'Mode essai : dates {debut} → {fin} notées, rien n’a été envoyé.',
+  'toast.datesOne': 'Échéance enregistrée : {date}.',
+  'toast.datesOneDry': 'Mode essai : échéance {date} notée, rien n’a été envoyé.',
   'toast.dates.over': '{n} charge(s) laissée(s) telle(s) quelle(s) au-dessus de la borne.',
   'toast.dates.charges': 'Voir les charges',
   'dates.fail.busy': 'Une modification est en cours d’envoi : rien n’a été déplacé, réessayez dans un instant.',
@@ -1157,6 +1159,8 @@ const FR = Object.freeze({
   'dates.fail.reread': 'Impossible de relire la ligne avant l’envoi : rien n’a été envoyé. Réessayez.',
   'dates.fail.charges':
     'Les heures des charges devraient être recalculées pour la nouvelle période, mais elles ne sont pas modifiables : rien n’a été envoyé.',
+  'dates.fail.chargesUnreadable':
+    'Les charges de cette tâche doivent être corrigées dans la fiche avant de déplacer ses dates.',
   'dates.fail.acl': 'La Feuille n’autorise pas cette modification pour votre compte : rien n’a été enregistré.',
   'dates.fail.unknown': 'Pas de réponse de Grist dans le délai : les dates ont peut-être changé. La ligne a été relue.',
   'dates.fail.other': 'L’enregistrement des dates a échoué. Il a pu ne pas aboutir : vérifiez la ligne.',

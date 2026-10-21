@@ -708,10 +708,11 @@ export function createTaskEditor(deps) {
         render();
       }
       const n = result.keptOver.length;
-      const text = label(result.entry.sent ? 'toast.dates' : 'toast.datesDry', {
-        debut: day(next.start),
-        fin: day(next.end),
-      });
+      // Jalon : une seule date (début = échéance)
+      const milestone = ref.table === 'Tasks' && model().tasks.get(ref.id)?.type === 'jalon';
+      const text = milestone
+        ? label(result.entry.sent ? 'toast.datesOne' : 'toast.datesOneDry', { date: day(next.end) })
+        : label(result.entry.sent ? 'toast.dates' : 'toast.datesDry', { debut: day(next.start), fin: day(next.end) });
       deps.onWritten(result.entry);
       deps.toast.show(n ? `${text} ${label('toast.dates.over', { n })}` : text, {
         onAction: deps.onUndo,
@@ -741,7 +742,8 @@ export function createTaskEditor(deps) {
       return 'unknown';
     }
     if (result.kind === 'refused') {
-      deps.toast.show(label('dates.fail.charges'), { tone: 'error' });
+      const key = result.reason === 'charges-illisibles' ? 'dates.fail.chargesUnreadable' : 'dates.fail.charges';
+      deps.toast.show(label(key), { tone: 'error' });
       return `refused:${result.reason}`;
     }
     if (result.kind === 'missing') deps.onUnknown?.();

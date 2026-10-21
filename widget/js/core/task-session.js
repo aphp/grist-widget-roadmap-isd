@@ -3,7 +3,7 @@
  * relecture et contrôle de fraîcheur, envoi par le writer, statut rapide calculé sur la ligne relue. Chaque appel reçoit un instantané (identifiant, base, brouillon) : il
  * n'écrit jamais dans une autre ligne que celle de l'instantané, même si le formulaire a changé entre-temps.
  */
-import { mergeCharges, periodFte, readChargesCell, sameCharges } from './charges-edit.js';
+import { chargeRows, mergeCharges, periodFte, readChargesCell, sameCharges } from './charges-edit.js';
 import { chargeRefs, rescaleCharges } from './charges-rescale.js';
 import { detectConflicts, mergeChargesChange, periodConflictCols } from './conflicts.js';
 import { DEFAULT_TIMEOUT_MS, WriteFailed, WriteRefused, withTimeout } from './grist-writer.js';
@@ -374,7 +374,7 @@ export async function runMove({ writer, taskId, plan, fetchRow, readTable, timeo
  *   est relue et envoyée) ; localBase : ligne des données chargées (mode essai) ; maxOf (obligatoire,
  *   chargeMaxOf du modèle) : heures maximales d'une personne sur la période d'arrivée (fte : heures de 1 ETP)
  * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object, keptOver:number[]}|{kind:'changed', fresh:object}
- *   |{kind:'missing'}|{kind:'reread-failed', error:string}|{kind:'refused', reason:'charges'}
+ *   |{kind:'missing'}|{kind:'reread-failed', error:string}|{kind:'refused', reason:'charges'|'charges-illisibles'}
  *   |{kind:'unknown', stored:object|null|undefined, changes:object}|{kind:'failed', error:Error}>}
  */
 export async function runDates({ writer, table, id, cols, seen, next, localBase, fetchRow, maxOf, timeoutMs }) {
@@ -401,7 +401,12 @@ export async function runDates({ writer, table, id, cols, seen, next, localBase,
   let keptOver = [];
   const fromFte = periodFte(startOf(row), row[endCol]);
   const toFte = periodFte(next.start, next.end);
-  if (table === 'Tasks' && fromFte !== toFte && readChargesCell(row.charges).ok) {
+  if (table === 'Tasks' && fromFte !== toFte) {
+    // Cellule illisible ou personne en double : ses heures ne peuvent pas suivre la période, l'ETP changerait sans
+    // message ; rien n'est envoyé, la cellule se corrige dans la fiche
+    const cell = readChargesCell(row.charges);
+    if (!cell.ok || chargeRows(cell.entries).rows.some((r) => r.count > 1))
+      return { kind: 'refused', reason: 'charges-illisibles' };
     const res = rescaleCharges(row.charges, chargeRefs(row.charges, fromFte), toFte, {
       baseRaw: row.charges,
       maxOf: (teamId) => maxOf(teamId, toFte),
