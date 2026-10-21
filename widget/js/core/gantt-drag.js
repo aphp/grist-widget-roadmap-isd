@@ -53,16 +53,18 @@ export function movedDates(start, end, unit, n) {
  * @param {number} originDay jour de départ (pour les pas en mois)
  */
 export function stepsFromPixels(dx, pxPerDay, unit, originDay) {
+  if (!Number.isFinite(dx) || !Number.isFinite(pxPerDay) || pxPerDay <= 0) return 0;
   const days = dx / pxPerDay;
-  if (unit === 'day') return Math.round(days);
-  if (unit === 'week') return Math.round(days / 7);
+  const sign = Math.sign(days);
+  if (unit === 'day') return sign * Math.round(Math.abs(days)) || 0;
+  if (unit === 'week') return sign * Math.round(Math.abs(days) / 7) || 0;
   const aim = originDay + days;
-  let n = Math.round(days / 30.4375);
+  let n = sign * Math.round(Math.abs(days) / 30.4375);
   const dist = (k) => Math.abs(shiftDay(originDay, 'month', k) - aim);
   for (;;) {
     if (dist(n + 1) < dist(n)) n += 1;
     else if (dist(n - 1) < dist(n)) n -= 1;
-    else return n;
+    else return n || 0;
   }
 }
 
@@ -91,7 +93,7 @@ export function clampShift(start, end, n, unit, { min = 1, max }) {
  * @param {{edit:object, writer:{can(table:string, col:string):{ok:boolean}}|null, narrow:boolean}} ctx
  *   narrow : liste chronologique (petit écran), sans barres
  * @returns {{ok:true, table:'Tasks'|'Chantiers', id:number, cols:[string,string], milestone:boolean}
- *   |{ok:false, reason:'list'|'kind'|'deduced'|'nodates'|'virtual'|'edit'|'scope'|'column'}}
+ *   |{ok:false, reason:'list'|'kind'|'deduced'|'nodates'|'order'|'virtual'|'edit'|'scope'|'column'}}
  */
 export function dragTarget(model, node, { edit, writer, narrow }) {
   if (narrow) return { ok: false, reason: 'list' };
@@ -101,6 +103,7 @@ export function dragTarget(model, node, { edit, writer, narrow }) {
   const hasStart = node.start !== null && node.start !== undefined;
   const hasEnd = node.end !== null && node.end !== undefined;
   if (!hasStart || !hasEnd) return { ok: false, reason: !hasStart && !hasEnd && nodeBar(node) ? 'deduced' : 'nodates' };
+  if (node.start > node.end) return { ok: false, reason: 'order' };
   const availability = editAvailability(model, node.ref, edit);
   if (!availability.editable) return { ok: false, reason: availability.reason === 'scope' ? 'scope' : 'edit' };
   const table = isTask ? 'Tasks' : 'Chantiers';

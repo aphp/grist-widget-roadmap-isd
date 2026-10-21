@@ -49,6 +49,17 @@ test('stepsFromPixels aux quatre échelles', () => {
   assert.equal(stepsFromPixels(-70, 1.2, 'month', d('2027-03-31')), -2);
 });
 
+test('stepsFromPixels : arrondi symétrique, jamais -0, échelle invalide', () => {
+  assert.equal(stepsFromPixels(5, 10, 'day', 0), stepsFromPixels(-5, 10, 'day', 0) * -1); // 0,5 j -> 1 / -1
+  assert.equal(stepsFromPixels(-5, 10, 'day', 0), -1);
+  assert.equal(stepsFromPixels(35, 10, 'week', 0), 1);
+  assert.equal(stepsFromPixels(-35, 10, 'week', 0), -1);
+  for (const u of ['day', 'week', 'month']) assert.ok(Object.is(stepsFromPixels(-0.1, 10, u, 0), 0), u);
+  assert.ok(Object.is(stepsFromPixels(0, 10, 'day', 0), 0));
+  for (const px of [0, -3, NaN, Infinity]) assert.equal(stepsFromPixels(50, px, 'day', 0), 0);
+  assert.equal(stepsFromPixels(NaN, 5, 'week', 0), 0);
+});
+
 test('clampShift : borne du 31/12 de l’année suivante', () => {
   const max = d('2027-12-31');
   assert.equal(clampShift(d('2027-12-20'), d('2027-12-28'), 10, 'day', { max }), 3);
@@ -56,6 +67,12 @@ test('clampShift : borne du 31/12 de l’année suivante', () => {
   assert.equal(clampShift(d('2027-12-31'), d('2027-12-31'), 2, 'week', { max }), 0);
   assert.equal(clampShift(2, 5, -10, 'day', { max }), -1);
   assert.equal(clampShift(d('2027-12-20'), d('2027-12-28'), 0, 'day', { max }), 0);
+  assert.equal(clampShift(10, 12, -20, 'day', { min: 5, max }), -5);
+  const origin = d('2027-12-15');
+  assert.equal(clampShift(origin, origin + 3, 1, 'month', { max }), 0);
+  assert.equal(clampShift(d('2027-11-15'), d('2027-11-20'), 3, 'month', { max }), 1);
+  assert.equal(clampShift(d('1970-01-20'), d('1970-01-25'), -2, 'month', { min: 1, max }), 0);
+  assert.equal(clampShift(d('1970-03-20'), d('1970-03-25'), -5, 'month', { min: 1, max }), -2);
 });
 
 test('dragTarget : chaque condition', () => {
@@ -90,6 +107,7 @@ test('dragTarget : chaque condition', () => {
   assert.equal(reason(task(1001), { writer: { can: (t, c) => ({ ok: c !== 'dateEcheance' }) } }), 'column');
   assert.equal(reason(task(1001), { writer: null }), 'column');
 
+  assert.equal(reason(task(1001, { start: 30, end: 20 })), 'order');
   const jalon = { ...model, tasks: new Map(model.tasks).set(1001, { ...model.tasks.get(1001), type: 'jalon' }) };
   assert.equal(dragTarget(jalon, task(1001), ctx).milestone, true);
 
@@ -101,4 +119,6 @@ test('dragTarget : chaque condition', () => {
     cols: ['Debut', 'Fin'],
     milestone: false,
   });
+
+  assert.equal(dragTarget(model, { ...chantier, ref: { table: 'Chantiers', id: 400 } }, ctx).reason, 'scope');
 });
