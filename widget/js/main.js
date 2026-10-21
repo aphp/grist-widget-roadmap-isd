@@ -237,6 +237,7 @@ function buildCtx(view) {
     prefs: state.prefs,
     label,
     openDetail,
+    openDates,
     setFilters,
     setPrefs,
     askMe,
@@ -677,6 +678,19 @@ function openForm(ref) {
     else detailHistory.length = 0;
     showDetail(ref);
     editor.open(ref);
+  });
+}
+
+/**
+ * « Ajouter des dates » (Gantt) : fiche et formulaire ouverts sur le champ Début (Échéance pour un jalon, seule
+ * date du formulaire) ; la fiche seule si le formulaire ne s'ouvre pas (lecture seule).
+ */
+function openDates(ref) {
+  const milestone = ref.table === 'Tasks' && state.model?.tasks.get(ref.id)?.type === 'jalon';
+  editor.requestLeave(() => {
+    detailHistory.length = 0;
+    showDetail(ref);
+    editor.open(ref, ref.table === 'Chantiers' ? 'tf-Debut' : milestone ? 'tf-dateEcheance' : 'tf-dateDebut');
   });
 }
 

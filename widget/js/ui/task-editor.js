@@ -273,7 +273,12 @@ export function createTaskEditor(deps) {
   });
 
   /** Ouvre le formulaire de la tâche ou du chantier ; faux si la ligne est introuvable. */
-  function open(ref) {
+  /**
+   * Ouvre le formulaire d'une ligne.
+   * @param {{table:string, id:number}} ref
+   * @param {string} [focusId] champ focalisé (sinon le premier du formulaire)
+   */
+  function open(ref, focusId) {
     if (!SPECS[ref.table]) return false;
     const base = deps.getBase(ref.table, ref.id);
     const w = writer();
@@ -312,7 +317,7 @@ export function createTaskEditor(deps) {
       columnType: (f) => w.columnType?.(ref.table, f) ?? null,
       validation: { errors: {}, warnings: [] },
     };
-    render(SPECS[ref.table].focus);
+    render(focusId || SPECS[ref.table].focus);
     return true;
   }
 

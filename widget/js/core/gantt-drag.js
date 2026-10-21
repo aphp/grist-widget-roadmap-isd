@@ -1,6 +1,7 @@
 /**
  * Gantt : déplacer une barre dans le temps. Fonctions pures, en jours entiers UTC : pas selon l'échelle,
- * décalage d'un jour, d'une semaine ou d'un mois, conversion d'un déplacement en pixels, bornes et droit de glisser.
+ * décalage d'un jour, d'une semaine ou d'un mois, conversion d'un déplacement en pixels, bornes, droit de glisser,
+ * rattachement du geste après un nouveau rendu.
  */
 import { DAY_MS, formatDayShort } from './dates.js';
 import { label } from '../labels.js';
@@ -113,6 +114,21 @@ export function dragTarget(model, node, { edit, writer, narrow }) {
   const cols = isTask ? ['dateDebut', 'dateEcheance'] : ['Debut', 'Fin'];
   if (!writer || !cols.every((c) => writer.can(table, c)?.ok)) return { ok: false, reason: 'column' };
   return { ok: true, table, id: node.ref.id, cols, milestone: isMilestone(model, node) };
+}
+
+/**
+ * Geste en cours après un nouveau rendu (relecture, période changée au bord) : ligne retrouvée par sa clé ; geste à
+ * annuler si elle a disparu ou si ses dates propres ne sont plus celles du début du geste.
+ * @param {{key:string, seen:{start:number, end:number}}} gesture
+ * @param {{key:string, node:{start:number|null, end:number|null}}[]} rows lignes affichées (ganttRows)
+ * @returns {{ok:true, index:number}|{ok:false, reason:'gone'|'changed'}}
+ */
+export function reattachDrag(gesture, rows) {
+  const index = rows.findIndex((r) => r.key === gesture.key);
+  if (index < 0) return { ok: false, reason: 'gone' };
+  const { node } = rows[index];
+  if (node.start !== gesture.seen.start || node.end !== gesture.seen.end) return { ok: false, reason: 'changed' };
+  return { ok: true, index };
 }
 
 const sumHours = (raw) =>

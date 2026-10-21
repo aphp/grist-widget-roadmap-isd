@@ -700,6 +700,93 @@
   outline-offset: 2px;
 }
 
+/* ---- Glisser une barre : curseur, place d'origine en pointillés, fantôme, enregistrement ---- */
+.gbar--draggable,
+.gms--draggable {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.gantt .gbar--origin,
+.gantt .gbar--origin:not(:disabled):hover,
+.gantt .gms--origin,
+.gantt .gms--origin:not(:disabled):hover {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  outline: 2px dashed var(--g-fill);
+  outline-offset: -2px;
+}
+.gbar--origin > .gbar__text {
+  visibility: hidden;
+}
+/* Fantôme : position fixe hors du flux de la grille, placé par transform (views/gantt.js) */
+.gghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 39;
+  border-radius: 4px;
+  background-color: var(--g-fill, var(--viz-neutral));
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 4px var(--color-focus),
+    var(--shadow-3);
+  pointer-events: none;
+  cursor: grabbing;
+  will-change: transform;
+}
+.gghost[hidden] {
+  display: none;
+}
+/* Jalon : losange dessiné par ::before (le transform du fantôme ne porte que la position) */
+.gghost--ms {
+  background: none;
+  box-shadow: none;
+}
+.gghost--ms::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background-color: var(--g-fill, var(--viz-neutral));
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 4px var(--color-focus);
+  transform: rotate(45deg);
+}
+.gghost--ms.gghost--off::before {
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 4px var(--color-border-strong);
+}
+.gghost--off {
+  opacity: 0.4;
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 4px var(--color-border-strong);
+}
+/* Enregistrement en cours : barre à sa nouvelle place, hachures légères */
+.gantt .gbar.is-saving,
+.gantt .gms.is-saving {
+  background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.45) 0 3px, transparent 3px 7px);
+  cursor: progress;
+}
+/* « Ajouter des dates » : le texte « Pas de dates » devient un lien qui ouvre la fiche */
+.gantt .grow__adddates {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-style: normal;
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.gantt .grow__adddates:hover {
+  background: none;
+  text-decoration-thickness: 2px;
+}
+
 /* ---- Infobulle ---- */
 .gtip {
   position: fixed;
@@ -900,6 +987,13 @@ button.glist__title:focus-visible {
   }
 }
 @media (forced-colors: active) {
+  .gghost,
+  .gghost--ms::before {
+    outline: 2px solid Highlight;
+  }
+  .gghost--ms {
+    outline: none;
+  }
   .grow__chip {
     border-color: CanvasText;
   }
@@ -912,5 +1006,9 @@ button.glist__title:focus-visible {
   .gbar:hover,
   .gms:hover {
     filter: none;
+  }
+  .gghost {
+    will-change: auto;
+    transition: none;
   }
 }

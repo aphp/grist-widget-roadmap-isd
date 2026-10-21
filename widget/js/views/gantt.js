@@ -5,7 +5,17 @@
  * seulement la classe de sa teinte (gch-1 à gch-7), le CSS fait le reste (pastille, trait, bande, barres).
  */
 import { raw } from '../core/sanitize.js';
-import { formatDateFr } from '../core/dates.js';
+import { formatDateFr, maxPlanDay } from '../core/dates.js';
+import {
+  clampShift,
+  dragContext,
+  dragSummary,
+  movedDates,
+  reattachDrag,
+  snapUnit,
+  stepsFromPixels,
+  summaryText,
+} from '../core/gantt-drag.js';
 import {
   COLOR_BY,
   DEFAULT_LEVEL,
@@ -44,6 +54,7 @@ import { h, icon, keepFocus, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
 import { label, statusLabel } from '../labels.js';
 import { VIZ_PRINT } from '../ui/viz-palette.js';
+import { trackPointer } from '../ui/drag.js';
 
 export const id = 'gantt';
 
@@ -56,8 +67,27 @@ const LEAF_KINDS = new Set(['chantier', 'tache', 'sous-tache']);
 const NARROW = '(max-width: 767.98px)';
 /** Nombre maximal d'éléments de la liste chronologique. */
 const LIST_MAX = 300;
-/** État conservé entre deux rendus de la vue (rechargement des données) : période affichée et génération. */
-const memory = { anchor: null, scale: null, generation: 0, drag: null, applyWidth: null };
+/** Largeur maximale de l'infobulle (px, identique au CSS) et place qu'on lui réserve sous la barre. */
+const TIP_MAX = 360;
+const TIP_ROOM = 140;
+/** Marge verticale (px) autour de la frise de la ligne où un dépôt compte encore. */
+const DROP_SLACK = ROW_PX / 2;
+/**
+ * État conservé entre deux rendus de la vue (rechargement des données) : période affichée, génération, poignée de
+ * largeur (drag, applyWidth), glisser d'une barre (gesture, saving) et fonctions du dernier rendu (dragView).
+ * gesture : { key, target, seen, now, unit, startX, pxPerDay, anchor, … } ; saving : { key, now } (barre dessinée à
+ * `now`, aria-busy, jusqu'à la réponse de l'enregistrement).
+ */
+const memory = {
+  anchor: null,
+  scale: null,
+  generation: 0,
+  drag: null,
+  applyWidth: null,
+  gesture: null,
+  saving: null,
+  dragView: null,
+};
 /** Écouteurs focusin / focusout par conteneur, pour ne jamais les empiler. */
 const listeners = new WeakMap();
 
@@ -77,6 +107,12 @@ const toneClass = (tone) => `gch-${tone.slot + 1}`;
 /** Pastille d'un chantier (décorative : son nom est écrit à côté). */
 const chipHtml = (tone) => h`<span class="grow__chip ${toneClass(tone)}" aria-hidden="true"></span>`;
 
+/** Barre affichée d'une ligne : à sa nouvelle place pendant l'enregistrement d'un glisser (memory.saving). */
+function shownBar(r) {
+  const now = memory.saving?.key === r.key ? memory.saving.now : null;
+  return now ? { start: now.start, end: now.end, deduced: false, saving: true } : nodeBar(r.node);
+}
+
 function datesText(bar) {
   if (!bar) return label('gantt.noDates');
   const d =
@@ -92,8 +128,9 @@ function datesText(bar) {
  */
 function describe(ctx, r, colorBy, tone = null) {
   const n = r.node;
-  const bar = nodeBar(n);
+  const bar = shownBar(r);
   const parts = [`${label(`gantt.kind.${n.kind}`)} : ${n.title || label('common.untitled')}`, datesText(bar)];
+  if (bar?.saving) parts.push(label('gantt.drag.saving'));
   if (n.status) parts.push(label('gantt.status', { statut: statusLabel(n.status) }));
   if (LEAF_KINDS.has(n.kind) && colorBy !== 'status')
     parts.push(label('gantt.phase', { etape: colorName(phaseOf(n.title) ?? 'other', 'phase') }));
@@ -112,7 +149,7 @@ function chantierTipHtml(n, tone) {
 
 function tipHtml(ctx, r, colorBy, slots) {
   const n = r.node;
-  const bar = nodeBar(n);
+  const bar = shownBar(r);
   const late = isLate(ctx.model, n, ctx.today);
   const ms = isMilestone(ctx.model, n);
   const ck = colorKey(n, colorBy);
@@ -121,6 +158,7 @@ function tipHtml(ctx, r, colorBy, slots) {
   return h`<span class="gtip__kind">${label(`gantt.kind.${n.kind}`)}</span>
     <strong class="gtip__title">${n.title || label('common.untitled')}</strong>
     <span class="gtip__line">${datesText(bar)}</span>
+    ${bar?.saving ? h`<span class="gtip__line">${label('gantt.drag.saving')}</span>` : ''}
     ${n.status || late || ms ? h`<span class="gtip__badges">${n.status ? statusBadge(n.status) : ''}${ms ? h`<span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--purple-glycine">${label('gantt.milestone')}</span>` : ''}${late ? h`<span class="fr-badge fr-badge--sm fr-badge--error">${label('gantt.late')}</span>` : ''}</span>` : ''}
     ${showColor ? h`<span class="gtip__line"><span class="gswatch gswatch--${fillOf(ck, colorBy)}" aria-hidden="true"></span>${colorBy === 'phase' ? label('gantt.phase', { etape: colorName(ck, colorBy) }) : label('gantt.status', { statut: colorName(ck, colorBy) })}</span>` : ''}
     ${byChantier ? chantierTipHtml(n, chantierTone(ctx.model, n, slots)) : ''}`;
@@ -136,10 +174,18 @@ function barKind(n, colorBy, tone) {
   return LEAF_KINDS.has(n.kind) ? fillOf(colorKey(n, colorBy), colorBy) : 'summary';
 }
 
-function trackHtml(ctx, r, i, scale, colorBy, tone) {
+/**
+ * Frise d'une ligne. drag : droit de glisser (dragTarget, null en lecture seule) ; une barre glissable porte
+ * seulement une classe et data-drag. Ligne en cours d'enregistrement : barre à sa nouvelle place, aria-busy.
+ */
+function trackHtml(ctx, r, i, scale, colorBy, tone, drag) {
   const n = r.node;
-  const bar = nodeBar(n);
-  if (!bar) return h`<span class="grow__nodates">${label('gantt.noDates')}</span>`;
+  const bar = shownBar(r);
+  const saving = Boolean(bar?.saving);
+  if (!bar)
+    return drag?.reason === 'nodates' && canAddDates(ctx, n)
+      ? h`<button type="button" class="grow__nodates grow__adddates" data-add-dates="${i}" tabindex="-1">${label('gantt.noDates.add')}</button>`
+      : h`<span class="grow__nodates">${label('gantt.noDates')}</span>`;
   const desc = describe(ctx, r, colorBy, tone);
   const ms = isMilestone(ctx.model, n);
   const g = ms ? barGeometry(scale, bar.end, bar.end) : barGeometry(scale, bar.start, bar.end);
@@ -152,8 +198,10 @@ function trackHtml(ctx, r, i, scale, colorBy, tone) {
   const ck = barKind(n, colorBy, tone);
   // Tâche terminée : barre délavée en mode « chantier » (le statut n'y a pas de couleur)
   const done = colorBy === 'chantier' && n.status === 'done' ? ' is-done' : '';
+  const grab = drag?.ok && !saving;
+  const state = saving ? raw(' aria-busy="true"') : grab ? raw(` data-drag="${i}"`) : '';
   if (ms)
-    return h`<button type="button" class="gms gms--${ck}${late ? ' is-late' : ''}${done}" style="left:${pct(g.left + g.width / 2)}" data-i="${i}" tabindex="-1" aria-label="${desc}"></button>`;
+    return h`<button type="button" class="gms gms--${ck}${late ? ' is-late' : ''}${done}${grab ? ' gms--draggable' : ''}${saving ? ' is-saving' : ''}" style="left:${pct(g.left + g.width / 2)}" data-i="${i}" tabindex="-1"${state} aria-label="${desc}"></button>`;
   const cls = [
     'gbar',
     `gbar--${ck}`,
@@ -163,12 +211,20 @@ function trackHtml(ctx, r, i, scale, colorBy, tone) {
     done.trim(),
     g.clipStart ? 'gbar--clip-start' : '',
     g.clipEnd ? 'gbar--clip-end' : '',
+    grab ? 'gbar--draggable' : '',
+    saving ? 'is-saving' : '',
   ]
     .filter(Boolean)
     .join(' ');
   const text = LEAF_KINDS.has(n.kind) ? barText(n, colorBy) : '';
-  return h`<button type="button" class="${cls}" style="left:${pct(g.left)};width:${pct(g.width)}" data-i="${i}" tabindex="-1" aria-label="${desc}">${text ? h`<span class="gbar__text" aria-hidden="true">${text}</span>` : ''}</button>`;
+  return h`<button type="button" class="${cls}" style="left:${pct(g.left)};width:${pct(g.width)}" data-i="${i}" tabindex="-1"${state} aria-label="${desc}">${text ? h`<span class="gbar__text" aria-hidden="true">${text}</span>` : ''}</button>`;
 }
+
+/**
+ * Tâche ou chantier sans ses deux dates : « Ajouter des dates » seulement si la ligne serait glissable avec des
+ * dates (édition, périmètre, colonnes), même contrôle que dragTarget sur une période fictive.
+ */
+const canAddDates = (ctx, n) => Boolean(ctx.dates?.target({ ...n, start: 0, end: 0, span: null })?.ok);
 
 /**
  * Nom écrit dans la barre (masqué par le CSS si la barre est trop étroite) : étape connue, ou statut ; rien en
@@ -199,9 +255,10 @@ function rowHtml(ctx, r, i, scale, colorBy, focusIndex, slots) {
   const empty = isEmptyContainer(n) ? h`<span class="grow__empty">${label('gantt.noTasks')}</span>` : '';
   const chip = tone && n.kind === 'chantier' ? chipHtml(tone) : '';
   const cls = tone ? ` grow--ch ${toneClass(tone)}` : '';
+  const drag = ctx.dates && n.ref && LEAF_KINDS.has(n.kind) ? ctx.dates.target(n) : null;
   return h`<div class="grow grow--${n.kind}${cls}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}" aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy, tone)}">
     <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${chip}${name}${empty}</div>
-    <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy, tone)}</div>
+    <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy, tone, drag)}</div>
   </div>`;
 }
 
@@ -418,6 +475,14 @@ export function render(el, ctx) {
     memory.scale = st.scale;
     let focusIndex = rows.findIndex((r) => r.key === st.focusKey);
     if (focusIndex < 0) focusIndex = 0;
+    // Glisser en cours pendant ce rendu (relecture, période changée au bord) : ligne retrouvée par sa clé
+    const g = memory.gesture;
+    const resume = g ? (isList ? { ok: false, reason: 'gone' } : reattachDrag(g, rows)) : null;
+    if (resume && !resume.ok) {
+      st.notice = label('gantt.drag.changed');
+      memory.gesture = null;
+      g.handle?.cancel('changed');
+    }
     const n = isList ? items.length : rows.length;
     const count = isList
       ? n === 1
@@ -516,12 +581,21 @@ export function render(el, ctx) {
         <p class="fr-sr-only" id="gantt-help">${label('gantt.tree.help')}</p>`
         }
         <div class="gtip" id="gantt-tip" role="tooltip" hidden></div>
+        <div class="gghost" id="gantt-ghost" aria-hidden="true" hidden></div>
       </div>`.toString(),
     );
     const nb = el.querySelector('.gantt__scroll');
     if (nb) {
       nb.scrollTop = top;
       nb.scrollLeft = left;
+    }
+    if (resume?.ok && memory.gesture === g) {
+      if (measure(g, resume.index)) dragUpdate(g, true);
+      else {
+        memory.gesture = null;
+        g.handle?.cancel('gone');
+      }
+      return;
     }
     // Le focus rendu par keepFocus garde son infobulle
     const act = document.activeElement;
@@ -559,11 +633,13 @@ export function render(el, ctx) {
     if (tip) tip.hidden = true;
   }
   el.onpointerover = (e) => {
+    if (memory.gesture) return;
     const t = e.target.closest?.('[data-i]:not([role="row"])');
     if (t && t !== tipFor) showTip(t);
     else if (!t && tipFor && !el.contains(document.activeElement)) hideTip();
   };
   el.onpointerleave = () => {
+    if (memory.gesture) return;
     if (!tipFor || tipFor !== document.activeElement) hideTip();
   };
   // focusin / focusout n'ont pas de propriété « on… » : écouteurs ajoutés, retirés au rendu suivant sur le même élément
@@ -575,6 +651,7 @@ export function render(el, ctx) {
     (e) => {
       const row = e.target.closest?.('[data-row]');
       if (row) setRoving(row);
+      if (memory.gesture) return;
       const t = e.target.closest?.('[data-i]');
       if (t) showTip(t);
       else hideTip();
@@ -584,6 +661,7 @@ export function render(el, ctx) {
   el.addEventListener(
     'focusout',
     (e) => {
+      if (memory.gesture) return;
       if (!e.relatedTarget || !el.contains(e.relatedTarget)) hideTip();
     },
     { signal: off.signal },
@@ -687,6 +765,12 @@ export function render(el, ctx) {
       return paint();
     }
     if (e.target.closest('[data-pdf]')) return void exportGantt();
+    const add = e.target.closest('[data-add-dates]');
+    if (add) {
+      const ref = rows[Number(add.dataset.addDates)]?.node.ref;
+      if (ref) (ctx.openDates ?? ctx.openDetail)(ref);
+      return;
+    }
     const li = e.target.closest('[data-open-key]');
     if (li) {
       const it = items.find((x) => x.key === li.dataset.openKey);
@@ -765,33 +849,267 @@ export function render(el, ctx) {
     }
   };
 
+  // ---------- Glisser une barre (tâche, sous-tâche, jalon, chantier) ----------
+  // Le geste vit dans memory et ses écouteurs sur la fenêtre (ui/drag.js) : un nouveau rendu le poursuit
+  // (memory.dragView = fonctions du dernier rendu). Pendant le geste, rien n'est redessiné : seuls le fantôme
+  // (#gantt-ghost) et l'infobulle bougent, d'après la géométrie lue au début (et après un rendu ou un défilement).
+  const maxDay = maxPlanDay(ctx.today);
+
+  /** Géométrie de la ligne du geste (lue une fois) ; barre d'origine en pointillés. */
+  function measure(g, index) {
+    const rowEl = el.querySelector(`[data-row="${index}"]`);
+    const track = rowEl?.querySelector('.grow__track');
+    const sc = el.querySelector('.gantt__scroll');
+    if (!track || !sc) return false;
+    const tr = track.getBoundingClientRect();
+    const sr = sc.getBoundingClientRect();
+    const inner = sr.left + sc.clientLeft;
+    g.pxPerDay = tr.width / scale.days;
+    g.trackLeft = tr.left;
+    g.rowTop = tr.top;
+    g.rowBottom = tr.bottom;
+    g.scaleStart = scale.start;
+    g.colPx = tr.width / scale.columns.length;
+    g.box = { left: inner + widthInfo().value, right: inner + sc.clientWidth, top: sr.top, bottom: sr.bottom };
+    g.anchor = st.anchor;
+    // Même jour sous le pointeur qu'au début du geste
+    g.startX = g.trackLeft + (g.grabDay - g.scaleStart) * g.pxPerDay;
+    rowEl.querySelector('[data-drag]')?.classList.add(g.target.milestone ? 'gms--origin' : 'gbar--origin');
+    return true;
+  }
+
+  /** Fantôme à la période alignée g.now, coupé à la frise visible (transform et largeur, aucune lecture). */
+  function placeGhost(g) {
+    const ghost = el.querySelector('#gantt-ghost');
+    if (!ghost) return;
+    const from = g.trackLeft + (g.now.start - g.scaleStart) * g.pxPerDay;
+    const to = g.trackLeft + (g.now.end + 1 - g.scaleStart) * g.pxPerDay;
+    let x = from;
+    let w = to - from;
+    if (g.target.milestone) {
+      x = (from + to) / 2 - g.barHeight / 2;
+      w = g.barHeight;
+    } else {
+      x = Math.max(from, g.box.left);
+      w = Math.max(4, Math.min(to, g.box.right) - x);
+    }
+    ghost.hidden = x + w < g.box.left || x > g.box.right;
+    ghost.className = `gghost${g.target.milestone ? ' gghost--ms' : ''}${g.off ? ' gghost--off' : ''}`;
+    ghost.style.cssText = `width:${w}px;height:${g.barHeight}px;transform:translate(${x}px,${g.rowTop + g.barOffset}px);--g-fill:${g.fill}`;
+    g.ghostX = x;
+  }
+
+  /** Infobulle du geste : nouvelles dates, écart, heures, alertes (dragSummary, recalculé si g.now change). */
+  function placeTip(g) {
+    const tip = el.querySelector('#gantt-tip');
+    if (!tip) return;
+    const summary = dragSummary(g.model, g.target, g.seen, g.now, ctx.today, g.dctx);
+    tip.innerHTML = h`<strong class="gtip__title">${g.title}</strong>
+      ${summaryText(summary, 'move').map((line) => h`<span class="gtip__line">${line}</span>`)}`.toString();
+    tip.hidden = false;
+    tip.style.left = `${Math.max(8, Math.min(g.ghostX, g.vw - TIP_MAX - 8))}px`;
+    if (g.tipAbove) {
+      tip.style.top = 'auto';
+      tip.style.bottom = `${g.vh - (g.rowTop + g.barOffset) + 6}px`;
+    } else {
+      tip.style.top = `${g.rowTop + g.barOffset + g.barHeight + 6}px`;
+      tip.style.bottom = 'auto';
+    }
+  }
+
+  /** Période alignée sous le pointeur (pas de l'échelle, Maj au jour, bornée), fantôme et infobulle. */
+  function dragUpdate(g, force = false) {
+    const unit = snapUnit(st.scale, g.shift);
+    const n = stepsFromPixels(g.lastX - g.startX, g.pxPerDay, unit, g.seen.start);
+    const now = movedDates(
+      g.seen.start,
+      g.seen.end,
+      unit,
+      clampShift(g.seen.start, g.seen.end, n, unit, { max: maxDay }),
+    );
+    const off =
+      g.lastX < g.box.left ||
+      g.lastX > g.box.right ||
+      g.lastY < g.rowTop - DROP_SLACK ||
+      g.lastY > g.rowBottom + DROP_SLACK;
+    const moved = !g.now || now.start !== g.now.start || now.end !== g.now.end;
+    g.unit = unit;
+    if (!moved && !force && off === g.off) return;
+    g.now = now;
+    g.off = off;
+    placeGhost(g);
+    if (moved || force) placeTip(g);
+  }
+
+  /** Fin du geste (dépôt, annulation) : fantôme et infobulle masqués, barre d'origine rendue. */
+  function dragClear() {
+    const ghost = el.querySelector('#gantt-ghost');
+    if (ghost) ghost.hidden = true;
+    hideTip();
+    for (const b of el.querySelectorAll('.gbar--origin, .gms--origin'))
+      b.classList.remove('gbar--origin', 'gms--origin');
+  }
+
+  const dragView = {
+    begin(key, down, handle) {
+      if (!ctx.dates || memory.gesture || memory.saving || !el.isConnected) return false;
+      const index = rows.findIndex((r) => r.key === key);
+      const r = rows[index];
+      const target = r ? ctx.dates.target(r.node) : null;
+      if (!target?.ok) return false;
+      const bar = el.querySelector(`[data-row="${index}"] [data-drag]`);
+      if (!bar) return false;
+      const seen = { start: r.node.start, end: r.node.end };
+      const g = {
+        key,
+        target,
+        seen,
+        now: null,
+        unit: snapUnit(st.scale, false),
+        startX: down.clientX,
+        pxPerDay: 0,
+        anchor: st.anchor,
+        handle,
+        model: ctx.model,
+        dctx: dragContext(ctx.model, target, seen),
+        title: r.node.title || label('common.untitled'),
+        fill: getComputedStyle(bar).backgroundColor,
+        barOffset: bar.offsetTop,
+        barHeight: bar.offsetHeight,
+        vw: document.documentElement.clientWidth,
+        vh: document.documentElement.clientHeight,
+        grabDay: 0,
+        lastX: down.clientX,
+        lastY: down.clientY,
+        shift: Boolean(down.shiftKey),
+        off: false,
+      };
+      g.tipAbove = bar.getBoundingClientRect().bottom + TIP_ROOM > g.vh;
+      if (!measure(g, index)) return false;
+      g.grabDay = g.scaleStart + (down.clientX - g.trackLeft) / g.pxPerDay;
+      g.startX = down.clientX;
+      memory.gesture = g;
+      tipFor = null;
+      dragUpdate(g, true);
+      return true;
+    },
+    move(m) {
+      const g = memory.gesture;
+      if (!g) return;
+      if (!el.isConnected) return void g.handle?.cancel('gone');
+      g.lastX = m.clientX;
+      g.lastY = m.clientY;
+      g.shift = Boolean(m.shiftKey);
+      dragUpdate(g);
+    },
+    edge(side) {
+      const g = memory.gesture;
+      const sc = el.querySelector('.gantt__scroll');
+      if (!g || !sc) return;
+      const before = sc.scrollLeft;
+      const room = side > 0 ? sc.scrollWidth - sc.clientWidth - before : before;
+      if (room >= 1) {
+        // Défilement horizontal de la frise d'abord : même jour sous le pointeur
+        sc.scrollLeft = before + side * Math.min(g.colPx, room);
+        const moved = sc.scrollLeft - before;
+        g.trackLeft -= moved;
+        g.startX -= moved;
+        dragUpdate(g, true);
+        return;
+      }
+      st.anchor = shiftAnchor(st.scale, st.anchor, side);
+      paint(); // rattache le geste (measure) et replace le fantôme
+    },
+    drop(m) {
+      const g = memory.gesture;
+      if (!g) return;
+      g.lastX = m.clientX;
+      g.lastY = m.clientY;
+      g.shift = Boolean(m.shiftKey);
+      dragUpdate(g);
+      memory.gesture = null;
+      dragClear();
+      if (g.off || (g.now.start === g.seen.start && g.now.end === g.seen.end) || !ctx.dates) return;
+      const saving = { key: g.key, now: g.now };
+      memory.saving = saving;
+      paint();
+      let pending;
+      try {
+        pending = Promise.resolve(ctx.dates.save({ target: g.target, seen: g.seen, next: g.now }));
+      } catch (err) {
+        pending = Promise.reject(err);
+      }
+      pending
+        .catch((err) => console.error(err))
+        .finally(() => {
+          if (memory.saving === saving) memory.saving = null;
+          memory.dragView?.repaint();
+        });
+    },
+    cancel() {
+      memory.gesture = null;
+      dragClear();
+    },
+    repaint() {
+      if (gen === memory.generation && el.isConnected) paint();
+    },
+  };
+  memory.dragView = dragView;
+
+  function startBarDrag(e, bar) {
+    if (!ctx.dates || memory.gesture || memory.saving) return;
+    const key = rows[Number(bar.dataset.drag)]?.key;
+    if (!key) return;
+    let handle = null;
+    handle = trackPointer(e, {
+      onStart: () => memory.dragView?.begin(key, e, handle) ?? false,
+      onMove: (m) => memory.dragView?.move(m),
+      onDrop: (m) => memory.dragView?.drop(m),
+      onCancel: () => memory.dragView?.cancel(),
+      onEdge: (side) => memory.dragView?.edge(side),
+      edgeBox: () => memory.gesture?.box ?? null,
+    });
+  }
+
   // ---------- Poignée de la colonne des noms : glisser (souris, stylet, doigt), double-clic = largeur par défaut ----------
-  // Le glisser vit dans memory et ses écouteurs sur la fenêtre : un nouveau rendu pendant le glisser (relecture des
-  // données) le poursuit sur la vue redessinée (memory.applyWidth), et la largeur est enregistrée au relâcher.
+  // Même contrôleur que les barres ; memory.applyWidth = largeur posée par le dernier rendu (un nouveau rendu
+  // pendant le glisser le poursuit), enregistrée au relâcher. Échap rend la largeur de départ.
   memory.applyWidth = applyWidth;
   if (memory.drag) el.querySelector('[data-resizer]')?.classList.add('is-dragging');
-  el.onpointerdown = (e) => {
-    const handle = e.target.closest?.('[data-resizer]');
-    if (!handle || e.button !== 0 || memory.drag) return;
+  function startResize(e, handle) {
     e.preventDefault();
     handle.focus({ preventScroll: true });
     const startW = widthInfo().value;
-    const drag = { startX: e.clientX, startW, last: startW };
-    memory.drag = drag;
-    handle.classList.add('is-dragging');
-    const stop = new AbortController();
-    const move = (m) => {
-      drag.last = memory.applyWidth(drag.startW + (m.clientX - drag.startX), false);
-    };
-    const end = () => {
-      stop.abort();
+    const drag = { startW, last: startW };
+    const stop = (persist) => {
       memory.drag = null;
       document.querySelector('[data-resizer].is-dragging')?.classList.remove('is-dragging');
-      if (drag.last !== drag.startW) memory.applyWidth(drag.last, true);
+      if (persist && drag.last !== drag.startW) memory.applyWidth(drag.last, true);
     };
-    window.addEventListener('pointermove', move, { signal: stop.signal });
-    window.addEventListener('pointerup', end, { signal: stop.signal });
-    window.addEventListener('pointercancel', end, { signal: stop.signal });
+    trackPointer(e, {
+      immediate: true, // poignée en touch-action: none : le doigt la saisit sans appui long
+      onStart: () => {
+        memory.drag = drag;
+        handle.classList.add('is-dragging');
+      },
+      onMove: (_m, dx) => {
+        drag.last = memory.applyWidth(drag.startW + dx, false);
+      },
+      onDrop: () => stop(true),
+      onCancel: (why) => {
+        if (why === 'escape') {
+          drag.last = memory.applyWidth(drag.startW, false);
+          stop(false);
+        } else stop(true);
+      },
+    });
+  }
+  el.onpointerdown = (e) => {
+    if (e.button !== 0 || memory.drag) return;
+    const handle = e.target.closest?.('[data-resizer]');
+    if (handle) return void startResize(e, handle);
+    const bar = e.target.closest?.('[data-drag]');
+    if (bar && !e.ctrlKey && !e.metaKey && !e.altKey) startBarDrag(e, bar);
   };
   el.ondblclick = (e) => {
     if (e.target.closest?.('[data-resizer]')) applyWidth(null, true);

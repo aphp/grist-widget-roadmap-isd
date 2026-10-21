@@ -79,8 +79,9 @@ function swallowAfterRelease(win) {
  * d'abord le mouvement en attente. Écouteurs optionnels de test : `win`, `doc`, `raf`.
  * @param {PointerEvent} down
  * @param {{onStart(e):boolean|void, onMove(e, dx:number, dy:number):void, onDrop(e):void, onCancel(why:string):void,
- *   onEdge?(side:-1|1):void, edgeBox?():DOMRect|null, win?:Window, doc?:Document,
- *   raf?(fn:Function):unknown}} handlers  onStart rend false pour refuser le geste
+ *   onEdge?(side:-1|1):void, edgeBox?():DOMRect|null, immediate?:boolean, win?:Window, doc?:Document,
+ *   raf?(fn:Function):unknown}} handlers  onStart rend false pour refuser le geste ; immediate : le doigt glisse
+ *   sans appui long (élément en touch-action: none, comme la poignée de largeur)
  * @returns {{cancel(why:string):void}}
  */
 export function trackPointer(down, handlers) {
@@ -95,7 +96,8 @@ export function trackPointer(down, handlers) {
   const opts = { signal: ac.signal };
   const x0 = down.clientX;
   const y0 = down.clientY;
-  let armed = !touch; // doigt : armé après l'appui long
+  // doigt : armé après l'appui long, sauf élément sans défilement (touch-action: none, immediate)
+  let armed = !touch || Boolean(handlers.immediate);
   let dragging = false;
   let done = false;
   let pendingMove = null;
@@ -235,8 +237,8 @@ export function trackPointer(down, handlers) {
   } catch {
     /* pointeur déjà relâché : sans importance */
   }
-  if (touch) {
-    win.addEventListener('contextmenu', (e) => e.preventDefault(), { ...opts, capture: true });
+  if (touch) win.addEventListener('contextmenu', (e) => e.preventDefault(), { ...opts, capture: true });
+  if (!armed) {
     longTimer = setTimeout(() => {
       longTimer = null;
       if (done) return;

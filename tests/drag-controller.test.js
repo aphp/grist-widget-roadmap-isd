@@ -553,3 +553,17 @@ test('onStart qui lève : geste terminé (aucun écouteur, nouveau geste possibl
   t.win.emit('pointermove', { clientX: 110 });
   assert.deepEqual(t.calls, [['start']]);
 });
+
+test('doigt, immediate (élément en touch-action: none) : pas d’appui long, seuil de 8 px', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const s = setup({ immediate: true });
+  trackPointer(down({ pointerType: 'touch' }), s.handlers);
+  s.win.emit('pointermove', { clientX: 105, pointerType: 'touch' });
+  assert.deepEqual(s.calls, []);
+  s.win.emit('pointermove', { clientX: 112, pointerType: 'touch' });
+  assert.deepEqual(s.calls, [['start']]);
+  t.mock.timers.tick(1000);
+  assert.equal(s.doc.documentElement.style.touchAction, '');
+  s.win.emit('pointerup', { pointerType: 'touch' });
+  assert.deepEqual(s.calls.at(-1), ['drop']);
+});

@@ -9,11 +9,13 @@ import {
   dragSummary,
   dragTarget,
   movedDates,
+  reattachDrag,
   shiftDay,
   snapUnit,
   stepsFromPixels,
   summaryText,
 } from '../widget/js/core/gantt-drag.js';
+import { expandableKeys, ganttRows, sortTreeByDate } from '../widget/js/core/gantt-data.js';
 import { etpToHours } from '../widget/js/core/capacity.js';
 import { periodFte, roundHours } from '../widget/js/core/charges-edit.js';
 import { feuille } from './fixtures/feuille.js';
@@ -307,4 +309,46 @@ test('dragContext : réutilisé, mêmes résultats qu’un appel neuf ; même p�
   const a = dragSummary(m, T(1), from, tos[0], 5, ctx);
   assert.equal(dragSummary(m, T(1), from, { ...tos[0] }, 5, ctx), a);
   assert.notEqual(dragSummary(m, T(1), from, tos[1], 5, ctx), a);
+});
+
+// ---------- reattachDrag ----------
+test('reattachDrag : ligne retrouvée par sa clé à un autre index après un dépliage', () => {
+  const tree = sortTreeByDate(buildModel(feuille()).tree);
+  const all = expandableKeys(tree);
+  const open = ganttRows(tree, new Set(all));
+  const before = open.findLastIndex((r) => r.node.kind === 'tache' && r.node.start !== null && r.node.end !== null);
+  const row = open[before];
+  const gesture = { key: row.key, seen: { start: row.node.start, end: row.node.end } };
+  assert.deepEqual(reattachDrag(gesture, open), { ok: true, index: before });
+  // ligne repliée au-dessus, hors des ancêtres : celle qui précède dont le sous-arbre se ferme avant la ligne
+  const above = open.findIndex(
+    (x, i) => i < before && x.hasChildren && open.slice(i + 1, before + 1).some((y) => y.depth <= x.depth),
+  );
+  assert.ok(above >= 0, 'jeu de test : une ligne dépliée au-dessus');
+  const rows = ganttRows(tree, new Set(all.filter((k) => k !== open[above].key)));
+  const again = reattachDrag(gesture, rows);
+  assert.equal(again.ok, true);
+  assert.equal(
+    rows[again.index],
+    rows.find((r) => r.key === row.key),
+  );
+  assert.ok(again.index < before);
+});
+
+test('reattachDrag : ligne disparue → gone ; dates relues différentes → changed', () => {
+  const node = { kind: 'tache', start: 10, end: 20 };
+  const rows = [
+    { key: 'a', node: { kind: 'projet' } },
+    { key: 't1', node },
+  ];
+  const g = { key: 't1', seen: { start: 10, end: 20 } };
+  assert.deepEqual(reattachDrag(g, rows), { ok: true, index: 1 });
+  assert.deepEqual(reattachDrag(g, rows.slice(0, 1)), { ok: false, reason: 'gone' });
+  assert.deepEqual(reattachDrag(g, []), { ok: false, reason: 'gone' });
+  assert.deepEqual(reattachDrag(g, [{ key: 't1', node: { ...node, end: 21 } }]), { ok: false, reason: 'changed' });
+  assert.deepEqual(reattachDrag(g, [{ key: 't1', node: { ...node, start: 9 } }]), { ok: false, reason: 'changed' });
+  assert.deepEqual(reattachDrag(g, [{ key: 't1', node: { ...node, start: null } }]), {
+    ok: false,
+    reason: 'changed',
+  });
 });
