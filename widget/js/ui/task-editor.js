@@ -12,6 +12,7 @@ import {
   batchWithCharges,
   conflictBatch,
   failureKind,
+  runDates,
   runDelete,
   runQuickStatus,
   runSave,
@@ -49,7 +50,9 @@ import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { tagsWriteProblem } from '../core/tags-edit.js';
 import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags-field.js';
-import { deleteRight, draftChangeRight, quickStatusRight } from '../core/write-rights.js';
+import { datesRight, deleteRight, draftChangeRight, quickStatusRight } from '../core/write-rights.js';
+import { chargeMaxOf } from '../core/charges-edit.js';
+import { formatDayShort } from '../core/dates.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargesFootHtml,
@@ -136,11 +139,11 @@ const MORE_KEY = 'roadmap-isd.formMore';
  *   storage:Storage, toast:{show:Function}, kindOf(ref):*, titleOf(ref):string, currentRef():object|null,
  *   showRead(ref):void, onWritten(entry:object):void, onUndo():void, onSessionReadOnly(reason:string):void,
  *   onCreate?(data:object):void, onMove?(ref:object):void, canWriteRow?(table:string, id:number):boolean,
- *   onDeleted?(ref:object, entry:object):void}} deps
+ *   onDeleted?(ref:object, entry:object):void, onShowCharges?(ref:object):void}} deps
  *   onCreate : bouton de création de la fiche (data-create, data-parent, data-chantier) ;
  *   onMove : « Changer » de la ligne Rattachement d'une tâche ;
  *   canWriteRow : règle de périmètre (bouton « Supprimer » et lignes du lot) ; onDeleted : après une suppression
- *   (fiche fermée, journal à jour, focus rendu à la vue)
+ *   (fiche fermée, journal à jour, focus rendu à la vue) ; onShowCharges : « Voir les charges » du message des dates
  */
 export function createTaskEditor(deps) {
   let st = null;
@@ -639,6 +642,106 @@ export function createTaskEditor(deps) {
     return kind;
   }
 
+  /**
+   * Dates glissées dans le Gantt (tâche, sous-tâche, jalon, chantier) : même garde que le statut rapide (un envoi
+   * à la fois), droit relu, runDates (relecture, conflit, charges recalculées à ETP gardé). Le formulaire ouvert sur
+   * la même ligne suit les valeurs écrites pour les champs non touchés. Message avec « Annuler », et « Voir les
+   * charges » quand des charges au-dessus de la borne sont laissées telles quelles.
+   * @param {{table:'Tasks'|'Chantiers', id:number}} ref
+   * @param {string[]} cols voir dragTarget (début et fin, ou la seule échéance d'un jalon)
+   * @param {{start:number|null, end:number|null}} seen dates propres au début du geste
+   * @param {{start:number, end:number}} next
+   * @returns {Promise<string>} 'saved', 'nothing', 'busy', 'changed', 'refused:…', 'unknown' ou 'failed'
+   */
+  async function saveDates(ref, cols, seen, next) {
+    const w = writer();
+    if (!w || quickBusy || st?.busy) {
+      deps.toast.show(label('dates.fail.busy'), { tone: 'error' });
+      return 'busy';
+    }
+    const right = datesRight(w, ref.table, cols);
+    if (!right.ok) {
+      deps.toast.show(label('form.fail.refused', { raison: refusedText(right.reason) }), { tone: 'error' });
+      return `refused:${right.reason}`;
+    }
+    quickBusy = true;
+    const cur = st && st.ref.table === ref.table && st.ref.id === ref.id ? st : null;
+    let result;
+    try {
+      result = await runDates({
+        writer: w,
+        table: ref.table,
+        id: ref.id,
+        cols,
+        seen,
+        next,
+        localBase: cur?.base ?? deps.getBase(ref.table, ref.id),
+        fetchRow: fetchRowOf(ref.table),
+        maxOf: chargeMaxOf(model()),
+        timeoutMs: deps.timeoutMs?.(),
+      });
+    } finally {
+      quickBusy = false;
+    }
+    const day = (d) => formatDayShort(d, deps.today());
+    if (result.kind === 'nothing') return 'nothing';
+    if (result.kind === 'saved') {
+      if (cur && st === cur) {
+        rebaseOnto(cur, result.entry.after);
+        render();
+      }
+      const n = result.keptOver.length;
+      const text = label(result.entry.sent ? 'toast.dates' : 'toast.datesDry', {
+        debut: day(next.start),
+        fin: day(next.end),
+      });
+      deps.onWritten(result.entry);
+      deps.toast.show(n ? `${text} ${label('toast.dates.over', { n })}` : text, {
+        onAction: deps.onUndo,
+        more:
+          n && ref.table === 'Tasks'
+            ? { label: label('toast.dates.charges'), onAction: () => deps.onShowCharges?.(ref) }
+            : undefined,
+      });
+      return 'saved';
+    }
+    if (result.kind === 'changed') {
+      const [startCol, endCol] = cols.length === 1 ? [cols[0], cols[0]] : cols;
+      deps.toast.show(
+        label('dates.fail.changed', { debut: day(result.fresh[startCol]), fin: day(result.fresh[endCol]) }),
+        { tone: 'error' },
+      );
+      deps.onUnknown?.(); // relecture : la vue se redessine sur les dates de la Feuille
+      return 'changed';
+    }
+    if (result.kind === 'unknown') {
+      deps.onUnknown?.();
+      if (cur && st === cur && result.stored) {
+        rebaseOnto(cur, result.stored);
+        render();
+      }
+      deps.toast.show(label('dates.fail.unknown'), { tone: 'error' });
+      return 'unknown';
+    }
+    if (result.kind === 'refused') {
+      deps.toast.show(label('dates.fail.charges'), { tone: 'error' });
+      return `refused:${result.reason}`;
+    }
+    if (result.kind === 'missing' || result.kind === 'reread-failed') {
+      deps.toast.show(label(result.kind === 'missing' ? 'dates.fail.missing' : 'dates.fail.reread'), { tone: 'error' });
+      if (result.kind === 'missing') deps.onUnknown?.();
+      return 'failed';
+    }
+    const kind = failureKind(result.error);
+    if (sessionReadOnly(kind)) return `refused:${kind}`;
+    if (kind.startsWith('refused:')) {
+      deps.toast.show(label('form.fail.refused', { raison: refusedText(kind.slice(8)) }), { tone: 'error' });
+      return kind;
+    }
+    deps.toast.show(label(kind === 'acl' ? 'dates.fail.acl' : 'dates.fail.other'), { tone: 'error' });
+    return 'failed';
+  }
+
   // ---------- Suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide) ----------
 
   function paintDelete(focusId) {
@@ -1120,6 +1223,7 @@ export function createTaskEditor(deps) {
   return {
     open,
     quickStatus,
+    saveDates,
     refreshFromModel,
     requestLeave,
     notifyReload,

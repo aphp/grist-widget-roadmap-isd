@@ -15,6 +15,7 @@ import {
 import { FLAGS_FILE } from './config.js';
 import { applyToTables, createWriter, decodeRow } from './core/grist-writer.js';
 import { editAvailability } from './core/task-form.js';
+import { dragTarget } from './core/gantt-drag.js';
 import { parisToday } from './core/write-encode.js';
 import { buildModel } from './core/model.js';
 import { captureScrolls, dataFingerprint, needsRender, restoreScrolls } from './core/reload-state.js';
@@ -245,6 +246,7 @@ function buildCtx(view) {
     today,
     team: teamCtx(),
     quickStatus: quickStatusCtx(),
+    dates: datesCtx(),
     reveal: viewFocus?.reveal ?? null,
   };
 }
@@ -301,6 +303,24 @@ async function withViewFocus(focus, run) {
     }
   }
   return out;
+}
+
+/**
+ * Dates glissées dans le Gantt : null en lecture seule (aucune barre glissable) ; sinon droit de glisser d'une
+ * ligne (dragTarget sur l'édition et le writer du moment) et enregistrement par le contrôleur des fiches, focus
+ * rendu à la ligne (#gr-<clé>) après la relecture, sans la faire défiler.
+ */
+function datesCtx() {
+  const m = state.model;
+  if (!m || !writer || writer.mode === 'off' || !editState.canEdit) return null;
+  return {
+    target: (node) => dragTarget(m, node, { edit: editState, writer, narrow: false }),
+    save: ({ target, seen, next, key }) =>
+      withViewFocus(
+        { keys: [], selectors: key ? [`#${CSS.escape(`gr-${key}`)}`] : [], reveal: false, untilReload: false },
+        () => editor.saveDates({ table: target.table, id: target.id }, target.cols, seen, next),
+      ),
+  };
 }
 
 /** Changement choisi dans le menu : statut rapide de la fiche (relecture, clôture, refus, mode essai). */
@@ -375,8 +395,10 @@ function restoreViewFocus(targets) {
 function focusTargets() {
   const a = document.activeElement;
   const inView = Boolean(a && $('view-panel')?.contains(a));
-  const own = viewFocus && (!a || a === document.body || (inView && a.dataset.qsFocus === viewFocus.keys[0]));
-  if (own) return { selectors: viewFocus.keys.map(qsSelector), reveal: true };
+  // Sélecteurs donnés (ligne du Gantt) ou clés data-qs-focus (cartes, lignes, statut rapide)
+  const wanted = viewFocus?.selectors ?? viewFocus?.keys.map(qsSelector) ?? [];
+  const own = viewFocus && (!a || a === document.body || (inView && wanted.length > 0 && a.matches(wanted[0])));
+  if (own) return { selectors: wanted, reveal: viewFocus.reveal !== false };
   const sel = focusedSelector();
   return sel ? { selectors: [sel], reveal: false } : null;
 }
@@ -630,6 +652,8 @@ const editor = createTaskEditor({
   onUndo: () => undoLast(),
   onSessionReadOnly: sessionReadOnly,
   onUnknown: () => reload(),
+  // « Voir les charges » du message des dates : formulaire ouvert sur le bloc Personnes
+  onShowCharges: (ref) => openFormAt(ref, 'tf-people-title'),
   timeoutMs: () => timeoutMs,
   onCreate: (data) => openCreate(data),
   onMove: (ref) => createDialog.open('move', { taskId: ref.id }),
@@ -687,10 +711,15 @@ function openForm(ref) {
  */
 function openDates(ref) {
   const milestone = ref.table === 'Tasks' && state.model?.tasks.get(ref.id)?.type === 'jalon';
+  openFormAt(ref, ref.table === 'Chantiers' ? 'tf-Debut' : milestone ? 'tf-dateEcheance' : 'tf-dateDebut');
+}
+
+/** Fiche et formulaire d'une ligne ouverts sur un champ (la fiche seule si le formulaire ne s'ouvre pas). */
+function openFormAt(ref, focusId) {
   editor.requestLeave(() => {
     detailHistory.length = 0;
     showDetail(ref);
-    editor.open(ref, ref.table === 'Chantiers' ? 'tf-Debut' : milestone ? 'tf-dateEcheance' : 'tf-dateDebut');
+    editor.open(ref, focusId);
   });
 }
 

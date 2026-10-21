@@ -1133,7 +1133,7 @@ export function render(el, ctx) {
       let pending;
       try {
         paint();
-        pending = Promise.resolve(ctx.dates.save({ target: g.target, seen: g.seen, next: g.now }));
+        pending = Promise.resolve(ctx.dates.save({ target: g.target, seen: g.seen, next: g.now, key: g.key }));
       } catch (err) {
         pending = Promise.reject(err);
       }

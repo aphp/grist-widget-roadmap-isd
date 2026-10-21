@@ -19,6 +19,7 @@ export function createToast() {
   document.body.append(root);
   let timer = null;
   let action = null;
+  let more = null;
   let duration = TOAST_MS;
   /** Élément focalisé avant d'entrer dans le message : il retrouve le focus quand le message disparaît. */
   let returnTo = null;
@@ -28,6 +29,7 @@ export function createToast() {
     clearTimeout(timer);
     timer = null;
     action = null;
+    more = null;
     root.innerHTML = '';
     if (hadFocus && returnTo?.isConnected) returnTo.focus();
     returnTo = null;
@@ -47,7 +49,8 @@ export function createToast() {
 
   /**
    * @param {string} message texte (échappé)
-   * @param {{actionLabel?:string, onAction?:() => void, tone?:'info'|'error', duration?:number}} [opts]
+   * @param {{actionLabel?:string, onAction?:() => void, tone?:'info'|'error', duration?:number,
+   *   more?:{label:string, onAction:() => void}}} [opts] more : second bouton (après « Annuler »)
    */
   function show(message, opts = {}) {
     clearTimeout(timer);
@@ -58,9 +61,11 @@ export function createToast() {
         : '[data-toast-close]'
       : null;
     action = opts.onAction ?? null;
+    more = opts.more ?? null;
     root.innerHTML = h`<div class="toast ${opts.tone === 'error' ? 'toast--error' : ''}">
       <p class="toast__text">${message}</p>
       ${action ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--secondary toast__action" data-toast-action>${opts.actionLabel ?? label('toast.undo')}</button>` : ''}
+      ${more ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary toast__action" data-toast-more>${more.label}</button>` : ''}
       <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline fr-icon-close-line toast__close" data-toast-close title="${label('toast.close')}">${label('toast.close')}</button>
     </div>`.toString();
     duration = opts.duration ?? TOAST_MS;
@@ -74,6 +79,12 @@ export function createToast() {
 
   root.addEventListener('click', (e) => {
     if (e.target.closest('[data-toast-close]')) return hide();
+    if (e.target.closest('[data-toast-more]')) {
+      const fn = more?.onAction;
+      hide();
+      fn?.();
+      return;
+    }
     if (e.target.closest('[data-toast-action]')) {
       const fn = action;
       hide();

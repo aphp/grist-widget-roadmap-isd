@@ -4366,3 +4366,203 @@ test(
     await send('Emulation.setFocusEmulationEnabled', { enabled: false });
   },
 );
+
+// ---------- Gantt : glisser une barre, de bout en bout (éditeur, writer, faux Grist) ----------
+
+/** Onglet Gantt en édition (écritures en mémoire), échelle et niveau choisis. */
+async function openGanttEdit(extra = '', scale = 'year') {
+  await open(`?edition=1&doc=doc-dev-local&ecritures=memoire${extra}`);
+  await clickOn('#tab-gantt');
+  await until(`D.getElementById('gantt-level-tache')`);
+  await clickOn('#gantt-level-tache');
+  await clickOn(`#gantt-scale-${scale}`);
+  await until(`D.querySelector('[data-drag]')`);
+}
+
+/** Première tâche glissable (barre pleine) qui a des personnes assignées : id et première personne. */
+async function draggableTaskWithPeople() {
+  return w(`const t = await W.grist.docApi.fetchTable('Tasks');
+    for (const b of D.querySelectorAll('.gbar[data-drag]')) {
+      const id = Number(b.closest('.grow').id.match(/T(\\d+)$/)?.[1]);
+      const i = t.id.indexOf(id);
+      const a = t.assignees[i];
+      if (i >= 0 && Array.isArray(a) && a.length > 1 && t.type[i] !== 'jalon') return { id, person: a[1] };
+    }
+    return null;`);
+}
+
+/** Centre (coordonnées de la page hôte) de la barre ou du losange glissable d'une tâche. */
+const dragMark = (id) =>
+  w(`const row = [...D.querySelectorAll('.grow')].find((r) => r.id.endsWith('/T${id}'));
+    const b = row?.querySelector('[data-drag]');
+    if (!b) return null;
+    b.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = b.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + Math.min(8, r.width / 2), y: f.top + r.top + r.height / 2 };`);
+
+/** Glisser de dx px à la souris (boutons tenus pendant le geste). */
+async function mouseDrag(at, dx, { release = true } = {}) {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: at.x,
+    y: at.y,
+    button: 'left',
+    clickCount: 1,
+    buttons: 1,
+  });
+  for (let k = 1; k <= 5; k += 1) {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: at.x + (dx * k) / 5,
+      y: at.y,
+      button: 'left',
+      buttons: 1,
+    });
+    await sleep(20);
+  }
+  if (release)
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + dx,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+}
+
+const SEC = 86400;
+const secOf = (iso) => Date.parse(`${iso}T00:00:00Z`) / 1000;
+
+test(
+  'gantt : glisser une tâche de juin à juillet → une écriture (dates, heures recalculées), « Enregistrement… » puis « Annuler » rétablit',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit(',lent');
+    const task = await draggableTaskWithPeople();
+    assert.ok(task, 'jeu synthétique : une tâche glissable avec des personnes');
+    const charges = JSON.stringify([{ teamId: task.person, heures: 35 }]);
+    await remoteChange([
+      'UpdateRecord',
+      'Tasks',
+      task.id,
+      { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges },
+    ]);
+    const at = await dragMark(task.id);
+    await mouseDrag(at, 90);
+    // Barre à sa nouvelle place, occupée, jusqu'à la réponse (écriture lente)
+    await until(`D.querySelector('.gbar.is-saving[aria-busy="true"]')`);
+    await until(`W.__writes.length === 1 && !D.querySelector('[aria-busy="true"].is-saving')`, 8000);
+    const [action] = await w(`return W.__writes[0].args[0];`);
+    assert.deepEqual(action.slice(0, 3), ['UpdateRecord', 'Tasks', task.id]);
+    const cells = action[3];
+    const shift = cells.dateDebut - secOf('2026-06-01');
+    assert.ok(shift > 0 && shift % (7 * SEC) === 0, `décalage d'un nombre de semaines : ${shift / SEC} j`);
+    assert.equal(cells.dateEcheance - cells.dateDebut, 13 * SEC);
+    assert.ok(cells.dateEcheance >= secOf('2026-07-01'), 'arrivée en juillet');
+    // Capacité standard différente en juillet : heures recalculées, ETP gardé
+    const after = JSON.parse(cells.charges);
+    assert.equal(after.length, 1);
+    assert.equal(after[0].teamId, task.person);
+    assert.notEqual(after[0].heures, 35);
+    assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Dates enregistrées/);
+    // « Annuler » : dates et charges d'avant, à l'identique
+    await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+    await until(`W.__writes.length === 2`, 8000);
+    const undo = await w(`return W.__writes[1].args[0][0][3];`);
+    assert.deepEqual(undo, { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges });
+  },
+);
+
+test(
+  'gantt : dates changées ailleurs pendant le glisser → geste annulé, message, aucune écriture',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    const at = await dragMark(task.id);
+    await mouseDrag(at, 60, { release: false });
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    const end = await w(
+      `const t = await W.grist.docApi.fetchTable('Tasks'); return t.dateEcheance[t.id.indexOf(${task.id})];`,
+    );
+    await remoteChange(['UpdateRecord', 'Tasks', task.id, { dateEcheance: end + SEC }]);
+    await until(`D.getElementById('gantt-ghost').hidden && D.querySelector('.gantt__notice')`);
+    assert.match(
+      await w(`return D.querySelector('.gantt__notice').textContent;`),
+      /Les dates ont changé pendant le déplacement/,
+    );
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + 60,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await sleep(200);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test('gantt : jalon à la seule échéance glissé → seule l’échéance est écrite', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const task = await draggableTaskWithPeople();
+  await remoteChange([
+    'UpdateRecord',
+    'Tasks',
+    task.id,
+    { type: 'jalon', dateDebut: null, dateEcheance: secOf('2026-06-10'), charges: null },
+  ]);
+  await until(
+    `[...D.querySelectorAll('.grow')].find((r) => r.id.endsWith('/T${task.id}'))?.querySelector('.gms[data-drag]')`,
+  );
+  const at = await dragMark(task.id);
+  await mouseDrag(at, 60);
+  await until(`W.__writes.length === 1`);
+  const [action] = await w(`return W.__writes[0].args[0];`);
+  assert.deepEqual(Object.keys(action[3]), ['dateEcheance']);
+  assert.ok(action[3].dateEcheance > secOf('2026-06-10'));
+});
+
+test('gantt : Échap pendant le glisser de la poignée rend la largeur de départ', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const before = await labelWidth();
+  const at = await w(`const r = D.getElementById('gantt-resizer').getBoundingClientRect();
+    const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+  await mouseDrag(at, 64, { release: false });
+  assert.notEqual((await labelWidth()).now, before.now);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: at.x + 64,
+    y: at.y,
+    button: 'left',
+    clickCount: 1,
+  });
+  await sleep(100);
+  assert.deepEqual(await labelWidth(), before);
+});
+
+test(
+  'gantt : charge au-dessus de la borne laissée telle quelle → message « Voir les charges » qui ouvre le bloc Personnes',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    const charges = JSON.stringify([{ teamId: task.person, heures: 200 }]);
+    await remoteChange([
+      'UpdateRecord',
+      'Tasks',
+      task.id,
+      { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges },
+    ]);
+    await mouseDrag(await dragMark(task.id), 90);
+    await until(`W.__writes.length === 1 && D.querySelector('.toast [data-toast-more]')`);
+    const cells = await w(`return W.__writes[0].args[0][0][3];`);
+    assert.equal('charges' in cells, false);
+    assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /1 charge\(s\) laissée\(s\)/);
+    await w(`D.querySelector('.toast [data-toast-more]').click(); return true;`);
+    await until(`D.activeElement?.id === 'tf-people-title'`);
+  },
+);
