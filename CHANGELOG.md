@@ -4,15 +4,16 @@
 
 - Charges are typed in ETP or in hours per week ("h/semaine", the quotité: 35 h/week = 1 ETP) instead of total
   hours. Total hours = ETP × standard capacity of the period (leave, public holidays and slowdowns deducted), rounded
-  to 0.5 h; storage unchanged (`Tasks.charges` keeps total hours). h/week shown from storage = hours ÷ capacity × 35,
-  one decimal, except that a typed value (ETP or h/week) stays shown as typed while the line's hours are still the ones
-  it gives, dates changes included; retyping the shown value keeps the stored hours; a too small h/week entry names
-  the smallest allowed value; the help above the lines is one sentence, the details are in the « i » tooltip; bound 35 h/week (50 × 35 for estimation people);
-  errors say the bound in h/week with the matching total. Each line shows "= {h} h au total" in both units. Without a
-  usable period (dates missing, inverted, or no working day), no charge can be typed; stored hours stay shown and
-  kept. An h/week entry records its exact ETP as reference, so "the ETP holds" when dates change. The saved unit
-  preference `heures` migrates to `hsem`. ETP and h/week entries at exactly 1 ETP are accepted even when the period
-  capacity rounds down to the 0.5 h step (the bound now compares the typed ETP).
+  to 0.5 h; storage unchanged (`Tasks.charges` keeps total hours). A typed value (ETP or h/week) stays shown as typed
+  while the line's hours are still the ones it gives, date changes included; otherwise h/week = hours ÷ capacity ×
+  35, one decimal. Retyping the shown value keeps the stored hours; another value with the same rounded total keeps
+  the cell but becomes the line's ETP reference. Bound 35 h/week (50 × 35 for estimation people); errors give the
+  bound in h/week with the matching total, and a too small entry names the smallest allowed h/week. Each line shows
+  "= {h} h au total" in both units. Without a usable period (dates missing, inverted, or no working day), no charge
+  can be typed; stored hours stay shown and kept. An h/week entry records its exact ETP as reference, so "the ETP
+  holds" when dates change. The help above the lines is one sentence; the details are in the "i" tooltip. The saved
+  unit preference `heures` migrates to `hsem`. ETP and h/week entries at exactly 1 ETP are accepted even when the
+  period capacity rounds down to the 0.5 h step (the bound now compares the typed ETP).
 - Tooltips (WCAG 1.4.13): a shown tooltip can be hovered without vanishing, and Escape hides it without moving the
   focus (and without closing the panel or dialog behind it) until the pointer leaves and the focus moves.
   Charge messages name the actual reason when ETP cannot be computed: dates missing, due date before the start, or no
