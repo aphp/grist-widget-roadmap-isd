@@ -72,6 +72,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   `write-rights.js` : droits relus au moment d’agir ; `write-scope.js` : périmètre des écritures passé au writer).
 - `widget/js/views/` : rendu d'un onglet ou d'un formulaire, `render(el, ctx)`.
 - `widget/js/ui/` : coquille (en-tête, onglets, filtres, fiche, dialogues, kit `h```).
+- Glisser-déposer : règles pures dans `core/gantt-drag.js` (Gantt) et `core/kanban-drop.js` (Kanban), geste commun
+  `ui/drag.js` (`trackPointer` : un geste à la fois, souris, stylet, doigt après appui long, Échap, bord) ; aucune
+  écriture pendant le geste, enregistrement par les chemins rapides de `ui/task-editor.js` (relecture, « Annuler »).
 - `widget/vendor/` : `grist-plugin-api.js` (copie de l'instance) et DSFR 1.15.3 (voir README).
 - Équipe ISD : rôle DE, DA, DS, PO, ou Domaine ISD ; Management ISD inclus dans les sélecteurs (`pickerGroups`).
   Domaine ISD = nom contenant « ISD » (personnes, sinon choix de Team.Domaine), calculé une fois (`model.isdDomain`),
@@ -110,7 +113,8 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   `runDates` ; charges illisibles ou en double et capacité changée → refus `charges-illisibles`) et étirement des
   barres (lot B : poignées, Tab dans le mode D, menu « Changer le début / l’échéance »), glisser-déposer du Kanban
   (lot C : statut et priorité, menu ⋯ « Statut… / Priorité… », touches S et P ; `core/kanban-drop.js`, `ctx.drop`,
-  `#kanban-live`, écriture par `runQuickChanges`).
+  `#kanban-live`, écriture par `runQuickChanges` ; lot D : vers un autre chantier, toujours confirmé par la fenêtre
+  « Déplacer » (`runMove`), touche M et entrée « Chantier… »).
 - **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
   Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
   (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
@@ -126,7 +130,7 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`, suppression et restauration au même
   identifiant (AddRecord à identifiant fixe, colonnes de données recopiées, manualSort, refus d'un identifiant pris).
-- Lots suivants : changer une tâche de chantier par glisser-déposer (lot D), gestion des tags (lot 2g, reportée).
+- Lots suivants : gestion des tags (lot 2g, reportée).
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
   d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité,
   demandeur par chantier. Pas de création de rôle. `Team.capaciteHebdo` et `Team.aph` restent en lecture tant que
