@@ -3569,6 +3569,32 @@ test(
   },
 );
 
+test(
+  'relecture (onRecords) : Statistiques garde le détail d’une case du plan de charge, les listes dépliées et le défilement',
+  { skip: SKIP },
+  async () => {
+    await open();
+    await w(`D.getElementById('tab-stats').click(); return true;`);
+    await until(`D.querySelector('.plan__scroll .tcell[data-person][data-ym]')`);
+    await w(`D.querySelectorAll('.plan__scroll .tcell[data-person][data-ym]')[20].click(); return true;`);
+    await until(`D.getElementById('plan-panel-title')`);
+    await w(`D.querySelector('[data-kind]')?.click(); D.querySelector('button[data-more]')?.click();
+      D.querySelector('[data-panel]').scrollIntoView({ block: 'center' }); return true;`);
+    const state = `return { y: Math.round(W.scrollY), panel: !!D.getElementById('plan-panel-title'),
+      pressed: D.querySelectorAll('.tcell[aria-pressed="true"]').length,
+      kind: D.querySelector('[data-kind]')?.getAttribute('aria-expanded') ?? null,
+      more: D.querySelector('button[data-more]')?.getAttribute('aria-expanded') ?? null };`;
+    const before = await w(state);
+    assert.equal(before.panel, true);
+    assert.ok(before.y > 0, 'page à défiler');
+    const id = await w(`return (await W.grist.docApi.fetchTable('Tasks')).id[0];`);
+    await remoteChange(['UpdateRecord', 'Tasks', id, { titre: 'Modifiée ailleurs' }]);
+    const after = await w(state);
+    assert.deepEqual({ ...after, y: undefined }, { ...before, y: undefined });
+    assert.ok(Math.abs(after.y - before.y) <= 2, `défilement ${after.y} au lieu de ${before.y}`);
+  },
+);
+
 // ---------- Gantt : largeur de la colonne des noms (poignée) ----------
 
 /** Largeur de la colonne des noms : cellule affichée, poignée et préférence enregistrée. */

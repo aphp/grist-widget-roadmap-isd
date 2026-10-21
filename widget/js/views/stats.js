@@ -26,6 +26,9 @@ import { viewHeading } from '../ui/heading.js';
 import { etpLabel, label, taskCount } from '../labels.js';
 import { mountLoadPlan } from './load-plan.js';
 
+/** Listes dépliées (anomalies, « Voir plus » des personnes), gardées d'un rendu à l'autre (relecture). */
+const opened = { kinds: new Set(), more: false };
+
 export const id = 'stats';
 
 const TOP_PEOPLE = 15;
@@ -259,6 +262,16 @@ export function render(el, ctx) {
   const roles = roleLoad(ctx.model, ids, ctx.today);
   const people = topN(person, TOP_PEOPLE);
   const T = (k) => label(`stats.chart.${k}`);
+  const setKind = (k, on) => {
+    k.setAttribute('aria-expanded', String(on));
+    k.querySelector('.stats__chev').textContent = on ? '▾' : '▸';
+    el.querySelector(`#stats-l-${k.dataset.kind}`).hidden = !on;
+  };
+  const setMore = (more, on) => {
+    more.setAttribute('aria-expanded', String(on));
+    more.textContent = on ? label('stats.people.less') : label('stats.people.more', { n: people.hidden });
+    for (const r of more.closest('.stats__card').querySelectorAll('li[data-more]')) r.hidden = !on;
+  };
 
   el.innerHTML = h`<div class="stats">
     ${viewHeading(label('stats.title'), label('stats.subtitle'))}
@@ -333,6 +346,14 @@ export function render(el, ctx) {
   </div>`.toString();
 
   mountLoadPlan(el.querySelector('[data-plan]'), ctx);
+  // Listes dépliées avant une relecture : rouvertes, pour que la page garde sa hauteur et son défilement
+  for (const kind of opened.kinds) {
+    const k = el.querySelector(`[data-kind="${CSS.escape(kind)}"]`);
+    if (k) setKind(k, true);
+    else opened.kinds.delete(kind);
+  }
+  const moreBtn = el.querySelector('button[data-more]');
+  if (moreBtn && opened.more) setMore(moreBtn, true);
 
   el.onclick = (e) => {
     const q = e.target.closest('[data-quality-toggle]');
@@ -347,17 +368,15 @@ export function render(el, ctx) {
     const k = e.target.closest('[data-kind]');
     if (k) {
       const on = k.getAttribute('aria-expanded') !== 'true';
-      k.setAttribute('aria-expanded', String(on));
-      k.querySelector('.stats__chev').textContent = on ? '▾' : '▸';
-      el.querySelector(`#stats-l-${k.dataset.kind}`).hidden = !on;
+      setKind(k, on);
+      if (on) opened.kinds.add(k.dataset.kind);
+      else opened.kinds.delete(k.dataset.kind);
       return;
     }
     const more = e.target.closest('button[data-more]');
     if (more) {
-      const on = more.getAttribute('aria-expanded') !== 'true';
-      more.setAttribute('aria-expanded', String(on));
-      more.textContent = on ? label('stats.people.less') : label('stats.people.more', { n: people.hidden });
-      for (const r of more.closest('.stats__card').querySelectorAll('li[data-more]')) r.hidden = !on;
+      opened.more = more.getAttribute('aria-expanded') !== 'true';
+      setMore(more, opened.more);
       return;
     }
     const t = e.target.closest('[data-open]');

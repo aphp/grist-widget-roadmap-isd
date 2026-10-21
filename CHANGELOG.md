@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Statistics: a reload from Grist (a change made by anyone) no longer closes the load-plan cell detail, the expanded
+  quality lists or "Voir plus" of the people chart, so the page keeps its height and scroll position.
 - Kanban: cards move between status or priority columns by dragging (mouse, pen; finger after a 400 ms long press),
   through the shared `ui/drag.js` controller. During the gesture nothing is repainted: a ghost on `<body>`, allowed
   columns outlined (`.kcol--target`), refused ones greyed with their reason in a tooltip and on the ghost

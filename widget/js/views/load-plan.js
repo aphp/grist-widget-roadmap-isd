@@ -148,6 +148,13 @@ function panelHtml(ctx, rows, totals, sel, paths) {
 }
 
 /**
+ * Case dont le détail est ouvert, gardée d'un rendu à l'autre : une relecture (modification faite dans Grist)
+ * redessine la vue ; sans elle, le détail se refermerait, la page raccourcirait et le défilement remonterait.
+ * @type {{person:string|null, role:string|null, ym:string}|null}
+ */
+let openCell = null;
+
+/**
  * Monte le plan de charge dans el (qui reçoit ses propres gestionnaires de clic et de clavier).
  * @param {HTMLElement} el
  * @param {object} ctx contexte fourni par main.js
@@ -171,10 +178,12 @@ export function mountLoadPlan(el, ctx) {
   </div>`;
   const slot = el.querySelector('[data-panel]');
 
-  function select(btn) {
+  /** Ouvre (ou ferme, btn null) le détail d'une case ; restore : rendu suivant une relecture, ni focus ni défilement. */
+  function select(btn, { restore = false } = {}) {
     for (const b of el.querySelectorAll('.tcell[aria-pressed="true"]')) b.setAttribute('aria-pressed', 'false');
     if (!btn) {
       sel = null;
+      openCell = null;
       slot.innerHTML = '';
       return;
     }
@@ -185,7 +194,9 @@ export function mountLoadPlan(el, ctx) {
       ym: btn.dataset.ym,
       btn: btn.id,
     };
+    openCell = { person: btn.dataset.person ?? null, role: btn.dataset.role ?? null, ym: btn.dataset.ym };
     slot.innerHTML = panelHtml(ctx, rows, totals, sel, paths).toString();
+    if (restore) return;
     const title = document.getElementById('plan-panel-title');
     title?.focus({ preventScroll: true });
     slot.firstElementChild?.scrollIntoView?.({ block: 'nearest' });
@@ -195,6 +206,14 @@ export function mountLoadPlan(el, ctx) {
     const back = sel && document.getElementById(sel.btn);
     select(null);
     back?.focus();
+  }
+
+  if (openCell) {
+    const { person, role, ym } = openCell;
+    const who = person !== null ? `[data-person="${CSS.escape(person)}"]` : `[data-role="${CSS.escape(role ?? '')}"]`;
+    const btn = el.querySelector(`.tcell${who}[data-ym="${CSS.escape(ym)}"]`);
+    if (btn) select(btn, { restore: true });
+    else openCell = null;
   }
 
   el.onclick = (e) => {
