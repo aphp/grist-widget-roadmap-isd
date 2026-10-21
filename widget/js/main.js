@@ -281,8 +281,9 @@ function quickStatusCtx() {
 
 /**
  * Glisser et menus des cartes du Kanban : null en lecture seule. targets : verdict de chaque colonne (dropTargets) ;
- * drop : dépôt d'une carte dans une colonne (statut ou priorité rapides, refus annoncé) ; openPriority : menu de
- * priorité ; openActions : menu ⋯ (« Statut… », « Priorité… »).
+ * drop : dépôt d'une carte dans une colonne (statut ou priorité rapides, fenêtre « Déplacer » pour un chantier,
+ * refus annoncé) ; openPriority : menu de priorité ; openMove : fenêtre « Déplacer » ; openActions : menu ⋯
+ * (« Statut… », « Priorité… », « Chantier… ») ; chantier : Chantier et projet permis par le writer.
  */
 function dropCtx() {
   const m = state.model;
@@ -291,28 +292,35 @@ function dropCtx() {
     targets: (id, group, columns) => dropTargets(m, id, group, columns),
     drop: dropOnColumn,
     openPriority: openQuickPriority,
+    openMove: openMoveFromView,
     openActions: openCardActions,
+    chantier: Boolean(writer.can('Tasks', 'Chantier')?.ok && writer.can('Tasks', 'projet')?.ok),
   };
 }
 
 /**
- * Carte déposée dans une colonne (glisser, menu de priorité) : même chemin que les menus de statut et de priorité.
+ * Carte déposée dans une colonne (glisser, menu de priorité) : même chemin que les menus de statut et de priorité ;
+ * sur un chantier, la fenêtre « Déplacer » s'ouvre, chantier présélectionné (Q7 : toujours confirmé).
  * Colonne de la carte : rien, sans message ; colonne refusée : sa raison dite, rien n'est lu ni envoyé.
  * @param {number} taskId
- * @param {'status'|'priority'} group
- * @param {string} key clé de la colonne (statut ou libellé de priorité)
+ * @param {'status'|'priority'|'chantier'} group
+ * @param {string} key clé de la colonne (statut, libellé de priorité ou chantier)
  * @param {HTMLElement} focusEl carte (ses voisines servent de repli du focus)
- * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'refused:…', 'busy'…)
+ * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'closed', 'refused:…', 'busy'…)
  */
 async function dropOnColumn(taskId, group, key, focusEl) {
   const r = dropChanges(state.model, taskId, group, key, todayDay());
   if (r.error) {
     toast.show(
-      label('kanban.drop.refused', { colonne: columnName(group, key), raison: label(`kanban.drop.no.${r.error}`) }),
+      label('kanban.drop.refused', {
+        colonne: columnName(group, key, state.model),
+        raison: label(`kanban.drop.no.${r.error}`),
+      }),
       { tone: 'error' },
     );
     return `refused:${r.error}`;
   }
+  if (group === 'chantier') return r.target === undefined ? 'nothing' : openMoveFromView(taskId, focusEl, r.target);
   if (!Object.keys(r.changes).length) return 'nothing';
   if (group === 'status') return changeStatusFromView(taskId, key, focusEl);
   const value = r.changes.priorite;
@@ -353,8 +361,51 @@ function openQuickPriority(anchor, taskId, focusEl = anchor) {
 }
 
 /**
- * Menu ⋯ d'une carte (clic, Maj+F10, touche Menu, clic droit) : « Statut… » et « Priorité… » selon les droits ; une
- * seule entrée possible : son menu s'ouvre directement.
+ * Fenêtre « Déplacer » ouverte depuis une carte (dépôt sur un chantier, touche M, « Chantier… ») : toujours une
+ * confirmation (Q7), rien n'est écrit si elle est fermée. Le focus revient à la carte à la fermeture, et après
+ * l'envoi la suit dans sa nouvelle colonne (gardée visible) ; « Annuler » y ramène le focus.
+ * @param {string} [target] chantier présélectionné (targetValue), vide : l'utilisateur choisit
+ * @returns {Promise<string>} 'saved', 'closed' ou 'refused'
+ */
+async function openMoveFromView(taskId, focusEl, target = '') {
+  const t = state.model?.tasks.get(taskId);
+  if (!t) return 'refused';
+  if (t.parentId) {
+    toast.show(label('kanban.drop.subtask'), { tone: 'error' });
+    return 'refused';
+  }
+  if (!quickFields(state.model, taskId, editState, writer).chantier) {
+    refuseQuick(taskId, writer?.can('Tasks', 'Chantier')?.ok ? 'projet' : 'Chantier');
+    return 'refused';
+  }
+  // La carte est l'élément d'origine de la fenêtre : le focus y revient à la fermeture
+  if (focusEl?.isConnected) focusEl.focus({ preventScroll: true });
+  const focus = cardFocus(taskId, focusEl);
+  const kind = await withViewFocus(
+    focus,
+    () =>
+      new Promise((resolve) => {
+        const opened = createDialog.open('move', {
+          taskId,
+          target,
+          // Envoi réussi : le focus suit la carte au rendu qui suit, même après une fenêtre restée longtemps ouverte
+          onSaving: () => {
+            focus.expires = Date.now() + 30000;
+            viewFocus = focus;
+          },
+          onClose: resolve,
+        });
+        if (!opened) resolve('refused');
+      }),
+  );
+  if (kind === 'saved')
+    lastQuick = { entry: writer?.lastUndoable() ?? null, focus: { keys: [String(taskId)], reveal: taskId } };
+  return kind;
+}
+
+/**
+ * Menu ⋯ d'une carte (clic, Maj+F10, touche Menu, clic droit) : « Statut… », « Priorité… » et « Chantier… » selon
+ * les droits ; une seule entrée possible : son menu (ou la fenêtre « Déplacer ») s'ouvre directement.
  */
 function openCardActions(anchor, taskId, focusEl = anchor) {
   const m = state.model;
@@ -364,8 +415,9 @@ function openCardActions(anchor, taskId, focusEl = anchor) {
   const open = {
     status: () => openQuickStatus(anchor, taskId, focusEl),
     priority: () => openQuickPriority(anchor, taskId, focusEl),
+    chantier: () => openMoveFromView(taskId, focusEl),
   };
-  const entries = [f.statut && 'status', f.priorite && 'priority'].filter(Boolean);
+  const entries = [f.statut && 'status', f.priorite && 'priority', f.chantier && 'chantier'].filter(Boolean);
   if (!entries.length) return refuseQuick(taskId, 'statut');
   if (entries.length < 2) return open[entries[0]]();
   const title = t.title || label('common.untitled');
@@ -456,15 +508,19 @@ function changeStatusFromView(taskId, status, focusEl) {
  * @returns {Promise<string>} genre du résultat
  */
 async function changeFromView(taskId, focusEl, busyKey, run) {
-  const list = focusEl.closest('ul, tbody');
-  const keys = list ? [...list.querySelectorAll('[data-qs-focus]')].map((x) => x.dataset.qsFocus) : [];
-  const focus = { keys: focusOrder(keys, String(taskId)), reveal: taskId, untilReload: false };
-  const kind = await withViewFocus(focus, run);
+  const kind = await withViewFocus(cardFocus(taskId, focusEl), run);
   // Autre envoi en cours (statut rapide ou formulaire) : le choix n'est pas perdu en silence
   if (kind === 'busy') toast.show(label(busyKey), { tone: 'error' });
   if (kind === 'saved')
     lastQuick = { entry: writer?.lastUndoable() ?? null, focus: { keys: [String(taskId)], reveal: taskId } };
   return kind;
+}
+
+/** Focus à garder sur l'élément d'une tâche (puis ses voisines de la même liste), tâche gardée visible. */
+function cardFocus(taskId, focusEl) {
+  const list = focusEl?.closest('ul, tbody');
+  const keys = list ? [...list.querySelectorAll('[data-qs-focus]')].map((x) => x.dataset.qsFocus) : [];
+  return { keys: focusOrder(keys, String(taskId)), reveal: taskId, untilReload: false };
 }
 
 const qsSelector = (k) => `[data-qs-focus="${CSS.escape(k)}"]`;

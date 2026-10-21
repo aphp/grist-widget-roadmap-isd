@@ -140,7 +140,22 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   sa colonne ou hors du plateau n'écrivent rien ; une relecture pendant le geste le garde, sauf si la carte a changé
   ailleurs (geste annulé, message). Alternatives : menu ⋯ de la carte (clic, Maj+F10, touche Menu, clic droit :
   « Statut… », « Priorité… »), touches S (statut) et P (priorité) sur la carte ; annonces dans `#kanban-live`.
-  Regroupé par chantier : pas de glisser (lot D).
+- **Changer de chantier dans le Kanban** (édition ouverte, Kanban regroupé par chantier) : une tâche de premier
+  niveau se dépose sur un autre chantier. Rien n'est écrit au dépôt : la fenêtre « Changer de chantier » s'ouvre,
+  chantier présélectionné (son projet s'il n'en a qu'un, ou le projet actuel de la tâche s'il le porte ; sinon la
+  fenêtre demande le projet), avec les sous-tâches qui suivront ; « Déplacer » envoie la tâche et toutes ses
+  sous-tâches dans un seul lot (relues avant l'envoi), « Annuler » du message les ramène. Fermer la fenêtre n'écrit
+  rien ; le focus revient à la carte, qui la suit dans sa nouvelle colonne. Colonnes refusées pendant le geste, avec
+  leur raison : « (sans chantier) », chantiers hors périmètre ISD, chantier de la carte. Une sous-tâche ne se
+  soulève pas : elle suit le chantier de sa tâche (infobulle, message si on tente de la glisser ou si on appuie sur
+  M). Alternatives : « Chantier… » du menu ⋯, touche M.
+- **Gestes et raccourcis d'édition** (rappel) : D, sur une ligne du Gantt, entre dans le mode dates (←/→, Tab pour
+  le début ou l'échéance, Entrée, Échap) ; sur une carte du Kanban, S ouvre le menu de statut, P celui de priorité,
+  M « déplace vers… » (par statut : menu de statut, par priorité : menu de priorité, par chantier : fenêtre
+  « Changer de chantier ») ; Maj+F10, la touche Menu ou le clic droit ouvrent le menu de la ligne ou de la carte.
+  Les touches proposées sont dans `aria-keyshortcuts` et l'aide du plateau, seulement quand l'action est permise.
+  Quand des dates changent (glisser, étirer, fiche, création), l'ETP de chaque personne fait foi : les heures sont
+  recalculées sur la nouvelle période.
 - **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
   le total portent sur les profils DE, DA, DS et PO seulement.
 

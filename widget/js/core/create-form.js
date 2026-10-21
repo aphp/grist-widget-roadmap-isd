@@ -339,18 +339,41 @@ export function newChantierFields(draft, opts = {}) {
  *   error : 'missing', 'subtask', 'chantier', 'projet', 'scope', 'same'
  */
 export function movePlan(model, taskId, chantierId, projectId) {
+  const error = moveRefusal(model, taskId, chantierId, projectId);
+  if (error) return { error };
   const task = model.tasks.get(taskId);
-  if (!task) return { error: 'missing' };
-  if (task.parentId) return { error: 'subtask' };
-  const chantier = model.chantiers.get(chantierId);
-  if (!chantier) return { error: 'chantier' };
-  if (!chantier.projectIds.includes(projectId) || !model.projects.has(projectId)) return { error: 'projet' };
-  if (!model.projects.get(projectId).inScope && !chantier.projectIds.some((p) => model.projects.get(p)?.inScope))
-    return { error: 'scope' };
-  if (task.chantierId === chantierId && task.projectId === projectId) return { error: 'same' };
   const changes = { Chantier: chantierId, projet: projectId };
   const also = moveRows(taskLinksFromModel(model), taskId, changes);
   return { changes, before: { Chantier: task.chantierId, projet: task.projectId }, also, count: also.length };
+}
+
+/**
+ * Raison de refus d'un changement de chantier (contrôles de movePlan, sans parcourir les sous-tâches : verdict de
+ * chaque colonne du Kanban par chantier), chaîne vide s'il est permis.
+ * @returns {''|'missing'|'subtask'|'chantier'|'projet'|'scope'|'same'}
+ */
+export function moveRefusal(model, taskId, chantierId, projectId) {
+  const task = model.tasks.get(taskId);
+  if (!task) return 'missing';
+  if (task.parentId) return 'subtask';
+  const chantier = model.chantiers.get(chantierId);
+  if (!chantier) return 'chantier';
+  const projects = chantier.projectIds ?? [];
+  if (!projects.includes(projectId) || !model.projects.has(projectId)) return 'projet';
+  if (!model.projects.get(projectId).inScope && !projects.some((p) => model.projects.get(p)?.inScope)) return 'scope';
+  if (task.chantierId === chantierId && task.projectId === projectId) return 'same';
+  return '';
+}
+
+/**
+ * Cible présélectionnée de la fenêtre « Déplacer » (dépôt d'une carte sur un chantier du Kanban) : gardée si elle
+ * figure parmi les options proposées (chantierOptions), sinon vide (l'utilisateur choisit).
+ * @param {string} [target] valeur targetValue
+ */
+export function moveTarget(model, target) {
+  const { chantierId, projectId } = parseTarget(target);
+  if (!chantierId || !model.projects.get(projectId)?.inScope) return '';
+  return model.chantiers.get(chantierId)?.projectIds.includes(projectId) ? targetValue(chantierId, projectId) : '';
 }
 
 /**

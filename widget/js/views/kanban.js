@@ -11,7 +11,11 @@
  * raison ; aucun rendu pendant le geste (fantôme posé sur <body>, colonne visée par elementFromPoint) ; bord du
  * plateau tenu → défilement d'une colonne. Le dépôt passe par les statut et priorité rapides (ctx.drop.drop) ; la
  * carte reste à sa nouvelle place, « Enregistrement… », jusqu'à la réponse. Alternatives : menu ⋯ (« Statut… »,
- * « Priorité… »), touches S et P. Regroupement par chantier : pas de glisser (lot D).
+ * « Priorité… »), touches S et P.
+ * Par chantier (lot D) : une tâche de premier niveau se dépose sur un autre chantier ; rien n'est écrit au dépôt, la
+ * fenêtre « Déplacer » s'ouvre, chantier présélectionné, et confirme toujours (Q7). Une sous-tâche ne se soulève
+ * pas (elle suit sa tâche : infobulle, message si on tente de la glisser). Alternatives : « Chantier… » du menu ⋯,
+ * touche M (par statut ou priorité, M ouvre le menu de la colonne du regroupement).
  */
 import { raw } from '../core/sanitize.js';
 import { formatDateFr } from '../core/dates.js';
@@ -34,7 +38,13 @@ import {
   toggleColumn,
 } from '../core/kanban-data.js';
 import { displayRole } from '../core/team-directory.js';
-import { isMenuShortcut, isPriorityShortcut, isStatusShortcut, limitToReveal } from '../core/quick-status.js';
+import {
+  isMenuShortcut,
+  isMoveShortcut,
+  isPriorityShortcut,
+  isStatusShortcut,
+  limitToReveal,
+} from '../core/quick-status.js';
 import { columnName, dropChanges, dropColumns, hasDropTarget, isApplied, pendingModel } from '../core/kanban-drop.js';
 import { h, icon, keepFocus, roleFullText, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
@@ -47,7 +57,7 @@ export const id = 'kanban';
 /** Cartes affichées d'emblée par colonne ; « Afficher plus » ajoute un lot. */
 const PAGE = 40;
 const SEP = ' › ';
-const NO_FIELDS = Object.freeze({ statut: false, priorite: false });
+const NO_FIELDS = Object.freeze({ statut: false, priorite: false, chantier: false });
 /** Éléments du focus itinérant d'une colonne, dans l'ordre : bouton de repli, cartes, « Afficher plus ». */
 const ITEMS = '.kcol__toggle, .kcard, .kcol__more';
 
@@ -144,18 +154,27 @@ function etpBreakdown(model, task) {
 /** Attributs du focus itinérant : seul l'élément d'entrée de la colonne est un arrêt de tabulation. */
 const roving = (entry) => raw(entry ? 'tabindex="0" aria-describedby="kanban-help"' : 'tabindex="-1"');
 
-/** Bouton ⋯ (P-UX-6, lot C) : menu « Statut… », « Priorité… », à côté de la carte, hors du focus itinérant. */
+/** Bouton ⋯ (P-UX-6, lots C et D) : menu « Statut… », « Priorité… », « Chantier… », hors du focus itinérant. */
 function actionsButton(task) {
   const title = task.title || label('common.untitled');
   return h`<button type="button" class="kcard__qs" data-qs-open="${task.id}" tabindex="-1" aria-haspopup="menu" aria-expanded="false" aria-label="${label('kanban.actions.open', { titre: title, statut: statusLabel(task.status) })}" title="${label('kanban.actions.title')}"><span aria-hidden="true">⋯</span></button>`;
 }
 
-/** Attributs d'édition de la carte : clé de focus, raccourcis, glisser, état « Enregistrement… ». */
-function cardEditAttrs(taskId, fields, drag, saving) {
-  if (!fields.statut && !fields.priorite) return '';
-  const keys = [fields.statut && 'S', fields.priorite && 'P', 'Shift+F10'].filter(Boolean).join(' ');
+/** Champ dont la touche M (déplacer vers une autre colonne) dépend, selon le regroupement. */
+const MOVE_FIELD = Object.freeze({ status: 'statut', priority: 'priorite', chantier: 'chantier' });
+
+/**
+ * Attributs d'édition de la carte : clé de focus, raccourcis (M seulement si le regroupement permet de la
+ * déplacer), glisser, sous-tâche non glissable par chantier (infobulle), état « Enregistrement… ».
+ */
+function cardEditAttrs(taskId, fields, group, { drag, saving, subtask }) {
+  if (!fields.statut && !fields.priorite && !fields.chantier) return '';
+  const keys = [fields.statut && 'S', fields.priorite && 'P', fields[MOVE_FIELD[group]] && 'M', 'Shift+F10']
+    .filter(Boolean)
+    .join(' ');
+  const refused = subtask ? h` data-drag-refused title="${label('kanban.drop.subtask')}"` : '';
   return raw(
-    ` data-qs-focus="${taskId}" aria-keyshortcuts="${keys}"${drag ? ' data-drag-card' : ''}${saving ? ' aria-busy="true"' : ''}`,
+    ` data-qs-focus="${taskId}" aria-keyshortcuts="${keys}"${drag ? ' data-drag-card' : ''}${refused}${saving ? ' aria-busy="true"' : ''}`,
   );
 }
 
@@ -167,10 +186,12 @@ function cardHtml(ctx, board, taskId, paths, showStatus, entry) {
   const { model } = board;
   const task = model.tasks.get(taskId);
   const fields = ctx.quickStatus?.fields?.(taskId) ?? NO_FIELDS;
-  const qs = fields.statut || fields.priorite;
+  const qs = fields.statut || fields.priorite || fields.chantier;
   const saving = memory.saving?.taskId === taskId;
-  const right = board.group === 'status' ? fields.statut : board.group === 'priority' && fields.priorite;
+  const right = fields[MOVE_FIELD[board.group]];
   const drag = Boolean(board.open && right && !saving && hasDropTarget(model, taskId, board.group, board.open));
+  // Par chantier, une sous-tâche suit sa tâche : elle ne se soulève pas, l'infobulle dit pourquoi
+  const subtask = Boolean(board.group === 'chantier' && board.open && ctx.drop?.chantier && task.parentId);
   const path = (paths.get(taskId)?.path ?? []).join(SEP);
   const late = task.end !== null && task.end < ctx.today && !task.done;
   const etp = taskEtp(task) || null; // 0 (aucune charge) : rien à afficher
@@ -180,7 +201,7 @@ function cardHtml(ctx, board, taskId, paths, showStatus, entry) {
     .filter((r) => r.person)
     .map((r) => ({ ...r, role: displayRole(model, r.person) }));
   return h`<li class="kcard-item${qs ? ' kcard-item--qs' : ''}">
-    <button type="button" class="kcard${late ? ' kcard--late' : ''}${saving ? ' kcard--saving' : ''}" id="kc-${taskId}" data-task="${taskId}" ${roving(entry)}${cardEditAttrs(taskId, fields, drag, saving)}>
+    <button type="button" class="kcard${late ? ' kcard--late' : ''}${saving ? ' kcard--saving' : ''}" id="kc-${taskId}" data-task="${taskId}" ${roving(entry)}${cardEditAttrs(taskId, fields, board.group, { drag, saving, subtask })}>
       ${path ? h`<span class="kcard__path" title="${path}">${path}</span>` : ''}
       <span class="kcard__title">${task.title || label('common.untitled')}</span>
       <span class="kcard__badges">
@@ -303,7 +324,7 @@ export function render(el, ctx) {
           ${selectHtml('kanban-sort', 'kanban.sort', SORTS, st.sort, 'kanban.sort')}
         </div>`,
         )}
-        <p id="kanban-help" class="fr-sr-only">${label(qsOn ? (ctx.quickStatus.priority ? 'kanban.help.editPriority' : 'kanban.help.edit') : 'kanban.help')}</p>
+        <p id="kanban-help" class="fr-sr-only">${qsOn ? label('kanban.help.edit', { touches: helpKeys() }) : label('kanban.help')}</p>
         <div class="kanban__peeks" hidden>
           ${['left', 'right'].map((side) => h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary kanban__peek kanban__peek--${side}" data-peek="${side}" aria-controls="kanban-board" hidden>${icon(`arrow-${side}-s-line`)}<span class="kanban__peek-text"></span><span class="fr-sr-only kanban__peek-sr"></span></button>`)}
         </div>
@@ -318,6 +339,14 @@ export function render(el, ctx) {
     if (nb) nb.scrollLeft = left;
     layout();
     if (memory.gesture) resumeGesture(memory.gesture, cols);
+  }
+
+  /** Touches de l'aide après S : P si la priorité est modifiable, M si le regroupement permet de déplacer une carte. */
+  function helpKeys() {
+    const priority = Boolean(ctx.quickStatus.priority);
+    const move = st.group === 'status' || (st.group === 'priority' ? priority : Boolean(ctx.drop?.chantier));
+    const m = st.group === 'chantier' ? 'kanban.help.key.moveChantier' : 'kanban.help.key.move';
+    return (priority ? label('kanban.help.key.priority') : '') + (move ? label(m) : '');
   }
 
   /**
@@ -523,15 +552,25 @@ export function render(el, ctx) {
     ctx.drop?.openActions(q, Number(q.dataset.qsOpen), card ?? q);
   }
 
-  /** Raccourcis d'une carte modifiable : Maj+F10 ou Menu (menu ⋯), S (statut), P (priorité). Vrai si traité. */
+  /**
+   * Raccourcis d'une carte modifiable : Maj+F10 ou Menu (menu ⋯), S (statut), P (priorité), M (menu de la colonne
+   * du regroupement ; par chantier, fenêtre « Déplacer » ; sous-tâche : la raison est dite). Vrai si traité.
+   */
   function cardShortcut(e, card) {
     const q = card.parentElement.querySelector('[data-qs-open]');
     const id = Number(card.dataset.qsFocus);
     const keys = (card.getAttribute('aria-keyshortcuts') ?? '').split(' ');
+    const move = {
+      status: () => ctx.quickStatus?.open(q, id, card),
+      priority: () => ctx.drop?.openPriority(q, id, card),
+      chantier: () => ctx.drop?.openMove(id, card),
+    };
     let open = null;
     if (isMenuShortcut(e)) open = () => openActions(q);
-    else if (isStatusShortcut(e) && keys.includes('S')) open = () => ctx.quickStatus?.open(q, id, card);
-    else if (isPriorityShortcut(e) && keys.includes('P')) open = () => ctx.drop?.openPriority(q, id, card);
+    else if (isStatusShortcut(e) && keys.includes('S')) open = move.status;
+    else if (isPriorityShortcut(e) && keys.includes('P')) open = move.priority;
+    else if (isMoveShortcut(e) && keys.includes('M')) open = move[st.group];
+    else if (isMoveShortcut(e) && card.hasAttribute('data-drag-refused')) open = () => refusedSubtask();
     if (!open || !q || memory.gesture) return false;
     e.preventDefault();
     open();
@@ -613,7 +652,7 @@ export function render(el, ctx) {
     g.ghost.classList.toggle('kghost--refused', Boolean(reason));
     document.documentElement.classList.toggle('is-drop-refused', Boolean(reason));
     if (!v) return;
-    const colonne = columnName(g.group, key);
+    const colonne = columnName(g.group, key, ctx.model);
     announce(
       v.ok ? label('kanban.drop.over', { colonne }) : label('kanban.drop.overRefused', { colonne, raison: reason }),
     );
@@ -736,7 +775,7 @@ export function render(el, ctx) {
       document.documentElement.classList.add('is-card-grabbing');
       const colonnes = [...g.targets]
         .filter(([, v]) => v.ok)
-        .map(([k]) => columnName(g.group, k))
+        .map(([k]) => columnName(g.group, k, ctx.model))
         .join(', ');
       announce(label('kanban.drop.grab', { titre: g.title, colonnes }));
       return true;
@@ -776,7 +815,8 @@ export function render(el, ctx) {
       const key = g.over;
       // Hors du plateau ou dans sa colonne : rien, sans message
       if (key === null || key === undefined || key === g.fromKey) return void announce(label('kanban.drop.cancel'));
-      if (g.targets.get(key)?.ok) return commit(g, key);
+      // Chantier : rien n'est écrit au dépôt, la fenêtre « Déplacer » confirme (Q7) ; la carte reste à sa place
+      if (g.targets.get(key)?.ok && g.group !== 'chantier') return commit(g, key);
       // Colonne refusée : la raison est dite (ctx.drop.drop n'écrit rien)
       ctx.drop?.drop(g.taskId, g.group, key, el.querySelector(`#kc-${g.taskId}`));
     },
@@ -820,10 +860,34 @@ export function render(el, ctx) {
       edgeBox: () => memory.gesture?.box ?? null,
     });
   }
+
+  /** Sous-tâche par chantier : elle suit sa tâche, la raison est dite (message visible, annonce). */
+  function refusedSubtask() {
+    (ctx.notify ?? announce)(label('kanban.drop.subtask'));
+  }
+
+  /**
+   * Glisser tenté sur une sous-tâche par chantier : la carte ne se soulève pas, la raison est dite une fois ; le
+   * relâcher n'ouvre pas la fiche (geste suivi jusqu'au bout, sans effet).
+   */
+  function refuseCardDrag(e) {
+    trackPointer(e, {
+      onStart: () => {
+        refusedSubtask();
+        return true;
+      },
+      onMove() {},
+      onDrop() {},
+      onCancel() {},
+    });
+  }
+
   el.onpointerdown = (e) => {
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-    const card = e.target.closest?.('.kcard[data-drag-card]');
-    if (card && el.contains(card)) startCardDrag(e, card);
+    const card = e.target.closest?.('.kcard[data-drag-card], .kcard[data-drag-refused]');
+    if (!card || !el.contains(card)) return;
+    if (card.hasAttribute('data-drag-card')) startCardDrag(e, card);
+    else if (ctx.drop && !memory.gesture) refuseCardDrag(e);
   };
 
   paint();

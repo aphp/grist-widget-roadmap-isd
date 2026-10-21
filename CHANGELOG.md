@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- Kanban: grouped by chantier, a top-level task card is dragged onto another chantier. The drop writes nothing:
+  it opens the existing move dialog ("Changer de chantier") with that chantier preselected (its only project, or the
+  task's current project when the chantier carries it; a chantier of two other projects asks for the project), focus
+  on "Déplacer"; sending goes through `runMove` (row re-read, the task and all its subtasks in one batch, "Annuler"
+  refocusing the card), closing writes nothing and returns focus to the card. Refused columns show their reason
+  during the gesture: "(sans chantier)", chantiers out of ISD scope, the card's own chantier. A subtask never lifts
+  ("Une sous-tâche suit le chantier de sa tâche." as tooltip, and as a message when dragged or on M). New M key on a
+  card: grouped by status or priority it opens that column menu, grouped by chantier the move dialog without target;
+  the ⋯ menu gains "Chantier…". `aria-keyshortcuts` and the board help list M only when the move is allowed.
+  `dropTargets`, `dropColumns`, `hasDropTarget`, `dropChanges` and `columnName` handle the chantier grouping
+  (`chantierDropTarget`), `moveRefusal` holds the checks of `movePlan`, `moveTarget` keeps a preselected target only
+  when it is one of the offered options, `quickFields` reports `chantier`.
 - Kanban: cards move between status or priority columns by dragging (mouse, pen; finger after a 400 ms long press),
   through the shared `ui/drag.js` controller. During the gesture nothing is repainted: a ghost on `<body>`, allowed
   columns outlined (`.kcol--target`), refused ones greyed with their reason in a tooltip and on the ghost
@@ -13,9 +25,9 @@
   message. A data reload keeps the gesture unless the card changed elsewhere (cancelled, toast). Alternatives: the ⋯
   menu becomes "Statut…" / "Priorité…" (click, Shift+F10, Menu key, right click), S opens the status menu and P the
   priority menu (`aria-keyshortcuts="S P Shift+F10"`). Announcements in `#kanban-live` (`liveAnnouncer`, shared with
-  `#gantt-live`). `openChoicePopover` generalises the status menu (radio, action and disabled entries). No drag when
-  grouped by chantier. Priority toast reads "Priorité changée en « … »"; a timed-out priority write shows the
-  re-read value. Dev: `?ecritures=…,priorites` declares priorities 1, 2 and 3.
+  `#gantt-live`). `openChoicePopover` generalises the status menu (radio, action and disabled entries). Priority
+  toast reads "Priorité changée en « … »"; a timed-out priority write shows the re-read value. Dev:
+  `?ecritures=…,priorites` declares priorities 1, 2 and 3.
 - Gantt: tasks, subtasks and chantiers stretch from either edge. 6 px handles (`.gbar__grip--start` / `--end`,
   ew-resize cursor) show on hover and focus; by finger, a long press selects the bar (frame, handles, no scrolling
   on it), then a press within 24 px of an edge stretches it and elsewhere moves it. Only that edge moves, in steps of

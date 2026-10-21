@@ -9,6 +9,7 @@ import {
   creePar,
   droppedPeople,
   movePlan,
+  moveTarget,
   newChantierDraft,
   newChantierFields,
   newTaskDraft,
@@ -222,10 +223,13 @@ export function createCreateDialog(deps) {
   /** Une saisie a-t-elle été faite depuis l'ouverture ? */
   const dirty = () => JSON.stringify(st.draft ?? st.target) !== st.initial;
 
-  function close() {
+  /** Ferme la fenêtre ; « Déplacer » ouverte depuis une vue : onClose('closed') si rien n'a été envoyé. */
+  function close(sent = false) {
+    const done = st?.onClose;
     st = null;
     dlg?.close();
     dlg = null;
+    if (!sent) done?.('closed');
   }
 
   function requestClose() {
@@ -239,7 +243,9 @@ export function createCreateDialog(deps) {
    * Ouvre une fenêtre.
    * @param {'task'|'subtask'|'chantier'|'move'} kind
    * @param {{chantierId?:number|null, projectId?:number|null, parentId?:number|null, status?:string|null,
-   *          me?:number|null, taskId?:number}} ctx
+   *          me?:number|null, taskId?:number, target?:string, onSaving?():void, onClose?(kind:string):void}} ctx
+   *   move : target présélectionne le chantier (dépôt d'une carte du Kanban, gardée si c'est une option proposée) ;
+   *   onSaving : envoi réussi, juste avant la mise à jour des vues ; onClose('saved' | 'closed') à la fermeture
    */
   function open(kind, ctx = {}) {
     const w = writer();
@@ -272,9 +278,12 @@ export function createCreateDialog(deps) {
         return false;
       }
       st.taskId = ctx.taskId;
-      st.target = '';
-      st.initial = JSON.stringify('');
+      st.target = moveTarget(m, ctx.target);
+      // Cible présélectionnée : pas une saisie (fermer sans rien changer ne demande pas de confirmation)
+      st.initial = JSON.stringify(st.target);
       st.count = 0;
+      st.onSaving = ctx.onSaving;
+      st.onClose = ctx.onClose;
     } else {
       st.draft =
         kind === 'chantier'
@@ -294,7 +303,8 @@ export function createCreateDialog(deps) {
       title: label(TITLES[kind]),
       body: body(),
       foot: dialogFoot(st, errorCount()),
-      focus: FIRST[kind],
+      // Chantier présélectionné par un dépôt : le focus va au bouton « Déplacer » (la fenêtre confirme)
+      focus: kind === 'move' && st.target ? 'cf-submit' : FIRST[kind],
       onRequestClose: requestClose,
     });
     bind(dlg.root);
@@ -396,7 +406,8 @@ export function createCreateDialog(deps) {
     if (st !== cur) return;
     if (result.kind === 'saved') {
       const entry = result.entry;
-      close();
+      cur.onSaving?.();
+      close(true);
       deps.onWritten(entry);
       if (cur.kind === 'move') {
         const n = result.count ?? cur.plan.count;
@@ -407,6 +418,7 @@ export function createCreateDialog(deps) {
           { onAction: deps.onUndo },
         );
         deps.afterMove?.({ table: 'Tasks', id: cur.taskId });
+        cur.onClose?.('saved');
         return;
       }
       const key = cur.kind === 'chantier' ? 'create.toast.chantier' : 'create.toast.task';

@@ -7,6 +7,7 @@ import {
   canQuickStatus,
   focusOrder,
   isMenuShortcut,
+  isMoveShortcut,
   isPriorityShortcut,
   isRepeatedChoice,
   isStatusShortcut,
@@ -136,11 +137,30 @@ test('isMenuShortcut : Maj+F10 et touche Menu seulement', () => {
 
 test('quickFields : statut et priorité permis ensemble ou séparément, rien hors édition', () => {
   const both = { mode: 'on', can: (t, c) => ({ ok: t === 'Tasks' && (c === 'statut' || c === 'priorite') }) };
-  assert.deepEqual(quickFields(model, 1001, ON, both), { statut: true, priorite: true });
-  assert.deepEqual(quickFields(model, 1001, ON, writerOf('on')), { statut: true, priorite: false });
-  assert.deepEqual(quickFields(model, 4001, ON, both), { statut: false, priorite: false }, 'hors périmètre');
-  assert.deepEqual(quickFields(model, 1001, ON, null), { statut: false, priorite: false });
-  assert.deepEqual(quickFields(model, 1001, ON, { ...both, mode: 'off' }), { statut: false, priorite: false });
+  const none = { statut: false, priorite: false, chantier: false };
+  assert.deepEqual(quickFields(model, 1001, ON, both), { statut: true, priorite: true, chantier: false });
+  assert.deepEqual(quickFields(model, 1001, ON, writerOf('on')), { statut: true, priorite: false, chantier: false });
+  assert.deepEqual(quickFields(model, 4001, ON, both), none, 'hors périmètre');
+  assert.deepEqual(quickFields(model, 1001, ON, null), none);
+  assert.deepEqual(quickFields(model, 1001, ON, { ...both, mode: 'off' }), none);
+});
+
+test('quickFields : changement de chantier pour une tâche de premier niveau, Chantier et projet permis', () => {
+  const all = { mode: 'on', can: (t) => ({ ok: t === 'Tasks' }) };
+  assert.equal(quickFields(model, 1000, ON, all).chantier, true);
+  assert.equal(quickFields(model, 1001, ON, all).chantier, false, 'une sous-tâche suit sa tâche');
+  const noProjet = { mode: 'on', can: (t, c) => ({ ok: t === 'Tasks' && c !== 'projet' }) };
+  assert.equal(quickFields(model, 1000, ON, noProjet).chantier, false);
+  const noChantier = { mode: 'on', can: (t, c) => ({ ok: t === 'Tasks' && c !== 'Chantier' }) };
+  assert.equal(quickFields(model, 1000, ON, noChantier).chantier, false);
+});
+
+test('isMoveShortcut : « m » seul ; jamais avec Maj, Ctrl, Alt ou Méta', () => {
+  assert.equal(isMoveShortcut({ key: 'm' }), true);
+  assert.equal(isMoveShortcut({ key: 'M' }), true);
+  for (const mod of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey'])
+    assert.equal(isMoveShortcut({ key: 'm', [mod]: true }), false, mod);
+  for (const k of ['s', 'p', 'Enter']) assert.equal(isMoveShortcut({ key: k }), false);
 });
 
 test('focusOrder : la tâche, puis la voisine suivante et la précédente, en s’éloignant', () => {

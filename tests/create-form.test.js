@@ -19,6 +19,8 @@ import {
   chantierOptions,
   creePar,
   movePlan,
+  moveRefusal,
+  moveTarget,
   newChantierDraft,
   newChantierFields,
   newTaskDraft,
@@ -263,6 +265,22 @@ test('changement de chantier : la tâche et toutes ses sous-tâches ; refus d’
   assert.equal(movePlan(model, 1000, 400, 40).error, 'scope');
   assert.equal(movePlan(model, 1000, 100, 10).error, 'same');
   assert.equal(movePlan(model, 2010, 201, 30).count, 0);
+});
+
+test('moveRefusal : contrôles de movePlan sans les sous-tâches, chaîne vide si permis', () => {
+  assert.equal(moveRefusal(model, 1000, 200, 20), '');
+  assert.equal(moveRefusal(model, 1001, 200, 20), 'subtask');
+  assert.equal(moveRefusal(model, 1000, 400, 40), 'scope');
+  assert.equal(moveRefusal(model, 1000, 100, 10), 'same');
+});
+
+test('fenêtre « Déplacer » ouverte avec une cible : présélectionnée si elle est proposée, sinon vide', () => {
+  assert.equal(moveTarget(model, targetValue(200, 20)), '200:20');
+  assert.equal(moveTarget(model, '400:40'), '', 'chantier hors périmètre : pas une option');
+  assert.equal(moveTarget(model, '200:10'), '', 'projet qui n’est pas celui du chantier');
+  assert.equal(moveTarget(model, ''), '');
+  assert.equal(moveTarget(model, undefined), '');
+  assert.equal(moveTarget(model, 'x'), '');
 });
 
 test('créations : dates au-delà de la borne = erreur sur le champ', () => {

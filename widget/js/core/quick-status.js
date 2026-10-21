@@ -20,17 +20,20 @@ export function canQuickStatus(model, taskId, edit, writer) {
 }
 
 /**
- * Colonnes d'une tâche modifiables depuis une vue (statut, priorité : menus et glisser du Kanban), mêmes conditions
- * que canQuickStatus ; l'édition de la tâche n'est évaluée qu'une fois.
- * @returns {{statut:boolean, priorite:boolean}}
+ * Colonnes d'une tâche modifiables depuis une vue (statut, priorité : menus et glisser du Kanban ; chantier :
+ * fenêtre « Déplacer », tâche de premier niveau avec Chantier et projet permis, comme le « Changer » de la fiche),
+ * mêmes conditions que canQuickStatus ; l'édition de la tâche n'est évaluée qu'une fois.
+ * @returns {{statut:boolean, priorite:boolean, chantier:boolean}}
  */
 export function quickFields(model, taskId, edit, writer) {
-  const none = { statut: false, priorite: false };
+  const none = { statut: false, priorite: false, chantier: false };
   if (!model || !writer || writer.mode === 'off' || !edit) return none;
   if (!editAvailability(model, { table: 'Tasks', id: taskId }, edit).editable) return none;
+  const can = (c) => Boolean(writer.can('Tasks', c)?.ok);
   return {
-    statut: Boolean(writer.can('Tasks', 'statut')?.ok),
-    priorite: Boolean(writer.can('Tasks', 'priorite')?.ok),
+    statut: can('statut'),
+    priorite: can('priorite'),
+    chantier: !model.tasks.get(taskId)?.parentId && can('Chantier') && can('projet'),
   };
 }
 
@@ -109,6 +112,14 @@ export function isMenuShortcut(e) {
 /** Raccourci du menu de priorité d'une carte du Kanban : « p » sans modificateur. */
 export function isPriorityShortcut(e) {
   return !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'p' || e.key === 'P');
+}
+
+/**
+ * Raccourci « déplacer vers… » d'une carte du Kanban : « m » sans modificateur (menu de la colonne du regroupement,
+ * fenêtre « Déplacer » par chantier).
+ */
+export function isMoveShortcut(e) {
+  return !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'm' || e.key === 'M');
 }
 
 /**

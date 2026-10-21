@@ -1,11 +1,14 @@
 /**
- * Dépôt d'une carte dans une colonne du Kanban (lot C), sans DOM : colonnes acceptées ou refusées avec la raison,
- * et colonnes de la Feuille à écrire. Seuls le statut et la priorité s'écrivent ; le regroupement par chantier
- * relève du lot D. L'écriture elle-même passe par le writer (relecture, conflits, droits y sont traités).
+ * Dépôt d'une carte dans une colonne du Kanban (lots C et D), sans DOM : colonnes acceptées ou refusées avec la
+ * raison, et colonnes de la Feuille à écrire. Le statut et la priorité s'écrivent au dépôt ; un dépôt sur un
+ * chantier (tâche de premier niveau seulement) ouvre la fenêtre « Déplacer », qui confirme toujours (Q7).
+ * L'écriture elle-même passe par le writer (relecture, conflits, droits y sont traités).
  */
-import { priorityText, taskPriority } from './kanban-data.js';
+import { chantierColumnKey, chantierOfColumn, priorityText, taskPriority } from './kanban-data.js';
 import { label, statusLabel } from '../labels.js';
 import { statusChanges } from './task-form.js';
+import { moveRefusal, parseTarget, targetValue } from './create-form.js';
+import { NO_CHANTIER } from './model.js';
 
 const declaredPriorities = (model) =>
   (model.choices?.['Tasks.priorite'] ?? []).filter((v) => typeof v === 'string' && v !== '');
@@ -31,6 +34,37 @@ const upstreamPriority = (model, task) => taskPriority(model, { ...task, priorit
 /** Vrai si la priorité affichée de la tâche vient du chantier ou du projet (la tâche n'en porte pas). */
 const isInherited = (model, task) => !task.priorite && upstreamPriority(model, task) !== '';
 
+/** Clé de la colonne d'une tâche de premier niveau dans le Kanban par chantier ('' : sans chantier). */
+const chantierColumnOf = (task) => (task.chantierId ? chantierColumnKey(task.chantierId) : '');
+
+/** Projet du chantier qui fait partie du périmètre ISD (repli d'un chantier à plusieurs projets), sinon null. */
+const scopedProject = (model, chantier) => chantier.projectIds?.find((p) => model.projects.get(p)?.inScope) ?? null;
+
+/**
+ * Chantier et projet présélectionnés dans la fenêtre « Déplacer » après un dépôt sur un chantier : le projet du
+ * chantier s'il n'en a qu'un, ou le projet actuel de la tâche s'il le porte ; sinon vide (la fenêtre demande).
+ * @returns {string} valeur targetValue, ou ''
+ */
+export function chantierDropTarget(model, taskId, chantierId) {
+  const task = model.tasks.get(taskId);
+  const projects = model.chantiers.get(chantierId)?.projectIds ?? [];
+  if (!task || !projects.length) return '';
+  if (projects.length === 1) return targetValue(chantierId, projects[0]);
+  return projects.includes(task.projectId) ? targetValue(chantierId, task.projectId) : '';
+}
+
+/** Verdict du dépôt d'une tâche de premier niveau sur une colonne de chantier (mêmes contrôles que movePlan). */
+function chantierVerdict(model, task, key) {
+  if (key === chantierColumnOf(task)) return { ok: false, reason: 'same' };
+  if (key === '') return { ok: false, reason: 'no-chantier' };
+  const id = chantierOfColumn(key);
+  const chantier = model.chantiers.get(id);
+  if (!chantier) return { ok: false, reason: 'chantier' };
+  const chosen = parseTarget(chantierDropTarget(model, task.id, id)).projectId;
+  const reason = moveRefusal(model, task.id, id, chosen ?? scopedProject(model, chantier));
+  return reason && reason !== 'same' ? { ok: false, reason } : { ok: true };
+}
+
 /**
  * Pour chaque colonne : le dépôt est-il permis ?
  * @param {object} model
@@ -55,15 +89,18 @@ export function dropTargets(model, taskId, groupBy, columns) {
       if (key === current) out.set(key, refuse('same'));
       else if (key === '') out.set(key, upstreamPriority(model, task) ? refuse('inherited') : { ok: true });
       else out.set(key, priorityValueFor(model, key) === null ? refuse('undeclared') : { ok: true });
-    } else out.set(key, refuse('kind'));
+    } else out.set(key, task.parentId ? refuse('subtask') : chantierVerdict(model, task, key));
   }
   return out;
 }
 
 /**
- * Colonnes à écrire pour un dépôt. `inherited` : la priorité affichée venait du chantier ou du projet.
+ * Colonnes à écrire pour un dépôt. `inherited` : la priorité affichée venait du chantier ou du projet. Chantier :
+ * rien n'est écrit au dépôt ; `target` (chantierDropTarget) présélectionne la fenêtre « Déplacer » (absent si c'est
+ * la colonne de la carte).
  * @param {number} today jour UTC entier (date de clôture posée par le statut « done »)
- * @returns {{changes:object, inherited:boolean}|{error:string}} error : raison de refus de dropTargets, ou 'missing'
+ * @returns {{changes:object, inherited:boolean, target?:string}|{error:string}} error : raison de refus de
+ *   dropTargets, ou 'missing'
  */
 export function dropChanges(model, taskId, groupBy, columnKey, today) {
   const task = model.tasks.get(taskId);
@@ -71,6 +108,10 @@ export function dropChanges(model, taskId, groupBy, columnKey, today) {
   const verdict = dropTargets(model, taskId, groupBy, [{ key: columnKey }]).get(columnKey);
   const inherited = isInherited(model, task);
   if (!verdict.ok && verdict.reason !== 'same') return { error: verdict.reason };
+  if (groupBy === 'chantier')
+    return verdict.ok
+      ? { changes: {}, inherited: false, target: chantierDropTarget(model, taskId, chantierOfColumn(columnKey)) }
+      : { changes: {}, inherited: false };
   if (groupBy === 'status')
     return {
       changes: statusChanges({ statut: task.status, dateCloture: task.closed ?? null }, columnKey, today),
@@ -82,7 +123,7 @@ export function dropChanges(model, taskId, groupBy, columnKey, today) {
 
 /**
  * Colonnes qui peuvent recevoir une carte quelle qu'elle soit (calculé une fois par rendu) : statuts déclarés non
- * vides ; priorités déclarées et « Sans priorité ». Le regroupement par chantier n'en a aucune (lot D).
+ * vides ; priorités déclarées et « Sans priorité » ; chantiers du périmètre ISD (jamais « (sans chantier) »).
  * @returns {Set<string>}
  */
 export function dropColumns(model, groupBy, columns) {
@@ -90,18 +131,29 @@ export function dropColumns(model, groupBy, columns) {
   for (const { key } of columns) {
     if (groupBy === 'status' && key !== '' && model.statuses.tasks.includes(key)) out.add(key);
     else if (groupBy === 'priority' && (key === '' || priorityValueFor(model, key) !== null)) out.add(key);
+    else if (groupBy === 'chantier' && key !== '') {
+      const chantier = model.chantiers.get(chantierOfColumn(key));
+      if (chantier && scopedProject(model, chantier) !== null) out.add(key);
+    }
   }
   return out;
 }
 
 /**
  * Vrai si la carte peut être déposée dans au moins une colonne (même verdict que dropTargets, sans le calculer pour
- * chaque colonne) : une colonne de `open` autre que la sienne, « Sans priorité » seulement sans priorité en amont.
+ * chaque colonne) : une colonne de `open` autre que la sienne, « Sans priorité » seulement sans priorité en amont ;
+ * par chantier, jamais une sous-tâche.
  * @param {Set<string>} open voir dropColumns
  */
 export function hasDropTarget(model, taskId, groupBy, open) {
   const task = model.tasks.get(taskId);
-  if (!task || (groupBy !== 'status' && groupBy !== 'priority')) return false;
+  if (!task) return false;
+  if (groupBy === 'chantier') {
+    if (task.parentId) return false;
+    const own = chantierColumnOf(task);
+    for (const key of open) if (key !== own) return true;
+    return false;
+  }
   const current = groupBy === 'status' ? task.status : priorityText(taskPriority(model, task));
   let upstream = null;
   for (const key of open) {
@@ -161,8 +213,17 @@ export function pendingModel(model, taskId, changes) {
   return { ...model, tasks: new Map(model.tasks).set(taskId, next) };
 }
 
-/** Nom d'une colonne du Kanban dans les messages et annonces : statut nommé, libellé de priorité, « Sans priorité ». */
-export const columnName = (group, key) => (group === 'status' ? statusLabel(key) : key || label('kanban.noPriority'));
+/**
+ * Nom d'une colonne du Kanban dans les messages et annonces : statut nommé, libellé de priorité, « Sans priorité »,
+ * nom du chantier (modèle requis), « (sans chantier) ».
+ */
+export function columnName(group, key, model) {
+  if (group === 'status') return statusLabel(key);
+  if (group !== 'chantier') return key || label('kanban.noPriority');
+  if (key === '') return NO_CHANTIER;
+  const chantier = model?.chantiers.get(chantierOfColumn(key));
+  return chantier ? chantier.title || label('common.untitled') : key;
+}
 
 /**
  * Vrai si le modèle porte déjà le statut ou la priorité déposés (correction locale reçue après l'écriture) : la

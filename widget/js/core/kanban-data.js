@@ -290,6 +290,15 @@ function sorter(model, sort) {
   return title;
 }
 
+/** Clé de la colonne d'un chantier dans le Kanban groupé par chantier. */
+export const chantierColumnKey = (chantierId) => `C${chantierId}`;
+
+/** Chantier d'une clé de colonne (chantierColumnKey), null pour « (sans chantier) » ou une autre clé. */
+export function chantierOfColumn(key) {
+  const m = /^C(\d+)$/.exec(key ?? '');
+  return m ? Number(m[1]) : null;
+}
+
 /**
  * @param {object} model
  * @param {Iterable<number>} taskIds
@@ -325,7 +334,7 @@ export function kanbanColumns(model, taskIds, groupBy, sort) {
     for (const id of ids) {
       const cid = chantierIdOf(model, model.tasks.get(id));
       const ch = model.chantiers.get(cid);
-      col(cid ? `C${cid}` : '', ch ? ch.title || label('common.untitled') : NO_CHANTIER).tasks.push(id);
+      col(cid ? chantierColumnKey(cid) : '', ch ? ch.title || label('common.untitled') : NO_CHANTIER).tasks.push(id);
     }
     if (cols.has('')) last.push(['', cols.get('')]);
   }

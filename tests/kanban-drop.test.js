@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  chantierDropTarget,
   columnName,
   dropChanges,
   dropColumns,
@@ -67,10 +68,80 @@ test('dropTargets priorité : déclarée, non déclarée, same, hérité', () =>
   assert.deepEqual(dropTargets(none, 4, 'priority', [col('')]).get(''), { ok: false, reason: 'same' });
 });
 
-test('dropTargets chantier (lot D) : tout refusé « kind » ; tâche inconnue : rien', () => {
-  const m = mk([task(1)]);
-  assert.deepEqual(dropTargets(m, 1, 'chantier', [col('C1')]).get('C1'), { ok: false, reason: 'kind' });
-  assert.equal(dropTargets(m, 99, 'status', [col('done')]).size, 0);
+/** Projets 10 et 20 du périmètre, 40 hors périmètre ; chantier 6 partagé par 10 et 20. */
+function mkChantiers() {
+  return mk(
+    [
+      task(1, { chantierId: 5, projectId: 10 }),
+      task(2, { parentId: 1, chantierId: 5, projectId: 10 }),
+      task(3, { chantierId: 6, projectId: 20 }),
+      task(4, { projectId: 10 }),
+      task(9, { chantierId: 8, projectId: 40 }),
+    ],
+    {
+      chantiers: [
+        { id: 5, title: 'Socle', projectIds: [10] },
+        { id: 6, title: 'Partagé', projectIds: [10, 20] },
+        { id: 7, title: 'Autre', projectIds: [20] },
+        { id: 8, title: 'Ailleurs', projectIds: [40] },
+      ],
+      projects: [
+        { id: 10, inScope: true },
+        { id: 20, inScope: true },
+        { id: 40, inScope: false },
+      ],
+    },
+  );
+}
+const chantierCols = ['C5', 'C6', 'C7', 'C8', 'C99', ''].map(col);
+
+test('dropTargets chantier : same, ok, hors périmètre, sans chantier, chantier inconnu', () => {
+  const t = dropTargets(mkChantiers(), 1, 'chantier', chantierCols);
+  assert.deepEqual(t.get('C5'), { ok: false, reason: 'same' });
+  assert.deepEqual(t.get('C6'), { ok: true });
+  assert.deepEqual(t.get('C7'), { ok: true });
+  assert.deepEqual(t.get('C8'), { ok: false, reason: 'scope' });
+  assert.deepEqual(t.get('C99'), { ok: false, reason: 'chantier' });
+  assert.deepEqual(t.get(''), { ok: false, reason: 'no-chantier' });
+  // Tâche sans chantier : sa colonne est « (sans chantier) »
+  const free = dropTargets(mkChantiers(), 4, 'chantier', chantierCols);
+  assert.deepEqual(free.get(''), { ok: false, reason: 'same' });
+  assert.deepEqual(free.get('C5'), { ok: true });
+  assert.equal(dropTargets(mkChantiers(), 99, 'status', [col('done')]).size, 0);
+});
+
+test('dropTargets chantier : une sous-tâche est refusée partout (elle suit sa tâche)', () => {
+  const t = dropTargets(mkChantiers(), 2, 'chantier', chantierCols);
+  for (const key of ['C5', 'C6', 'C7', 'C8', 'C99', '']) assert.deepEqual(t.get(key), { ok: false, reason: 'subtask' });
+});
+
+test('chantierDropTarget : un projet, projet actuel porté, deux projets sans le projet actuel', () => {
+  const m = mkChantiers();
+  assert.equal(chantierDropTarget(m, 1, 7), '7:20', 'un seul projet');
+  assert.equal(chantierDropTarget(m, 1, 6), '6:10', 'le chantier porte le projet actuel');
+  assert.equal(chantierDropTarget(m, 3, 5), '5:10');
+  assert.equal(chantierDropTarget(m, 9, 6), '', 'deux projets : choix dans la fenêtre');
+  assert.equal(chantierDropTarget(m, 1, 99), '');
+  assert.equal(chantierDropTarget(m, 99, 6), '');
+});
+
+test('dropChanges chantier : cible de la fenêtre, rien à écrire directement, refus', () => {
+  const m = mkChantiers();
+  assert.deepEqual(dropChanges(m, 1, 'chantier', 'C6', 0), { changes: {}, inherited: false, target: '6:10' });
+  assert.deepEqual(
+    dropChanges(m, 9, 'chantier', 'C6', 0),
+    { changes: {}, inherited: false, target: '' },
+    'deux projets sans le projet actuel : la fenêtre demande le projet',
+  );
+  assert.deepEqual(dropChanges(m, 4, 'chantier', 'C6', 0), { changes: {}, inherited: false, target: '6:10' });
+  assert.deepEqual(dropChanges(m, 1, 'chantier', 'C5', 0), { changes: {}, inherited: false });
+  assert.deepEqual(dropChanges(m, 2, 'chantier', 'C6', 0), { error: 'subtask' });
+  assert.deepEqual(dropChanges(m, 1, 'chantier', '', 0), { error: 'no-chantier' });
+  assert.deepEqual(dropChanges(m, 1, 'chantier', 'C8', 0), { error: 'scope' });
+});
+
+test('dropColumns chantier : chantiers du périmètre seulement', () => {
+  assert.deepEqual([...dropColumns(mkChantiers(), 'chantier', chantierCols)], ['C5', 'C6', 'C7']);
 });
 
 test('dropChanges statut : clôture posée, gardée à la réouverture, refus', () => {
@@ -93,7 +164,6 @@ test('dropChanges priorité : valeur déclarée, vide permis, inherited', () => 
   assert.deepEqual(dropChanges(m, 1, 'priority', '', 0), { error: 'inherited' });
   assert.deepEqual(dropChanges(m, 2, 'priority', 'P5', 0), { error: 'undeclared' });
   assert.deepEqual(dropChanges(m, 2, 'priority', 'Priorité 1', 0), { changes: {}, inherited: false });
-  assert.deepEqual(dropChanges(m, 2, 'chantier', 'C1', 0), { error: 'kind' });
 });
 
 test('dropTargets priorité : « Sans priorité » refusé quand la tâche a sa priorité ET une priorité en amont', () => {
@@ -146,6 +216,12 @@ test('hasDropTarget : vrai exactement quand dropTargets donne une colonne permis
       const any = [...dropTargets(m, id, group, columns).values()].some((v) => v.ok);
       assert.equal(hasDropTarget(m, id, group, open), any, `${group} ${id}`);
     }
+  }
+  const mc = mkChantiers();
+  const open = dropColumns(mc, 'chantier', chantierCols);
+  for (const id of [1, 2, 3, 4, 9, 99]) {
+    const any = [...dropTargets(mc, id, 'chantier', chantierCols).values()].some((v) => v.ok);
+    assert.equal(hasDropTarget(mc, id, 'chantier', open), any, `chantier ${id}`);
   }
   // Seule colonne : celle de la carte → rien ; priorité héritée et seule « Sans priorité » → rien
   assert.equal(hasDropTarget(m, 1, 'status', dropColumns(m, 'status', [col('todo')])), false);
@@ -204,6 +280,9 @@ test('columnName : statut nommé, libellé de priorité, « Sans priorité »', 
   assert.equal(columnName('status', 'review'), 'En revue');
   assert.equal(columnName('priority', 'Priorité 2'), 'Priorité 2');
   assert.equal(columnName('priority', ''), 'Sans priorité');
+  assert.equal(columnName('chantier', 'C6', mkChantiers()), 'Partagé');
+  assert.equal(columnName('chantier', '', mkChantiers()), '(sans chantier)');
+  assert.equal(columnName('chantier', 'C99', mkChantiers()), 'C99');
 });
 
 test('isApplied : le modèle porte déjà les valeurs déposées (correction locale reçue)', () => {

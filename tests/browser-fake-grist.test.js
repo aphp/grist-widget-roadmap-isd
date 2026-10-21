@@ -2416,12 +2416,13 @@ test(
     await key('Escape');
     await until(`!D.getElementById('qs-menu') && D.activeElement.id === 'kc-${id}'`);
     assert.equal(await w(`return W.__writes.length;`), 0);
-    // Maj+F10 ouvre le menu ⋯ (« Statut… », « Priorité… ») ; « Statut… » puis « En revue »
+    // Maj+F10 ouvre le menu ⋯ (« Statut… », « Priorité… », « Chantier… ») ; « Statut… » puis « En revue »
     await key('F10', { shiftKey: true });
     await until(`D.getElementById('qs-menu')`);
     assert.deepEqual(await w(`return [...D.querySelectorAll('#qs-menu [data-qs-value]')].map((b) => b.textContent);`), [
       'Statut…',
       'Priorité…',
+      'Chantier…',
     ]);
     await statusViaActions();
     assert.equal(await pickStatus('review'), 'review');
@@ -5377,8 +5378,15 @@ test(
     await openKanban(',lent');
     const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
     assert.ok(at, 'jeu synthétique : une carte glissable dans « À faire »');
-    assert.equal(await w(`return D.getElementById('kc-${at.id}').getAttribute('aria-keyshortcuts');`), 'S P Shift+F10');
+    assert.equal(
+      await w(`return D.getElementById('kc-${at.id}').getAttribute('aria-keyshortcuts');`),
+      'S P M Shift+F10',
+    );
     assert.match(await w(`return D.getElementById('kanban-help').textContent;`), /P : changer sa priorité/);
+    assert.match(
+      await w(`return D.getElementById('kanban-help').textContent;`),
+      /M : la déplacer vers une autre colonne/,
+    );
     await mouseTo(at, await colPoint('status:review'), { release: false });
     // Pendant le geste : fantôme, colonnes permises soulignées, colonne visée, aucun rendu de la vue
     await until(`D.querySelector('.kghost') && D.querySelector('.kcol--over[data-col="status:review"]')`);
@@ -5659,8 +5667,197 @@ test(
   },
 );
 
-test('kanban regroupé par chantier : aucune carte glissable (lot D)', { skip: SKIP }, async () => {
+// ---------- Kanban par chantier : déplacer une tâche vers un autre chantier (lot D) ----------
+
+/**
+ * Tâche de premier niveau avec deux sous-tâches (jeu synthétique : « préparation » suit sa tâche parente), carte
+ * glissable dans le Kanban par chantier : identifiants de la tâche et de ses sous-tâches, colonne d'origine.
+ */
+const parentWithSubtasks = () =>
+  w(`const sub = [...D.querySelectorAll('.kcard[data-drag-refused]')].find((c) => {
+      const p = D.getElementById('kc-' + (Number(c.dataset.task) - 1));
+      return /préparation/.test(c.textContent) && p?.hasAttribute('data-drag-card');
+    });
+    if (!sub) return null;
+    const id = Number(sub.dataset.task) - 1;
+    return { id, subs: [id + 1, id + 2], col: D.getElementById('kc-' + id).closest('.kcol').dataset.col };`);
+
+/** Glisse la carte au-dessus d'une colonne permise (la plus visible du plateau) ; son chantier, bouton tenu. */
+async function dragToChantier(id) {
+  const at = await cardPoint(`#kc-${id}`);
+  await mouseTo(at, { x: at.x + 30, y: at.y + 30 }, { release: false });
+  await until(`D.querySelector('.kghost') && D.querySelector('.kcol--target')`);
+  const to = await w(`const b = D.querySelector('.kanban__board').getBoundingClientRect();
+    const vis = (c) => { const r = c.getBoundingClientRect(); return Math.min(r.right, b.right) - Math.max(r.left, b.left); };
+    const c = [...D.querySelectorAll('.kcol--target')].sort((x, y) => vis(y) - vis(x))[0];
+    const r = c.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { col: c.dataset.col, chantier: Number(c.dataset.col.slice('chantier:C'.length)),
+      x: f.left + Math.max(r.left, b.left) + 20, y: f.top + r.top + 60 };`);
+  await mouseTo({ x: at.x + 30, y: at.y + 30 }, to, { release: false, steps: 4 });
+  await until(`D.querySelector('.kcol--over[data-col="${to.col}"]')`);
+  return to;
+}
+
+test(
+  'kanban chantier : glisser une tâche avec sous-tâches → fenêtre de confirmation, Déplacer → un lot (tâche et sous-tâches)',
+  { skip: SKIP },
+  async () => {
+    await openKanban('', 'chantier');
+    const t = await parentWithSubtasks();
+    assert.ok(t, 'jeu synthétique : une tâche glissable avec deux sous-tâches');
+    assert.equal(
+      await w(`return D.getElementById('kc-${t.id}').getAttribute('aria-keyshortcuts');`),
+      'S P M Shift+F10',
+    );
+    assert.match(
+      await w(`return D.getElementById('kanban-help').textContent;`),
+      /M : la déplacer vers un autre chantier/,
+    );
+    const to = await dragToChantier(t.id);
+    // Colonne d'origine marquée ; toute colonne refusée dit sa raison
+    assert.ok(await w(`return D.querySelector('.kcol--origin[data-col="${t.col}"]') !== null;`));
+    assert.ok(await w(`return [...D.querySelectorAll('.kcol--refused')].every((c) => c.dataset.dropReason);`));
+    await mouseUp(to);
+    // Rien n'est écrit au dépôt : la fenêtre « Déplacer » s'ouvre, chantier présélectionné, bouton focalisé
+    await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    assert.equal(await w(`return D.querySelector('.kghost');`), null);
+    const target = await w(`return D.getElementById('cf-cible').value;`);
+    assert.match(target, new RegExp(`^${to.chantier}:\\d+$`));
+    assert.equal(await w(`return D.activeElement.id;`), 'cf-submit');
+    assert.match(await w(`return D.getElementById('cf-follow').textContent;`), /2 sous-tâches suivront/);
+    await clickOn('#cf-submit');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+    const [c, p] = target.split(':').map(Number);
+    assert.deepEqual((await writes())[0], [
+      ['UpdateRecord', 'Tasks', t.id, { Chantier: c, projet: p }],
+      ['BulkUpdateRecord', 'Tasks', t.subs, { Chantier: [c, c], projet: [p, p] }],
+    ]);
+    // La carte suit la tâche dans sa nouvelle colonne et garde le focus ; « Annuler » la ramène
+    await until(
+      `D.activeElement?.id === 'kc-${t.id}' && D.activeElement.closest('.kcol').dataset.col === '${to.col}'`,
+      8000,
+    );
+    assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /2 sous-tâches ont suivi/);
+    await clickOn('.toast [data-toast-action]');
+    await until(`W.__writes.length === 2`);
+    await until(
+      `D.activeElement?.id === 'kc-${t.id}' && D.activeElement.closest('.kcol').dataset.col === '${t.col}'`,
+      8000,
+    );
+  },
+);
+
+test(
+  'kanban chantier : glisser puis fermer la fenêtre → aucune écriture, focus sur la carte',
+  { skip: SKIP },
+  async () => {
+    await openKanban('', 'chantier');
+    const t = await parentWithSubtasks();
+    const to = await dragToChantier(t.id);
+    await mouseUp(to);
+    await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
+    // Cible présélectionnée : pas une saisie, la fenêtre se ferme sans confirmation
+    await w(`D.getElementById('cf-cancel').click(); return true;`);
+    await until(`!D.querySelector('dialog.cdlg') && D.activeElement?.id === 'kc-${t.id}'`);
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    assert.equal(await w(`return D.getElementById('kc-${t.id}').closest('.kcol').dataset.col;`), t.col);
+  },
+);
+
+test('kanban chantier : sous-tâche non saisissable, la raison est dite', { skip: SKIP }, async () => {
   await openKanban('', 'chantier');
-  assert.equal(await w(`return D.querySelectorAll('[data-drag-card]').length;`), 0);
-  assert.ok(await w(`return D.querySelectorAll('.kcard[data-qs-focus]').length > 0;`));
+  const t = await parentWithSubtasks();
+  const sub = await cardPoint(`#kc-${t.subs[0]}`);
+  assert.equal(
+    await w(`return D.getElementById('kc-${sub.id}').getAttribute('title');`),
+    'Une sous-tâche suit le chantier de sa tâche.',
+  );
+  assert.doesNotMatch(await w(`return D.getElementById('kc-${sub.id}').getAttribute('aria-keyshortcuts');`), /M/);
+  await mouseTo(sub, { x: sub.x + 200, y: sub.y + 40 });
+  await until(`/sous-tâche suit le chantier/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+  assert.equal(await w(`return D.querySelector('.kghost');`), null, 'la carte ne se soulève pas');
+  await sleep(300);
+  assert.notEqual(await w(`return D.getElementById('app-detail').dataset.open;`), 'true', 'pas de fiche au relâcher');
+  assert.equal(await w(`return W.__writes.length;`), 0);
 });
+
+test('kanban chantier : chantier à deux projets → la fenêtre demande le projet', { skip: SKIP }, async () => {
+  await openKanban('', 'chantier');
+  const t = await parentWithSubtasks();
+  // Le chantier visé porte deux projets du périmètre, dont aucun n'est celui de la tâche
+  const at = await cardPoint(`#kc-${t.id}`);
+  await mouseTo(at, { x: at.x + 30, y: at.y + 30 }, { release: false });
+  await until(`D.querySelector('.kcol--target')`);
+  const goal = await w(`return Number(D.querySelector('.kcol--target').dataset.col.slice('chantier:C'.length));`);
+  await hit('Escape');
+  await mouseUp({ x: at.x + 30, y: at.y + 30 });
+  const two =
+    await w(`const T = await W.grist.docApi.fetchTable('Tasks'); const P = await W.grist.docApi.fetchTable('Projects');
+    const mine = T.projet[T.id.indexOf(${t.id})];
+    return P.id.filter((p) => p !== mine).slice(0, 2);`);
+  await w(
+    `await W.grist.__simulateChange(['UpdateRecord', 'Chantiers', ${goal}, { Projets: ['L', ${two[0]}, ${two[1]}] }]); return true;`,
+  );
+  await until(`D.querySelector('#kc-${t.id}[data-drag-card]') && !D.querySelector('.kghost')`);
+  await sleep(300);
+  const to =
+    await w(`const c = D.querySelector('.kcol[data-col="chantier:C${goal}"]'); c.scrollIntoView({ inline: 'nearest' });
+    const r = c.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + 40, y: f.top + r.top + 60 };`);
+  const from = await cardPoint(`#kc-${t.id}`);
+  await mouseTo(from, to, { release: false });
+  await until(`D.querySelector('.kcol--over[data-col="chantier:C${goal}"].kcol--target')`);
+  await mouseUp(to);
+  await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
+  assert.equal(await w(`return D.getElementById('cf-cible').value;`), '', 'aucun projet choisi d’avance');
+  assert.equal(await w(`return D.activeElement.id;`), 'cf-cible');
+  const options = await w(
+    `return [...D.querySelectorAll('#cf-cible option')].map((o) => o.value).filter((v) => v.startsWith('${goal}:'));`,
+  );
+  assert.equal(options.length, 2, 'le chantier apparaît sous chacun de ses deux projets');
+  await change('#cf-cible', options[1]);
+  // Le clic qui suit un glisser est avalé pendant 100 ms (ui/drag.js) : le choix du projet laisse ce délai
+  await sleep(150);
+  await clickOn('#cf-submit');
+  await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+  assert.deepEqual((await writes())[0][0], ['UpdateRecord', 'Tasks', t.id, { Chantier: goal, projet: two[1] }]);
+});
+
+test(
+  'kanban : touche M (statut → menu de statut ; chantier → fenêtre « Déplacer » sans cible)',
+  { skip: SKIP },
+  async () => {
+    await openKanban();
+    const id = await w(
+      `const c = D.querySelector('.kcol[data-col="status:todo"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+    );
+    await key('m');
+    await until(`D.querySelector('#qs-menu [aria-checked="true"][data-qs-value="todo"]')`);
+    await key('Escape');
+    await until(`!D.getElementById('qs-menu') && D.activeElement.id === 'kc-${id}'`);
+    await openKanban('', 'chantier');
+    const t = await parentWithSubtasks();
+    await w(`D.getElementById('kc-${t.id}').focus(); return true;`);
+    await key('M');
+    await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
+    assert.equal(await w(`return D.getElementById('cf-cible').value;`), '');
+    assert.equal(await w(`return D.activeElement.id;`), 'cf-cible');
+    await w(`D.getElementById('cf-cancel').click(); return true;`);
+    await until(`!D.querySelector('dialog.cdlg') && D.activeElement?.id === 'kc-${t.id}'`);
+    // Menu ⋯ : « Chantier… » ouvre la même fenêtre
+    await key('F10', { shiftKey: true });
+    await until(`D.querySelector('#qs-menu [data-qs-value="chantier"]')`);
+    await w(`D.querySelector('#qs-menu [data-qs-value="chantier"]').click(); return true;`);
+    await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
+    await w(`D.getElementById('cf-cancel').click(); return true;`);
+    await until(`!D.querySelector('dialog.cdlg') && D.activeElement?.id === 'kc-${t.id}'`);
+    // Sous-tâche : M dit la raison, rien ne s'ouvre
+    await w(`D.getElementById('kc-${t.subs[0]}').focus(); return true;`);
+    await key('m');
+    await until(`/sous-tâche suit le chantier/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+    assert.equal(await w(`return Boolean(D.querySelector('dialog.cdlg'));`), false);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
