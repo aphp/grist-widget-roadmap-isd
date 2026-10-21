@@ -8,6 +8,7 @@ import {
   dragContext,
   dragSummary,
   dragTarget,
+  keyMode,
   movedDates,
   periodOf,
   reattachDrag,
@@ -380,4 +381,60 @@ test('reattachDrag : jalon à la seule échéance', () => {
   const g = { key: 'j', seen: { start: null, end: 9 } };
   assert.deepEqual(reattachDrag(g, [{ key: 'j', node: { start: null, end: 9 } }]), { ok: true, index: 0 });
   assert.equal(reattachDrag(g, [{ key: 'j', node: { start: 9, end: 9 } }]).reason, 'changed');
+});
+
+// ---------- keyMode (mode clavier « D ») ----------
+const keyState = (over = {}) => ({
+  target: { ok: true, table: 'Tasks', id: 1, cols: ['dateDebut', 'dateEcheance'], milestone: false },
+  seen: { start: d('2026-11-02'), end: d('2026-11-06') },
+  now: { start: d('2026-11-02'), end: d('2026-11-06') },
+  edge: 'move',
+  unit: 'week',
+  max: d('2027-12-31'),
+  ...over,
+});
+const iso2 = (p) => [isoOfDay(p.start), isoOfDay(p.end)];
+
+test('keyMode : flèches d’un pas de l’échelle, Maj d’un jour, durée gardée', () => {
+  let r = keyMode(keyState(), { key: 'ArrowRight', shiftKey: false });
+  assert.equal(r.action, 'announce');
+  assert.deepEqual(iso2(r.state.now), ['2026-11-09', '2026-11-13']);
+  r = keyMode(r.state, { key: 'ArrowLeft', shiftKey: true });
+  assert.deepEqual(iso2(r.state.now), ['2026-11-08', '2026-11-12']);
+  assert.deepEqual(iso2(keyMode(keyState({ unit: 'day' }), { key: 'ArrowLeft' }).state.now), [
+    '2026-11-01',
+    '2026-11-05',
+  ]);
+  const m = keyMode(keyState({ unit: 'month' }), { key: 'ArrowRight' });
+  assert.deepEqual(iso2(m.state.now), ['2026-12-02', '2026-12-06']);
+  // l'état d'origine n'est pas modifié
+  assert.deepEqual(iso2(keyState().now), ['2026-11-02', '2026-11-06']);
+});
+
+test('keyMode : Retour arrière remet les dates vues, Entrée enregistre, Échap annule, Tab reste sur move', () => {
+  const moved = keyMode(keyState(), { key: 'ArrowRight' }).state;
+  const back = keyMode(moved, { key: 'Backspace' });
+  assert.equal(back.action, 'announce');
+  assert.deepEqual(back.state.now, keyState().seen);
+  assert.equal(keyMode(moved, { key: 'Enter' }).action, 'save');
+  assert.equal(keyMode(moved, { key: 'Escape' }).action, 'cancel');
+  const tab = keyMode(moved, { key: 'Tab', shiftKey: true });
+  assert.deepEqual([tab.action, tab.state.edge], ['none', 'move']);
+  assert.equal(keyMode(moved, { key: 'x' }).action, 'none');
+});
+
+test('keyMode : jalon à la seule échéance, borne du 31/12 de l’année suivante', () => {
+  const ms = keyState({
+    target: { ok: true, table: 'Tasks', id: 1, cols: ['dateEcheance'], milestone: true },
+    seen: { start: null, end: d('2027-12-27') },
+    now: { start: d('2027-12-27'), end: d('2027-12-27') },
+  });
+  const r = keyMode(ms, { key: 'ArrowRight' });
+  assert.equal(r.action, 'announce');
+  assert.equal(r.state.limit, true);
+  assert.deepEqual(r.state.now, ms.now);
+  const day1 = keyMode({ ...ms, unit: 'day' }, { key: 'ArrowRight' });
+  assert.deepEqual(iso2(day1.state.now), ['2027-12-28', '2027-12-28']);
+  assert.equal(day1.state.limit, false);
+  assert.deepEqual(iso2(keyMode(day1.state, { key: 'Backspace' }).state.now), ['2027-12-27', '2027-12-27']);
 });

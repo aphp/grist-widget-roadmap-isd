@@ -249,3 +249,26 @@ export function summaryText(s, mode) {
   if (s.lateCleared) lines.push(label('gantt.drag.notLate'));
   return lines;
 }
+
+/**
+ * Mode clavier « D » d'une ligne : ←/→ d'un pas de l'échelle (Maj : d'un jour), durée gardée et borne du
+ * 31/12 de l'année suivante (limit : pas refusé par la borne) ; Retour arrière remet les dates vues ; Entrée
+ * enregistre, Échap annule. Tab / Maj+Tab passent de move à start et end au lot B : au lot A, rien. Pure.
+ * @param {{target:object, seen:{start:number|null, end:number}, now:{start:number, end:number},
+ *   edge:'move'|'start'|'end', unit:Unit, max:number, limit?:boolean}} state unit : pas de l'échelle
+ *   (snapUnit(scale, false)) ; max : voir maxPlanDay
+ * @param {{key:string, shiftKey?:boolean}} e
+ * @returns {{state:object, action:'none'|'save'|'cancel'|'announce'}}
+ */
+export function keyMode(state, e) {
+  if (e.key === 'Enter') return { state, action: 'save' };
+  if (e.key === 'Escape') return { state, action: 'cancel' };
+  if (e.key === 'Backspace')
+    return { state: { ...state, now: periodOf(state.seen), limit: false }, action: 'announce' };
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return { state, action: 'none' };
+  const unit = e.shiftKey ? 'day' : state.unit;
+  const { start, end } = state.now;
+  const n = clampShift(start, end, e.key === 'ArrowRight' ? 1 : -1, unit, { max: state.max });
+  if (!n) return { state: { ...state, limit: true }, action: 'announce' };
+  return { state: { ...state, now: movedDates(start, end, unit, n), limit: false }, action: 'announce' };
+}
