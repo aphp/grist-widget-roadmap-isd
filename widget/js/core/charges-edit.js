@@ -12,7 +12,7 @@
  * capacity.js:fteHours) ; h = ETP × heures de 1 ETP. Période changée (capacité différente) : l'ETP fait foi, les
  * heures sont recalculées (charges-rescale.js) ; à capacité égale, les entrées sont recopiées octet par octet.
  */
-import { etpToHours, fteHours, hoursToEtp } from './capacity.js';
+import { HOURS_PER_FTE_WEEK, etpToHours, fteHours, hoursToEtp } from './capacity.js';
 import { taskEtpByRole } from './kanban-data.js';
 import { EncodeError, parseNumberFr } from './write-encode.js';
 import { ESTIMATION_MAX_ETP } from './estimation.js';
@@ -436,21 +436,36 @@ export function roundEtp(etp) {
   return Math.round(etp * k) / k;
 }
 
-/** Valeur affichée dans la case de saisie (heures à une décimale ; ETP selon etpDecimals). */
+/** Heures par semaine d'un temps plein : 35 h/semaine = 1 ETP (saisie en h/semaine, unité « hsem »). */
+export const HOURS_PER_WEEK_FTE = HOURS_PER_FTE_WEEK;
+
+/** h/semaine arrondies à une décimale. */
+const roundHsem = (v) => Math.round(v * 10) / 10;
+
+/**
+ * Valeur affichée dans la case de saisie : ETP selon etpDecimals, ou h/semaine (heures ÷ heures de 1 ETP × 35) à une
+ * décimale ; null sans période (fte null).
+ * @param {number} heures heures totales stockées
+ * @param {'etp'|'hsem'} unit
+ * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
+ */
 export function inputValue(heures, unit, fte) {
-  if (unit === 'heures') return Math.round(heures * 10) / 10;
-  return fte ? roundEtp(hoursToEtp(heures, fte)) : null;
+  if (!fte) return null;
+  const etp = hoursToEtp(heures, fte);
+  return unit === 'hsem' ? roundHsem(etp * HOURS_PER_WEEK_FTE) : roundEtp(etp);
 }
 
 /**
- * Saisie d'une ligne → heures à stocker (arrondies à 0,5 h).
+ * Saisie d'une ligne → heures totales à stocker (arrondies à 0,5 h). En ETP : 2 décimales sous 1, une au-delà ; en
+ * h/semaine (quotité, 35 h/semaine = 1 ETP) : une décimale. Heures = ETP × heures de 1 ETP de la période (congés,
+ * fériés et ralentissements déduits). Sans période : aucune saisie.
  * @param {string} text valeur saisie (« 1,5 »)
- * @param {'etp'|'heures'} unit
+ * @param {'etp'|'hsem'} unit
  * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
  * @param {number|null} [current] heures actuelles de la ligne : une saisie égale à la valeur affichée les
  *   conserve telles quelles (pas d'arrondi ni de dérive)
  * @param {{estimation?:boolean}} [opts] estimation : personne estimation (borne ESTIMATION_MAX_ETP, erreur
- *   'maxEstimation' quand la période est connue)
+ *   'maxEstimation')
  * @returns {{heures:number}|{error:'nombre'|'negatif'|'dates'|'vide'|'decimale'|'petit'|'max'|'maxEstimation',
  *   max?:number}}
  */
@@ -464,16 +479,22 @@ export function hoursFromInput(text, unit, fte, current = null, { estimation = f
   }
   if (n === null) return { error: 'vide' };
   if (n < 0) return { error: 'negatif' };
-  if (unit !== 'heures' && !fte) return { error: 'dates' };
+  if (!fte) return { error: 'dates' };
   if (current !== null && n === inputValue(current, unit, fte)) return { heures: current };
-  const k = n < 1 ? 100 : 10;
-  if (unit !== 'heures' && Math.abs(n * k - Math.round(n * k)) > 1e-9) return { error: 'decimale' };
-  const exact = unit === 'heures' ? n : etpToHours(n, fte);
+  const k = unit === 'hsem' ? 10 : n < 1 ? 100 : 10;
+  if (Math.abs(n * k - Math.round(n * k)) > 1e-9) return { error: 'decimale' };
+  const etp = inputEtp(n, unit);
+  const exact = etpToHours(etp, fte);
   if (n > 0 && exact < MIN_HOURS) return { error: 'petit' };
-  const max = maxHours(fte, estimation);
-  if (exact > max + 1e-9) return { error: estimation && fte ? 'maxEstimation' : 'max', max };
+  // Borne sur l'ETP saisi (1 ETP, ou ESTIMATION_MAX_ETP) : 1 ETP tout juste reste permis quand la capacité de la
+  // période s'arrondit vers le bas ; ses heures valent alors exactement maxHours
+  const limit = estimation ? ESTIMATION_MAX_ETP : MAX_ETP;
+  if (etp > limit + 1e-9) return { error: estimation ? 'maxEstimation' : 'max', max: maxHours(fte, estimation) };
   return { heures: roundHours(exact) };
 }
+
+/** ETP d'une saisie dans son unité (h/semaine ÷ 35). */
+export const inputEtp = (n, unit) => (unit === 'hsem' ? n / HOURS_PER_WEEK_FTE : n);
 
 /** ETP équivalent (null sans période). */
 export const etpOf = (heures, fte) => (fte ? hoursToEtp(heures, fte) : null);

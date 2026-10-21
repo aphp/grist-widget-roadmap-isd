@@ -17,6 +17,7 @@ import {
   ChargesError,
   chargeRows,
   hoursFromInput,
+  inputEtp,
   readChargesCell,
   removePerson,
   setPersonHours,
@@ -78,17 +79,18 @@ export function removePersonLine(draft, teamId) {
 
 /**
  * Saisie de la charge d'une ligne (mêmes règles que la section des charges : 1 ETP au plus sauf pour la personne
- * estimation, ETP à deux décimales sous 1 et une au-delà, valeur affichée ressaisie sans effet, moins de 0,25 h
+ * estimation, ETP à deux décimales sous 1 et une au-delà, h/semaine à une décimale, valeur affichée ressaisie sans
+ * effet, moins de 0,25 h
  * refusé…).
  * @param {object} draft brouillon (assignees, charges)
  * @param {number} teamId
  * @param {string} text valeur saisie
- * @param {'etp'|'heures'} unit
+ * @param {'etp'|'hsem'} unit
  * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
  * @param {{estimation?:boolean}} [opts] estimation : la personne est la personne estimation (pas de borne de 1 ETP)
  * @returns {{charges:string, heures:number|null, etp:number|null}|{error:{error:string, max?:number}}} heures
- *   null : charge vidée ; etp : ETP saisi (unité ETP, heures changées), sinon null ; il fait foi si les dates
- *   changent ensuite
+ *   null : charge vidée ; etp : ETP saisi, exact (en h/semaine : h/semaine ÷ 35) quand les heures changent, sinon
+ *   null ; il fait foi si les dates changent ensuite
  */
 export function lineInput(draft, teamId, text, unit, fte, { estimation = false } = {}) {
   const cell = readChargesCell(draft.charges);
@@ -104,7 +106,7 @@ export function lineInput(draft, teamId, text, unit, fte, { estimation = false }
   // déduit alors des heures)
   if (current && r.heures === current.heures) return { charges: draft.charges, heures: r.heures, etp: null };
   try {
-    const etp = unit === 'etp' ? parseNumberFr(text) : null;
+    const etp = inputEtp(parseNumberFr(text), unit);
     return { charges: setPersonHours(draft.charges, teamId, r.heures), heures: r.heures, etp };
   } catch (err) {
     if (!(err instanceof ChargesError)) throw err;

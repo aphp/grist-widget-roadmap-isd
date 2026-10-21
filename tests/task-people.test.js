@@ -103,9 +103,9 @@ test('saisie d’une ligne : règles du 1 ETP, valeur affichée, charge vidée, 
   // Au plus 1 ETP, ETP à deux décimales sous 1 (une au-delà), moins de 0,25 h refusé, sans dates en ETP
   assert.equal(lineInput(draft, 1, '1,5', 'etp', fte).error.error, 'max');
   assert.equal(lineInput(draft, 1, '0,255', 'etp', fte).error.error, 'decimale');
-  assert.equal(lineInput(draft, 1, '0,1', 'heures', fte).error.error, 'petit');
+  assert.equal(lineInput(draft, 1, '0,1', 'hsem', fte).error.error, 'petit');
   assert.equal(lineInput(draft, 1, '0,5', 'etp', null).error.error, 'dates');
-  assert.equal(lineInput(draft, 1, 'abc', 'heures', fte).error.error, 'nombre');
+  assert.equal(lineInput(draft, 1, 'abc', 'hsem', fte).error.error, 'nombre');
   // Valeur affichée ressaisie : heures inchangées, cellule identique (10 h pour 1 ETP de 70 h s'affichent 0,14 ETP)
   const ten = { assignees: [1], charges: '[{"teamId":1,"heures":10}]' };
   assert.deepEqual(lineInput(ten, 1, '0,14', 'etp', fte), { charges: ten.charges, heures: 10, etp: null });
@@ -115,8 +115,8 @@ test('saisie d’une ligne : règles du 1 ETP, valeur affichée, charge vidée, 
   assert.equal(lineInput({ assignees: [], charges: ten.charges }, 1, '', 'etp', fte).error.error, 'vide');
   // Doublon non fusionné ou cellule illisible : refus, rien n'est changé
   const dup = { assignees: [1], charges: '[{"teamId":1,"heures":2},{"teamId":1,"heures":3}]' };
-  assert.equal(lineInput(dup, 1, '4', 'heures', fte).error.error, 'nombre');
-  assert.equal(lineInput({ assignees: [1], charges: 'oops' }, 1, '4', 'heures', fte).error.error, 'nombre');
+  assert.equal(lineInput(dup, 1, '4', 'hsem', fte).error.error, 'nombre');
+  assert.equal(lineInput({ assignees: [1], charges: 'oops' }, 1, '4', 'hsem', fte).error.error, 'nombre');
 });
 
 test('lecture : liste unique (taskPeopleRows), heures cumulées, ETP, non assignée, absente de l’équipe', () => {
@@ -155,5 +155,9 @@ test('lecture : liste unique (taskPeopleRows), heures cumulées, ETP, non assign
 test('lineInput rend l’ETP saisi', () => {
   const r = lineInput({ assignees: [40], charges: null }, 40, '0,25', 'etp', 140);
   assert.deepEqual([r.heures, r.etp], [35, 0.25]);
-  assert.equal(lineInput({ assignees: [40], charges: null }, 40, '35', 'heures', 140).etp, null);
+  // h/semaine : l'ETP exact (h/semaine ÷ 35) devient la référence, comme une saisie en ETP
+  const r2 = lineInput({ assignees: [40], charges: null }, 40, '17,5', 'hsem', 140);
+  assert.deepEqual([r2.heures, r2.etp], [70, 0.5]);
+  const r3 = lineInput({ assignees: [40], charges: null }, 40, '14', 'hsem', 140);
+  assert.deepEqual([r3.heures, r3.etp], [56, 0.4]);
 });

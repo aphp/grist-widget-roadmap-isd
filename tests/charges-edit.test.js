@@ -30,6 +30,7 @@ import {
 } from '../widget/js/core/charges-edit.js';
 import { parseCharges } from '../widget/js/core/charges.js';
 import { fteHours } from '../widget/js/core/capacity.js';
+import { dayOfIso } from '../widget/js/core/dates.js';
 import { mergeChargesChange, resolveConflicts } from '../widget/js/core/conflicts.js';
 import { diffDraft, rebaseCharges, rebaseDraft } from '../widget/js/core/task-form.js';
 
@@ -146,19 +147,19 @@ test('conversions (fte : heures de 1 ETP sur la période) : 70 h pour 1 ETP de 7
   near(etpOf(70, 70), 1);
   assert.deepEqual(hoursFromInput('0,3', 'etp', 50), { heures: 15 });
   assert.deepEqual(hoursFromInput('1', 'etp', 70), { heures: 70 });
-  assert.deepEqual(hoursFromInput('70', 'heures', null), { heures: 70 });
-  // 0,3 ETP de 45 h = 13,5 h ; 0,1 ETP de 15 h = 1,5 h ; 7,2 h → 7 h
+  assert.deepEqual(hoursFromInput('35', 'hsem', 70), { heures: 70 });
+  // 0,3 ETP de 45 h = 13,5 h ; 0,1 ETP de 15 h = 1,5 h ; 7,2 h/semaine sur 1 ETP de 35 h = 7,2 h → 7 h
   assert.deepEqual(hoursFromInput('0,3', 'etp', 45), { heures: 13.5 });
   assert.deepEqual(hoursFromInput('0,1', 'etp', 15), { heures: 1.5 });
-  assert.deepEqual(hoursFromInput('7,2', 'heures', 25), { heures: 7 });
+  assert.deepEqual(hoursFromInput('7,2', 'hsem', 35), { heures: 7 });
   assert.equal(roundHours(0.24), 0);
   assert.equal(roundHours(0.25), 0.5);
-  assert.deepEqual(hoursFromInput('', 'heures', 25), { error: 'vide' });
+  assert.deepEqual(hoursFromInput('', 'hsem', 25), { error: 'vide' });
   assert.deepEqual(hoursFromInput('abc', 'etp', 25), { error: 'nombre' });
-  assert.deepEqual(hoursFromInput('-1', 'heures', 25), { error: 'negatif' });
+  assert.deepEqual(hoursFromInput('-1', 'hsem', 25), { error: 'negatif' });
 });
 
-test('sans dates ou sans jour ouvré : ETP indisponible, saisie en heures possible', () => {
+test('sans dates ou sans jour ouvré : ni ETP ni h/semaine saisissables', () => {
   assert.equal(periodFte(null, 10), null);
   assert.equal(periodFte(10, null), null);
   assert.equal(periodFte(10, 9), null);
@@ -172,7 +173,7 @@ test('sans dates ou sans jour ouvré : ETP indisponible, saisie en heures possib
   );
   assert.deepEqual([periodDayCount(9, 10), periodDayCount(10, 9), periodDayCount(null, 3)], [2, null, null]);
   assert.deepEqual(hoursFromInput('1', 'etp', null), { error: 'dates' });
-  assert.deepEqual(hoursFromInput('12', 'heures', null), { heures: 12 });
+  assert.deepEqual(hoursFromInput('12', 'hsem', null), { error: 'dates' });
   assert.equal(etpOf(10, null), null);
   const model = { people: new Map() };
   assert.deepEqual(chargesSummary(model, [{ teamId: 1, heures: 12 }], null, null), {
@@ -436,11 +437,16 @@ test('M3 : au plus 1 ETP par personne sur la période (2 000 h sans dates)', () 
   assert.equal(maxHours(70), 70);
   assert.equal(maxHours(null), 2000);
   assert.deepEqual(hoursFromInput('1,1', 'etp', 70), { error: 'max', max: 70 });
-  assert.deepEqual(hoursFromInput('71', 'heures', 70), { error: 'max', max: 70 });
-  assert.deepEqual(hoursFromInput('70', 'heures', 70), { heures: 70 });
-  assert.deepEqual(hoursFromInput('2001', 'heures', null), { error: 'max', max: 2000 });
-  // Valeur existante au-dessus de la borne, ressaisie telle qu'affichée : conservée
-  assert.deepEqual(hoursFromInput('100', 'heures', 70, 100), { heures: 100 });
+  assert.deepEqual(hoursFromInput('35,1', 'hsem', 70), { error: 'max', max: 70 });
+  assert.deepEqual(hoursFromInput('35', 'hsem', 70), { heures: 70 });
+  // 1 ETP exactement, capacité qui s'arrondit vers le bas (52,2 h → 52 h) : accepté dans les deux unités
+  assert.deepEqual(hoursFromInput('1', 'etp', 52.2), { heures: 52 });
+  assert.deepEqual(hoursFromInput('35', 'hsem', 52.2), { heures: 52 });
+  // Sans période : ni ETP ni h/semaine
+  assert.deepEqual(hoursFromInput('20', 'hsem', null), { error: 'dates' });
+  // Valeur existante au-dessus de la borne, ressaisie telle qu'affichée (50 h/semaine) : conservée
+  assert.equal(inputValue(100, 'hsem', 70), 50);
+  assert.deepEqual(hoursFromInput('50', 'hsem', 70, 100), { heures: 100 });
   assert.equal(
     chargesWriteProblem('[{"teamId":1,"heures":70.5}]', '', () => true, 70),
     'heures : au plus 70 h (1 ETP sur la période)',
@@ -461,9 +467,12 @@ test('M4 : ETP à deux décimales sous 1 ; ressaisir la valeur affichée ne chan
   assert.deepEqual(hoursFromInput('0,14', 'etp', 70, 10), { heures: 10 });
   assert.deepEqual(hoursFromInput('0,2', 'etp', 70, 10), { heures: 14 });
   assert.deepEqual(hoursFromInput('0,155', 'etp', 70, 10), { error: 'decimale' });
-  assert.equal(inputValue(213.4, 'heures', 460), 213.4);
-  assert.deepEqual(hoursFromInput('213,4', 'heures', 460, 213.4), { heures: 213.4 });
+  // h/semaine à une décimale : 213,4 h sur 1 ETP de 460 h = 16,237… h/semaine, affiché 16,2 ; ressaisi, gardé
+  assert.equal(inputValue(213.4, 'hsem', 460), 16.2);
+  assert.deepEqual(hoursFromInput('16,2', 'hsem', 460, 213.4), { heures: 213.4 });
+  assert.deepEqual(hoursFromInput('16,25', 'hsem', 460), { error: 'decimale' });
   assert.equal(inputValue(10, 'etp', null), null);
+  assert.equal(inputValue(10, 'hsem', null), null);
 });
 
 test('N1 : une entrée invalide de la personne est remplacée, sans doublon', () => {
@@ -476,11 +485,11 @@ test('N1 : une entrée invalide de la personne est remplacée, sans doublon', ()
 });
 
 test('N2 : moins de 0,25 h refusé, 0 explicite accepté', () => {
-  assert.deepEqual(hoursFromInput('0,01', 'heures', 25), { error: 'petit' });
-  assert.deepEqual(hoursFromInput('0,2', 'heures', null), { error: 'petit' });
-  assert.deepEqual(hoursFromInput('0', 'heures', 25), { heures: 0 });
+  // 0,1 h/semaine sur 1 ETP de 25 h = 0,07 h : trop petit ; 0,4 h/semaine = 0,29 h → 0,5 h
+  assert.deepEqual(hoursFromInput('0,1', 'hsem', 25), { error: 'petit' });
+  assert.deepEqual(hoursFromInput('0', 'hsem', 25), { heures: 0 });
   assert.deepEqual(hoursFromInput('0', 'etp', 25), { heures: 0 });
-  assert.deepEqual(hoursFromInput('0,25', 'heures', 25), { heures: 0.5 });
+  assert.deepEqual(hoursFromInput('0,4', 'hsem', 25), { heures: 0.5 });
 });
 
 test('ETP : 2 décimales sous 1, une décimale à partir de 1', () => {
@@ -508,4 +517,33 @@ test('ETP : bornes de 0,99 à 1, zéro, ressaisie de 0,5', () => {
   // 0,5 ETP de 70 h = 35 h : la valeur affichée ressaisie garde les heures
   assert.equal(inputValue(35, 'etp', 70), 0.5);
   assert.deepEqual(hoursFromInput('0,5', 'etp', 70, 35), { heures: 35 });
+});
+
+test('h/semaine : 35 h/semaine = 1 ETP, total = h/semaine ÷ 35 × capacité standard, arrondi à 0,5 h', () => {
+  const nov = fteHours(dayOfIso('2026-11-01'), dayOfIso('2026-11-30'));
+  assert.deepEqual(hoursFromInput('35', 'hsem', nov), { heures: roundHours(nov) });
+  assert.deepEqual(hoursFromInput('17,5', 'hsem', nov), { heures: roundHours(nov / 2) });
+  assert.deepEqual(hoursFromInput('17,5', 'hsem', nov), hoursFromInput('0,5', 'etp', nov));
+  // 33 h/semaine sur la semaine du 16 novembre 2026 = 27 h ; sur celle du 11 novembre (férié) = 22 h
+  const w16 = fteHours(dayOfIso('2026-11-16'), dayOfIso('2026-11-22'));
+  const w9 = fteHours(dayOfIso('2026-11-09'), dayOfIso('2026-11-15'));
+  assert.deepEqual(hoursFromInput('33', 'hsem', w16), { heures: 27 });
+  assert.deepEqual(hoursFromInput('33', 'hsem', w9), { heures: 22 });
+  assert.deepEqual(hoursFromInput('36', 'hsem', w16), { error: 'max', max: roundHours(w16) });
+  // Personne estimation : 50 × 35 h/semaine
+  const est = { estimation: true };
+  assert.deepEqual(hoursFromInput('1750', 'hsem', 70, null, est), { heures: 3500 });
+  assert.deepEqual(hoursFromInput('1750,1', 'hsem', 70, null, est), { error: 'maxEstimation', max: 3500 });
+  // Affichage depuis le stockage : heures ÷ capacité × 35, à une décimale
+  assert.equal(inputValue(roundHours(nov), 'hsem', nov), 35);
+  assert.equal(inputValue(27, 'hsem', w16), 32.7);
+});
+
+test('h/semaine : la valeur affichée ressaisie garde les heures stockées (aller-retour sans dérive)', () => {
+  for (const fte of [28.888889, 52, 115.555556, 1000]) {
+    for (let h = 0; h <= roundHours(fte); h += 0.5) {
+      const shown = inputValue(h, 'hsem', fte);
+      assert.deepEqual(hoursFromInput(String(shown).replace('.', ','), 'hsem', fte, h), { heures: h }, `${fte} ${h}`);
+    }
+  }
 });

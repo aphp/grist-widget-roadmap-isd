@@ -332,10 +332,9 @@ test('estimation : saisie au-delà de 1 ETP acceptée jusqu’à 50 ETP sur la p
   assert.deepEqual(hoursFromInput('3', 'etp', 70), { error: 'max', max: 70 });
   assert.deepEqual(hoursFromInput('50', 'etp', 70, null, est), { heures: 3500 });
   assert.deepEqual(hoursFromInput('50,1', 'etp', 70, null, est), { error: 'maxEstimation', max: 3500 });
-  assert.deepEqual(hoursFromInput('3501', 'heures', 70, null, est), { error: 'maxEstimation', max: 3500 });
-  // Sans dates : 2 000 h pour tous, estimation comprise
-  assert.deepEqual(hoursFromInput('2000', 'heures', null, null, est), { heures: 2000 });
-  assert.deepEqual(hoursFromInput('2001', 'heures', null, null, est), { error: 'max', max: 2000 });
+  assert.deepEqual(hoursFromInput('1750,5', 'hsem', 70, null, est), { error: 'maxEstimation', max: 3500 });
+  // Sans dates : aucune saisie (ni ETP ni h/semaine), estimation comprise ; borne de 2 000 h du writer
+  assert.deepEqual(hoursFromInput('20', 'hsem', null, null, est), { error: 'dates' });
   // Bloc « Personnes » (lineInput)
   const draft = { assignees: [1, 2], charges: '' };
   assert.deepEqual(lineInput(draft, 1, '3', 'etp', 70, est), {

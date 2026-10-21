@@ -700,7 +700,8 @@
 }
 .tf-charge {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* Le nom garde une largeur lisible ; le total (« = … h au total ») passe à la ligne sous la saisie */
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, auto) auto;
   align-items: center;
   gap: var(--space-1) var(--space-3);
   padding: var(--space-1) 0;
@@ -713,9 +714,9 @@
 }
 .tf-charge__value {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
-  white-space: nowrap;
 }
 .tf-charge__input {
   width: 4.5rem;
@@ -724,9 +725,10 @@
 }
 .tf-charge__unit {
   font-size: var(--font-size-sm);
+  white-space: nowrap;
 }
 .tf-charge__eq {
-  min-width: 5.5rem;
+  min-width: 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;

@@ -22,13 +22,26 @@ const LIVE = ['charges-foot', 'assignees-msgs', 'charges-msgs'];
 /** Unité de saisie mémorisée dans le navigateur (même choix dans la fiche et les fenêtres de création). */
 export const UNIT_KEY = 'roadmap-isd.chargesUnit';
 
-/** Unité de saisie des charges, mémorisée (ETP par défaut). */
+/**
+ * Unité de saisie des charges, mémorisée : 'etp' (par défaut) ou 'hsem' (heures par semaine). L'ancienne unité
+ * « heures » (heures totales, retirée) devient 'hsem', réécrite dans le stockage.
+ */
 export function storedUnit(storage) {
+  let v;
   try {
-    return storage?.getItem(UNIT_KEY) === 'heures' ? 'heures' : 'etp';
+    v = storage?.getItem(UNIT_KEY);
   } catch {
     return 'etp';
   }
+  if (v === 'heures') {
+    try {
+      storage.setItem(UNIT_KEY, 'hsem');
+    } catch {
+      // stockage indisponible : la migration vaut pour la session
+    }
+    return 'hsem';
+  }
+  return v === 'hsem' ? 'hsem' : 'etp';
 }
 
 /**
@@ -231,7 +244,7 @@ export function createPeopleBlock(deps) {
       return true;
     }
     if (t.dataset.chargesUnit !== undefined) {
-      s.chargesUnit = t.value === 'heures' ? 'heures' : 'etp';
+      s.chargesUnit = t.value === 'hsem' ? 'hsem' : 'etp';
       s.chargeErrors.clear();
       s.chargeInputs.clear();
       try {

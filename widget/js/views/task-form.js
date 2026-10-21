@@ -9,7 +9,7 @@ import {
   chargesSummary,
   etpDecimals,
   ESTIMATION_MAX_ETP,
-  etpOf,
+  HOURS_PER_WEEK_FTE,
   hoursDelta,
   inputValue,
   isEstimationPerson,
@@ -286,15 +286,9 @@ function personLineHtml(st, model, l, ctx) {
   const id = l.teamId;
   const p = model.people.get(id);
   const name = chargeName(model, id);
-  const etpMode = st.chargesUnit === 'etp';
-  const blocked = !ctx.readable || !ctx.canCharges || l.count > 1 || !l.known || (etpMode && !ctx.fte);
-  const value = !l.charged
-    ? ''
-    : etpMode
-      ? ctx.fte
-        ? etpText(inputValue(l.heures, 'etp', ctx.fte), false)
-        : ''
-      : hoursFormat.format(l.heures);
+  // Sans période exploitable, aucune saisie (ETP comme h/semaine) : les heures stockées restent montrées (« = … au total »)
+  const blocked = !ctx.readable || !ctx.canCharges || l.count > 1 || !l.known || !ctx.fte;
+  const value = l.charged && ctx.fte ? inputText(inputValue(l.heures, st.chargesUnit, ctx.fte), st.chargesUnit) : '';
   const typed = st.chargeInputs.get(id);
   const err = st.chargeErrors.get(id);
   const unit = label(`form.charges.unit.${st.chargesUnit}`);
@@ -332,11 +326,19 @@ const NO_PERIOD_NOTICE = Object.freeze({
   noWorkday: 'form.charges.noWorkdays',
 });
 const NO_PERIOD_ERROR = Object.freeze({ order: 'dateOrder', noWorkday: 'noWorkdays' });
+/** Erreurs de saisie dont le texte change en h/semaine (clé suffixée « Hsem »). */
+const HSEM_ERRORS = new Set(['max', 'maxEstimation', 'decimale']);
 
-/** Équivalent de la saisie dans l'autre unité (« = 70 h » en ETP, « = 1,0 ETP » en heures). */
+/** Valeur d'une case de saisie : ETP (etpText) ou h/semaine à une décimale, sans séparateur de milliers. */
+const inputText = (v, unit) => (unit === 'hsem' ? hoursFormat.format(v) : etpText(v, false));
+
+/**
+ * Total d'heures d'une ligne, dans les deux unités (« = 26 h au total ») ; en h/semaine, avec la mention des congés
+ * et fériés déduits (la période est connue). Sans période, les heures stockées restent montrées.
+ */
 export function chargeEqText(st, heures, fte) {
-  if (st.chargesUnit === 'etp') return fte ? label('form.charges.eqHours', { h: hoursFormat.format(heures) }) : '';
-  return fte ? label('form.charges.eqEtp', { valeur: etpText(etpOf(heures, fte)) }) : label('form.charges.eqNone');
+  const key = st.chargesUnit === 'hsem' && fte ? 'form.charges.eqTotalHsem' : 'form.charges.eqTotal';
+  return label(key, { h: hoursFormat.format(heures) });
 }
 
 /**
@@ -352,20 +354,16 @@ function rowDelta(st, l, ctx) {
 /** Messages d'une ligne : saisie invalide, plafond, doublon à fusionner, personne absente, écart d'heures. */
 export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const err = st.chargeErrors.get(l.teamId);
-  const errKey =
-    err?.error === 'max' && !ctx.fte
-      ? ctx.period === 'noWorkday'
-        ? 'maxNoWorkdays'
-        : 'maxNoDates'
-      : err?.error === 'dates'
-        ? (NO_PERIOD_ERROR[ctx.period] ?? 'dates')
-        : err?.error;
+  const base = err?.error === 'dates' ? (NO_PERIOD_ERROR[ctx.period] ?? 'dates') : err?.error;
+  // Borne et décimales dites dans l'unité de saisie (h/semaine : 35, ou 50 × 35 pour l'estimation)
+  const errKey = st.chargesUnit === 'hsem' && HSEM_ERRORS.has(base) ? `${base}Hsem` : base;
   // Personne estimation (Team.aph) : borne de ESTIMATION_MAX_ETP au lieu de 1 ETP
   const estimation = isEstimationPerson(model, l.teamId);
   const max = ctx.fte ? maxHours(ctx.fte, estimation) : null;
   const over = ctx.fte && l.heures !== null && l.heures > max && !err;
   const etp = ESTIMATION_MAX_ETP;
-  return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0), etp })}</p>` : ''}${
+  const hsem = ESTIMATION_MAX_ETP * HOURS_PER_WEEK_FTE;
+  return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0), etp, hsem })}</p>` : ''}${
     over
       ? h`<p class="tf-warn">${label(estimation ? 'form.charges.overEstimation' : 'form.charges.over', { h: hoursFormat.format(max), etp })}</p>`
       : ''
@@ -434,7 +432,7 @@ export function peopleBlockHtml(st, model, opts = {}) {
   const err = Boolean(st.validation.errors.charges || st.validation.errors.assignees);
   const unitToggle = h`<fieldset class="fr-segmented fr-segmented--sm fr-segmented--no-legend tf-charges__unit">
       <legend class="fr-segmented__legend">${label('form.charges.unit')}</legend>
-      <div class="fr-segmented__elements">${['etp', 'heures'].map(
+      <div class="fr-segmented__elements">${['etp', 'hsem'].map(
         (u) => h`<div class="fr-segmented__element">
           <input type="radio" name="${p}-charges-unit" id="${p}-charges-unit-${u}" value="${u}" data-charges-unit ${chk(st.chargesUnit === u)}>
           <label class="fr-label" for="${p}-charges-unit-${u}">${label(`form.charges.unit.${u}`)}</label>
@@ -462,10 +460,10 @@ export function peopleBlockHtml(st, model, opts = {}) {
   return h`<section class="tf-field tf-charges tf-people ${raw(err ? 'fr-input-group--error' : '')}" id="${p}-people" data-field="charges" aria-labelledby="${p}-people-title">
     <div class="tf-charges__head">
       <h3 class="dt-section__title tf-charges__title" id="${p}-people-title" tabindex="-1">${label('form.field.people')}</h3>
-      <span class="tf-charges__tools">${readable ? unitToggle : ''}${infoTip(`tip-fte-${p}`, label('capacity.fte.about'), label('capacity.fte.help'))}</span>
+      <span class="tf-charges__tools">${readable ? unitToggle : ''}${infoTip(`tip-fte-${p}`, label('capacity.fte.about'), `${label('capacity.fte.help')} ${label('capacity.fte.helpHsem')}`)}</span>
     </div>
     <p class="fr-hint-text tf-hint">${opts.help ?? `${label('form.people.help')} ${label('form.charges.help')}`}</p>
-    ${readable && st.chargesUnit === 'etp' && !ctx.fte ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label(NO_PERIOD_NOTICE[ctx.period] ?? 'form.charges.noDates')}</p>` : ''}
+    ${readable && !ctx.fte ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label(NO_PERIOD_NOTICE[ctx.period] ?? 'form.charges.noDates')}</p>` : ''}
     ${lines.length ? h`<ul class="list tf-charges__rows" aria-labelledby="${p}-people-title">${lines.map((l) => personLineHtml(st, model, l, ctx))}</ul>` : h`<p class="tf-empty">${label('form.people.empty')}</p>`}
     ${invalid.map(
       (i) =>
