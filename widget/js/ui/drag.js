@@ -9,25 +9,35 @@ export const DRAG = Object.freeze({ mouse: 4, touch: 8, longPress: 400, edge: 32
 
 /** Durée pendant laquelle le clic qui suit un glisser est avalé (ms). */
 const CLICK_WINDOW = 100;
-/** Après Échap, le relâchement peut venir bien plus tard. */
-const CLICK_WINDOW_CANCEL = 3000;
+/** Après Échap pendant un glisser, le relâchement peut venir bien plus tard. */
+const RELEASE_WINDOW = 10000;
+
+/** Un seul geste à la fois (multi-touch, second appui). */
+let active = false;
 
 /** Côté du bord atteint par x dans box (zone DRAG.edge px), 0 sinon. Pure. */
 export function edgeSide(x, box, zone = DRAG.edge) {
   if (!box) return 0;
-  if (x >= box.right - zone) return 1;
-  if (x <= box.left + zone) return -1;
-  return 0;
+  const right = x >= box.right - zone;
+  const left = x <= box.left + zone;
+  if (right && left) {
+    // boîte étroite : le bord le plus proche l'emporte, égalité → 0
+    const dr = box.right - x;
+    const dl = x - box.left;
+    return dr < dl ? 1 : dl < dr ? -1 : 0;
+  }
+  return right ? 1 : left ? -1 : 0;
 }
 
-/** Avale le prochain clic (capture sur window), puis se retire (clic ou délai). */
-function swallowNextClick(win, ms) {
+/** Avale le prochain clic (capture sur window), puis se retire : clic, nouvel appui ou délai (le premier). */
+function swallowNextClick(win, ms = CLICK_WINDOW) {
   const ac = new AbortController();
   let timer = null;
   const end = () => {
     if (timer) clearTimeout(timer);
     ac.abort();
   };
+  win.addEventListener('pointerdown', end, { capture: true, signal: ac.signal });
   win.addEventListener(
     'click',
     (e) => {
@@ -38,6 +48,27 @@ function swallowNextClick(win, ms) {
     { capture: true, signal: ac.signal },
   );
   timer = setTimeout(end, ms);
+  timer?.unref?.();
+}
+
+/** Après Échap pendant un glisser : le clic qui suit le relâchement est avalé (jamais sans relâchement). */
+function swallowAfterRelease(win) {
+  const ac = new AbortController();
+  let timer = null;
+  const end = () => {
+    if (timer) clearTimeout(timer);
+    ac.abort();
+  };
+  win.addEventListener(
+    'pointerup',
+    () => {
+      end();
+      swallowNextClick(win);
+    },
+    { capture: true, signal: ac.signal },
+  );
+  win.addEventListener('pointerdown', end, { capture: true, signal: ac.signal });
+  timer = setTimeout(end, RELEASE_WINDOW);
   timer?.unref?.();
 }
 
@@ -53,6 +84,8 @@ function swallowNextClick(win, ms) {
  * @returns {{cancel(why:string):void}}
  */
 export function trackPointer(down, handlers) {
+  if (active) return { cancel() {} };
+  active = true;
   const win = handlers.win ?? globalThis.window;
   const root = (handlers.doc ?? globalThis.document)?.documentElement;
   const raf = handlers.raf ?? ((fn) => win.requestAnimationFrame(fn));
@@ -87,6 +120,7 @@ export function trackPointer(down, handlers) {
     if (prevTouchAction !== null && root) root.style.touchAction = prevTouchAction;
     prevTouchAction = null;
     ac.abort();
+    active = false;
   };
   const flush = () => {
     const e = pendingMove;
@@ -98,21 +132,24 @@ export function trackPointer(down, handlers) {
     queued = false;
     flush();
   };
-  const cancel = (why, e) => {
+  const cancel = (why) => {
     if (done) return;
     const was = dragging;
     finish();
     if (was) {
       handlers.onCancel(why);
-      swallowNextClick(win, CLICK_WINDOW_CANCEL);
+      if (why === 'escape') swallowAfterRelease(win);
     }
-    void e;
   };
   const mine = (e) => e.pointerId === down.pointerId;
   const scheduleEdge = (side) => {
     edgeTimer = setTimeout(() => {
       if (done || edgeNow !== side) return;
-      handlers.onEdge?.(side);
+      try {
+        handlers.onEdge?.(side);
+      } catch (err) {
+        console.error(err); // la chaîne continue : une erreur d'un appel ne coupe pas le défilement
+      }
       scheduleEdge(side);
     }, DRAG.edgeDelay);
   };
@@ -127,16 +164,26 @@ export function trackPointer(down, handlers) {
   win.addEventListener(
     'keydown',
     (e) => {
-      if (e.key === 'Escape') cancel('escape', e);
+      if (e.key !== 'Escape') return;
+      if (dragging) {
+        // l'Échap du glisser n'atteint ni le panneau, ni le popover, ni la boîte de dialogue
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+      cancel('escape');
     },
     { ...opts, capture: true },
   );
-  win.addEventListener('pointercancel', (e) => mine(e) && cancel('cancel', e), opts);
-  win.addEventListener('blur', (e) => cancel('cancel', e), opts);
+  win.addEventListener('pointercancel', (e) => mine(e) && cancel('cancel'), opts);
+  win.addEventListener('blur', () => cancel('cancel'), opts);
   win.addEventListener(
     'pointermove',
     (e) => {
       if (done || !mine(e)) return;
+      if (e.pointerType === 'mouse' && e.buttons === 0) {
+        cancel('cancel'); // relâchement manqué (hors de la fenêtre)
+        return;
+      }
       if (!dragging) {
         const far = Math.hypot(e.clientX - x0, e.clientY - y0) >= threshold;
         if (!armed) {
@@ -171,16 +218,24 @@ export function trackPointer(down, handlers) {
       flush();
       finish();
       handlers.onDrop(e);
-      swallowNextClick(win, CLICK_WINDOW);
+      swallowNextClick(win);
     },
     opts,
   );
 
+  try {
+    down.target?.setPointerCapture?.(down.pointerId);
+  } catch {
+    /* pointeur déjà relâché : sans importance */
+  }
   if (touch) {
+    win.addEventListener('contextmenu', (e) => e.preventDefault(), { ...opts, capture: true });
     longTimer = setTimeout(() => {
       longTimer = null;
       if (done) return;
       armed = true;
+      // touch-action est lu au début du toucher : touchmove non passif pour que le navigateur ne défile pas
+      win.addEventListener('touchmove', (e) => e.preventDefault(), { ...opts, passive: false });
       if (root) {
         prevTouchAction = root.style.touchAction ?? '';
         root.style.touchAction = 'none';
