@@ -171,6 +171,22 @@ test('onStart rend false : geste refusé, plus rien, clic non avalé', () => {
   assert.equal(s.win.emit('click').defaultPrevented, false);
 });
 
+test('après un dépôt : un clic du clavier (detail 0) passe, une touche termine la fenêtre du clic avalé', () => {
+  const s = setup();
+  trackPointer(down(), s.handlers);
+  s.win.emit('pointermove', { clientX: 110 });
+  s.win.emit('pointerup', { clientX: 110 });
+  const kbd = s.win.emit('click', { detail: 0 });
+  assert.equal(kbd.defaultPrevented, false, 'Entrée sur le bouton focalisé : clic gardé');
+  assert.equal(s.win.emit('click', { detail: 1 }).defaultPrevented, true, 'le clic du pointeur reste avalé');
+  trackPointer(down(), s.handlers);
+  s.win.emit('pointermove', { clientX: 110 });
+  s.win.emit('pointerup', { clientX: 110 });
+  s.win.emit('keydown', { key: 'Enter' });
+  assert.equal(s.win.emit('click', { detail: 1 }).defaultPrevented, false, 'touche : fenêtre terminée');
+  assert.equal(s.win.list.length, 0);
+});
+
 test('Échap pendant le geste : onCancel("escape"), pas de onDrop, plus d’écouteur', () => {
   const s = setup();
   trackPointer(down(), s.handlers);
@@ -178,7 +194,7 @@ test('Échap pendant le geste : onCancel("escape"), pas de onDrop, plus d’éco
   s.win.emit('keydown', { key: 'Escape' });
   s.win.emit('pointerup');
   assert.deepEqual(s.calls, [['start'], ['cancel', 'escape']]);
-  assert.deepEqual(types(s), ['click', 'pointerdown']); // seul le clic à avaler reste
+  assert.deepEqual(types(s), ['click', 'keydown', 'pointerdown']); // seul le clic à avaler reste
 });
 
 test('Échap pendant un glisser : écouteur capture de kit.js (stopPropagation) n’empêche pas l’annulation', () => {
@@ -309,7 +325,7 @@ test('doigt : immobile 400 ms puis mouvement : onStart, touch-action none puis r
   assert.deepEqual(s.calls, [['start']]);
   s.win.emit('pointerup', { pointerType: 'touch' });
   assert.equal(s.doc.documentElement.style.touchAction, 'pan-y');
-  assert.deepEqual(types(s), ['click', 'pointerdown']);
+  assert.deepEqual(types(s), ['click', 'keydown', 'pointerdown']);
 });
 
 test('doigt : relâché après l’appui long sans bouger : rien, touch-action restauré', (t) => {

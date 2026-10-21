@@ -5818,8 +5818,6 @@ test('kanban chantier : chantier à deux projets → la fenêtre demande le proj
   );
   assert.equal(options.length, 2, 'le chantier apparaît sous chacun de ses deux projets');
   await change('#cf-cible', options[1]);
-  // Le clic qui suit un glisser est avalé pendant 100 ms (ui/drag.js) : le choix du projet laisse ce délai
-  await sleep(150);
   await clickOn('#cf-submit');
   await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
   assert.deepEqual((await writes())[0][0], ['UpdateRecord', 'Tasks', t.id, { Chantier: goal, projet: two[1] }]);

@@ -29,7 +29,11 @@ export function edgeSide(x, box, zone = DRAG.edge) {
   return right ? 1 : left ? -1 : 0;
 }
 
-/** Avale le prochain clic (capture sur window), puis se retire : clic, nouvel appui ou délai (le premier). */
+/**
+ * Avale le prochain clic de pointeur (capture sur window), puis se retire : clic, nouvel appui, touche ou délai (le
+ * premier). Un clic du clavier ou d'un script (detail 0, ex. Entrée sur le bouton d'une fenêtre ouverte par le dépôt)
+ * passe toujours.
+ */
 function swallowNextClick(win, ms = CLICK_WINDOW) {
   const ac = new AbortController();
   let timer = null;
@@ -38,9 +42,11 @@ function swallowNextClick(win, ms = CLICK_WINDOW) {
     ac.abort();
   };
   win.addEventListener('pointerdown', end, { capture: true, signal: ac.signal });
+  win.addEventListener('keydown', end, { capture: true, signal: ac.signal });
   win.addEventListener(
     'click',
     (e) => {
+      if (e.detail === 0) return;
       e.preventDefault();
       e.stopImmediatePropagation?.();
       end();
