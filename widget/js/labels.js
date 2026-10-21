@@ -291,6 +291,7 @@ const FR = Object.freeze({
   'gantt.drag.notLate': 'Ne sera plus en retard',
   'gantt.drag.grab': '{titre} saisie',
   'gantt.drag.changed': 'Les dates ont changé pendant le déplacement : rien n’est enregistré.',
+  'gantt.drag.off': 'Édition fermée : le déplacement est annulé.',
   'gantt.drag.saving': 'Enregistrement…',
   'gantt.key.enter':
     'Du {debut} au {fin}. Flèches : {pas} ; Maj+flèches : un jour. Entrée pour enregistrer, Échap pour annuler, Retour arrière pour revenir aux dates d’origine.',

@@ -4966,3 +4966,26 @@ test(
     assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), true);
   },
 );
+
+test(
+  'gantt : édition coupée pendant le mode clavier → déplacement annulé avec un message',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    await focusTaskRow(task.id);
+    await hit('d');
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    // Arrêt d'urgence relu avec une modification faite ailleurs (nouveau rendu de la vue)
+    await w(
+      `W.__coupe = true; W.grist.__simulateChange(['UpdateRecord', 'Tasks', ${task.id}, { description: 'ailleurs' }]); return true;`,
+    );
+    await until(
+      `/Édition fermée : le déplacement est annulé/.test(D.querySelector('.gantt__notice')?.textContent ?? '')`,
+    );
+    assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), true);
+    await hit('Enter');
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);

@@ -96,7 +96,15 @@ const memory = {
   saving: null,
   dragView: null,
   liveTimer: null,
+  notice: null,
 };
+/** Durée pendant laquelle le message d'un geste annulé survit aux nouveaux rendus (ms). */
+const NOTICE_MS = 5000;
+/** Message d'un geste annulé, gardé en mémoire pour les rendus qui suivent. */
+function dragNotice(text) {
+  memory.notice = { text, until: Date.now() + NOTICE_MS };
+  return text;
+}
 /** Écouteurs focusin / focusout par conteneur, pour ne jamais les empiler. */
 const listeners = new WeakMap();
 
@@ -449,7 +457,8 @@ export function render(el, ctx) {
     labelWidth: memory.drag ? memory.drag.last : Number.isFinite(saved.ganttLabelWidth) ? saved.ganttLabelWidth : null,
     /** Ligne qui porte le focus itinérant (seul arrêt de tabulation de l'arbre). */
     focusKey: null,
-    notice: '',
+    // Message d'un geste annulé à un rendu : gardé quelques secondes (la relecture peut redessiner deux fois)
+    notice: memory.notice && memory.notice.until > Date.now() ? memory.notice.text : '',
     busy: false,
   };
   let rows = [];
@@ -528,10 +537,15 @@ export function render(el, ctx) {
     if (focusIndex < 0) focusIndex = 0;
     // Glisser en cours pendant ce rendu (relecture, période changée au bord) : ligne retrouvée par sa clé
     const g = memory.gesture;
-    const resume = g ? (isList ? { ok: false, reason: 'list' } : reattachDrag(g, rows)) : null;
+    // Édition fermée ou session verrouillée pendant le geste : il ne peut plus rien enregistrer
+    if (g && !ctx.dates) {
+      st.notice = dragNotice(label('gantt.drag.off'));
+      abortGesture('edit');
+    }
+    const resume = memory.gesture ? (isList ? { ok: false, reason: 'list' } : reattachDrag(g, rows)) : null;
     if (resume && !resume.ok) {
       // Liste chronologique (fenêtre étroite) : pas de barres, geste annulé sans message
-      if (resume.reason !== 'list') st.notice = label('gantt.drag.changed');
+      if (resume.reason !== 'list') st.notice = dragNotice(label('gantt.drag.changed'));
       abortGesture(resume.reason);
     }
     const n = isList ? items.length : rows.length;
@@ -665,7 +679,7 @@ export function render(el, ctx) {
     if (ok === false) abortGesture('gone');
     if (memory.gesture === g) return;
     // Geste perdu au rattachement : même message qu'une ligne disparue (un rendu de plus, sans geste)
-    st.notice = label('gantt.drag.changed');
+    st.notice = dragNotice(label('gantt.drag.changed'));
     paint();
   }
 
@@ -729,10 +743,14 @@ export function render(el, ctx) {
   el.addEventListener(
     'focusout',
     (e) => {
-      // Focus sorti de la ligne pendant le mode clavier (clic ailleurs, autre fenêtre) : déplacement annulé
+      // Focus sorti de la ligne pendant le mode clavier (clic ailleurs, autre fenêtre) : déplacement annulé. Vérifié
+      // après le rendu en cours : une relecture remplace la vue puis rend le focus à la ligne (#gr-<clé>)
       const g = memory.gesture;
       if (g?.keyboard && !painting && !e.relatedTarget?.closest?.(`[id="gr-${CSS.escape(g.key)}"]`)) {
-        memory.dragView?.key({ key: 'Escape' });
+        queueMicrotask(() => {
+          if (memory.gesture === g && document.activeElement?.id !== `gr-${g.key}`)
+            memory.dragView?.key({ key: 'Escape' });
+        });
         return;
       }
       if (g) return;
@@ -978,11 +996,17 @@ export function render(el, ctx) {
     // Même jour sous le pointeur qu'au début du geste
     g.startX = g.trackLeft + (g.grabDay - g.scaleStart) * g.pxPerDay;
     rowEl.querySelector('[data-drag]')?.classList.add(g.target.milestone ? 'gms--origin' : 'gbar--origin');
-    g.watch?.abort();
-    g.watch = new AbortController();
-    const opts = { passive: true, signal: g.watch.signal };
-    sc.addEventListener('scroll', () => guard(() => followScroll(g, sc)), opts);
-    window.addEventListener('scroll', () => guard(() => followPage(g)), opts);
+    // Écouteurs posés une fois par geste (la frise, remplacée à chaque rendu, seulement quand elle change)
+    if (g.watchedScroll !== sc) {
+      g.watch?.abort();
+      g.watch = new AbortController();
+      g.watchedScroll = sc;
+      sc.addEventListener('scroll', () => guard(() => followScroll(g, sc)), { passive: true, signal: g.watch.signal });
+    }
+    if (!g.watchPage) {
+      g.watchPage = new AbortController();
+      window.addEventListener('scroll', () => followPage(g), { passive: true, signal: g.watchPage.signal });
+    }
     return true;
   }
 
@@ -1011,10 +1035,17 @@ export function render(el, ctx) {
    * nouveau rendu : géométrie relue (hors de la boucle des mouvements), même jour sous le pointeur.
    */
   function followPage(g) {
-    if (memory.gesture !== g || (window.scrollX === g.winX && window.scrollY === g.winY)) return;
-    const index = rows.findIndex((r) => r.key === g.key);
-    if (index < 0 || !measure(g, index)) return void abortGesture('gone');
-    refresh(g);
+    if (g.pageFrame) return; // une relecture par image au plus
+    g.pageFrame = requestAnimationFrame(() => {
+      g.pageFrame = 0;
+      if (memory.gesture !== g || (window.scrollX === g.winX && window.scrollY === g.winY)) return;
+      const index = rows.findIndex((r) => r.key === g.key);
+      if (index < 0) return void abortGesture('gone');
+      guard(() => {
+        if (!measure(g, index)) return void abortGesture('gone');
+        refresh(g);
+      });
+    });
   }
 
   /** Fantôme à la période g.now, coupé à la frise visible (transform et largeur, aucune lecture). */
@@ -1097,11 +1128,18 @@ export function render(el, ctx) {
       b.classList.remove('gbar--origin', 'gms--origin');
   }
 
+  /** Écouteurs de défilement et image en attente d'un geste retirés. */
+  function unwatch(g) {
+    g?.watch?.abort();
+    g?.watchPage?.abort();
+    if (g?.pageFrame) cancelAnimationFrame(g.pageFrame);
+  }
+
   /** Fin du geste (dépôt, annulation, erreur) : plus de geste en mémoire, suivi des défilements retiré. */
   function stopGesture() {
     const g = memory.gesture;
     memory.gesture = null;
-    g?.watch?.abort();
+    unwatch(g);
     document.documentElement.classList.remove('is-grabbing');
     dragClear();
     return g;
@@ -1259,7 +1297,7 @@ export function render(el, ctx) {
         // Geste en mémoire seulement une fois le premier affichage réussi
         memory.gesture = g;
       } catch (err) {
-        g?.watch?.abort();
+        unwatch(g);
         dragClear();
         console.error(err);
         return false;
@@ -1337,7 +1375,7 @@ export function render(el, ctx) {
         return true;
       });
       if (!shown) {
-        g.watch?.abort();
+        unwatch(g);
         dragClear();
         return;
       }
