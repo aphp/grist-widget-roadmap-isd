@@ -720,6 +720,11 @@
 .gbar--origin > .gbar__text {
   visibility: hidden;
 }
+/* Pendant le geste : main fermée partout (le fantôme ne reçoit pas le pointeur) */
+.is-grabbing,
+.is-grabbing * {
+  cursor: grabbing !important;
+}
 /* Fantôme : position fixe hors du flux de la grille, placé par transform (views/gantt.js) */
 .gghost {
   position: fixed;
@@ -733,7 +738,6 @@
     0 0 0 4px var(--color-focus),
     var(--shadow-3);
   pointer-events: none;
-  cursor: grabbing;
   will-change: transform;
 }
 .gghost[hidden] {
@@ -769,7 +773,11 @@
 /* Enregistrement en cours : barre à sa nouvelle place, hachures légères */
 .gantt .gbar.is-saving,
 .gantt .gms.is-saving {
-  background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.45) 0 3px, transparent 3px 7px);
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-surface) 55%, transparent) 0 3px,
+    transparent 3px 7px
+  );
   cursor: progress;
 }
 /* « Ajouter des dates » : le texte « Pas de dates » devient un lien qui ouvre la fiche */
@@ -987,6 +995,11 @@ button.glist__title:focus-visible {
   }
 }
 @media (forced-colors: active) {
+  .gantt .gbar.is-saving,
+  .gantt .gms.is-saving {
+    outline: 2px dashed CanvasText;
+    outline-offset: 1px;
+  }
   .gghost,
   .gghost--ms::before {
     outline: 2px solid Highlight;

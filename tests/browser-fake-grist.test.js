@@ -4211,3 +4211,158 @@ test(
     assert.equal(await w(`return D.getElementById('tf-dateCloture').value;`), '');
   },
 );
+
+/**
+ * Vue Gantt rendue seule dans la page hôte (même origine, instance de modules distincte de celle du widget), sur
+ * les données du faux Grist, avec un ctx.dates simulé : droit de glisser réel (dragTarget), enregistrement noté
+ * dans window.__saves (l'enregistrement réel arrive avec le lot suivant).
+ */
+async function ganttView() {
+  await open('');
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  const top = async (body) => {
+    const r = await send('Runtime.evaluate', {
+      expression: `(async () => { ${body} })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails.exception?.description));
+    return r.result?.result?.value;
+  };
+  await top(`
+    const css = ['vendor/dsfr/dsfr.min.css', 'css/tokens.css', 'css/components.css', 'css/gantt.css'];
+    await Promise.all(css.map((href) => new Promise((ok) => {
+      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '/' + href; l.onload = ok; document.head.append(l);
+    })));
+    const W = document.getElementById('w').contentWindow;
+    const [{ createGateway }, { buildModel }, view, { dragTarget }, { label }] = await Promise.all([
+      import('/js/core/grist-gateway.js'), import('/js/core/model.js'), import('/js/views/gantt.js'),
+      import('/js/core/gantt-drag.js'), import('/js/labels.js')]);
+    const model = buildModel(await createGateway(W.grist).fetchAll());
+    document.getElementById('w').style.display = 'none';
+    const el = document.createElement('div');
+    el.id = 'gv';
+    el.style.cssText = 'position:fixed;inset:0;overflow:auto;padding:16px;background:#fff';
+    document.body.append(el);
+    window.__saves = [];
+    window.__model = model;
+    const edit = { mode: 'on', canEdit: true, reason: 'ok' };
+    const writer = { can: () => ({ ok: true }) };
+    const ctx = {
+      model, view: { tree: model.tree }, prefs: { ganttLevel: 'tache', ganttScale: 'month' },
+      today: Math.floor(Date.now() / 86400000), label, setPrefs() {}, openDetail() {},
+      dates: {
+        target: (n) => dragTarget(model, n, { edit, writer, narrow: false }),
+        save: async (a) => { window.__saves.push(a); return 'saved'; },
+      },
+    };
+    view.render(el, ctx);
+    return true;`);
+  /** Barre glissable visible (pleine, assez large), la plus haute ou la plus basse de la frise. */
+  const bar = (where = 'top') =>
+    top(`const sc = document.querySelector('.gantt__scroll').getBoundingClientRect();
+      const lab = document.querySelector('.grow__label').getBoundingClientRect();
+      const ok = [...document.querySelectorAll('.gbar.gbar--draggable')].filter((b) => {
+        const r = b.getBoundingClientRect();
+        return r.height > 10 && r.width > 30 && r.left > lab.right + 5 && r.right < sc.right - 150 && r.top > sc.top + 120 && r.bottom < sc.bottom - 10;
+      });
+      const b = ${where === 'top' ? 'ok[0]' : 'ok.at(-1)'};
+      const r = b.getBoundingClientRect();
+      return { x: r.left + 10, y: r.top + r.height / 2, row: b.closest('.grow').id, task: Number(b.closest('.grow').id.match(/T(\\d+)$/)?.[1] ?? 0) };`);
+  const mouse = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', ...extra });
+  const state = () =>
+    top(`const g = document.getElementById('gantt-ghost'); const t = document.getElementById('gantt-tip');
+      return { ghost: !g.hidden, grabbing: document.documentElement.classList.contains('is-grabbing'),
+        origin: document.querySelectorAll('.gbar--origin, .gms--origin').length, saves: window.__saves.length,
+        tip: !t.hidden, bottom: t.style.bottom, ghostTop: g.getBoundingClientRect().top };`);
+  return { top, bar, mouse, state };
+}
+
+test(
+  'gantt (vue, ctx.dates simulé) : glisser, résumé qui lève, défilement pendant le geste, infobulle remise',
+  { skip: SKIP },
+  async () => {
+    const { top, bar, mouse, state } = await ganttView();
+    await until(`true`);
+    // Glisser simple : un enregistrement, plus de geste
+    let b = await bar();
+    await mouse('mousePressed', b.x, b.y, { clickCount: 1, buttons: 1 });
+    for (const dx of [10, 40, 80]) await mouse('mouseMoved', b.x + dx, b.y, { buttons: 1 });
+    await sleep(80);
+    let s = await state();
+    assert.equal(s.ghost, true);
+    assert.equal(s.grabbing, true);
+    assert.equal(s.origin, 1);
+    await mouse('mouseReleased', b.x + 80, b.y, { clickCount: 1 });
+    await sleep(80);
+    s = await state();
+    assert.deepEqual([s.saves, s.ghost, s.grabbing, s.origin], [1, false, false, 0]);
+    const first = await top(`return window.__saves[0];`);
+    assert.ok(first.next.start > first.seen.start);
+
+    // Résumé de l'infobulle qui lève pendant le geste : geste annulé, vue toujours utilisable
+    b = await bar();
+    await top(`const t = window.__model.tasks.get(${b.task}); const end = t.end;
+      Object.defineProperty(t, 'end', { configurable: true, get() { if (window.__boom) { window.__boomHits = (window.__boomHits ?? 0) + 1; throw new Error('boum'); } return end; } });
+      return true;`);
+    await mouse('mousePressed', b.x, b.y, { clickCount: 1, buttons: 1 });
+    await mouse('mouseMoved', b.x + 10, b.y, { buttons: 1 });
+    await sleep(50);
+    assert.equal((await state()).ghost, true);
+    await top(`window.__boom = true; return true;`);
+    await mouse('mouseMoved', b.x + 90, b.y, { buttons: 1 });
+    await sleep(80);
+    s = await state();
+    assert.deepEqual([s.ghost, s.grabbing, s.origin], [false, false, 0]);
+    assert.ok(await top(`return window.__boomHits > 0;`), 'le résumé a bien levé');
+    await mouse('mouseReleased', b.x + 90, b.y, { clickCount: 1 });
+    await top(`window.__boom = false; return true;`);
+    await sleep(150);
+    assert.equal((await state()).saves, 1);
+    // Nouveau geste sur la même barre : enregistré
+    await mouse('mousePressed', b.x, b.y, { clickCount: 1, buttons: 1 });
+    for (const dx of [10, 50, 90]) await mouse('mouseMoved', b.x + dx, b.y, { buttons: 1 });
+    await sleep(50);
+    await mouse('mouseReleased', b.x + 90, b.y, { clickCount: 1 });
+    await sleep(80);
+    assert.equal((await state()).saves, 2);
+
+    // Défilement vertical de la frise pendant le geste : fantôme sur sa ligne, dépôt sur la ligne déplacée
+    b = await bar();
+    await mouse('mousePressed', b.x, b.y, { clickCount: 1, buttons: 1 });
+    await mouse('mouseMoved', b.x + 10, b.y, { buttons: 1 });
+    await sleep(50);
+    await top(`document.querySelector('.gantt__scroll').scrollTop += 64; return true;`);
+    await mouse('mouseMoved', b.x + 60, b.y - 64, { buttons: 1 });
+    await sleep(80);
+    const rowTop = await top(
+      `return document.getElementById(${JSON.stringify(b.row)}).querySelector('.gbar').getBoundingClientRect().top;`,
+    );
+    s = await state();
+    assert.equal(s.ghost, true);
+    assert.ok(Math.abs(s.ghostTop - rowTop) < 1.5, `fantôme ${s.ghostTop} / barre ${rowTop}`);
+    await mouse('mouseReleased', b.x + 60, b.y - 64, { clickCount: 1 });
+    await sleep(80);
+    assert.equal((await state()).saves, 3);
+    await top(`document.querySelector('.gantt__scroll').scrollTop = 0; return true;`);
+
+    // Infobulle placée au-dessus pendant le geste (bas de l'écran) puis Échap : l'infobulle de survol n'en garde rien
+    b = await bar('bottom');
+    await mouse('mousePressed', b.x, b.y, { clickCount: 1, buttons: 1 });
+    for (const dx of [10, 40]) await mouse('mouseMoved', b.x + dx, b.y, { buttons: 1 });
+    await sleep(50);
+    const during = await state();
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await mouse('mouseReleased', b.x + 40, b.y, { clickCount: 1 });
+    await sleep(80);
+    s = await state();
+    assert.deepEqual([s.saves, s.ghost, s.bottom], [3, false, '']);
+    await top(`document.querySelector('.gbar.gbar--draggable').focus(); return true;`);
+    s = await state();
+    assert.deepEqual([s.tip, s.bottom], [true, '']);
+    assert.ok(during.tip);
+    assert.notEqual(during.bottom, '', 'infobulle placée au-dessus pendant le geste');
+    await send('Emulation.setFocusEmulationEnabled', { enabled: false });
+  },
+);
