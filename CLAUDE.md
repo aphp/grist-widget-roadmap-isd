@@ -33,8 +33,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
 - **Contrôle strict dans le writer** avant tout envoi : obligatoires, références existantes, hiérarchie cohérente
   (sous-tâches qui suivent, pas de cycle), dates ordonnées, dates de planification ≤ 31/12 de l'année suivante
   (`date-max`, colonnes écrites seulement, « Annuler » exempt), périmètre ISD, relecture des lignes avant l'envoi,
-  « Annuler » d'une tâche : dates et `charges` écrites ensemble remises ensemble ou pas du tout (une cellule changée
-  ailleurs → aucune des trois), fusion par champ, pour `charges` par personne et, pour `tags`, en multi-ensemble (ajouts et retraits de chacun).
+  « Annuler » : dates et `charges` d'une tâche (`Debut` et `Fin` d'un chantier) écrites ensemble remises ensemble ou
+  pas du tout (une cellule changée ailleurs → aucune), fusion par champ, pour `charges` par personne et, pour `tags`,
+  en multi-ensemble (ajouts et retraits de chacun).
   Colonnes formules (dont formule vide, ex. `Team.capaciteHebdo`, `Team.aph`) jamais écrites. Team : `nom`,
   `email`, `aph` (1 à 10 chiffres ou vide, `validAph` ; colonne Text ou Int, `ALSO_ACCEPTED_TYPES` : lue en texte par
   `aphText`, 0 = vide, écrite selon son type relu, nombre pour Int sans zéro de tête ; Numeric refusée), `role`, `capaciteHebdo`, `actif`, `n_1` ; `Domaine`
@@ -104,8 +105,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   équipe ISD, statut depuis la carte et la ligne (`core/quick-status.js`, `ui/status-popover.js` ; écriture par le statut rapide de
   `ui/task-editor.js` ; Kanban : bouton ⋯ hors du focus itinérant, « S » ou Maj+F10 sur la carte), tags affectés et
   retirés (lot 2e, `core/tags-edit.js`), suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide ;
-  `core/delete-plan.js` pour la fenêtre, `remove` du writer sur les tables relues, « Annuler » au même identifiant), glisser-déposer du Gantt (lot A : souris, doigt, mode clavier D, menu de ligne ; `core/gantt-drag.js`,
-  `ui/drag.js`, `saveDates` / `runDates`).
+  `core/delete-plan.js` pour la fenêtre, `remove` du writer sur les tables relues, « Annuler » au même identifiant), glisser-déposer
+  du Gantt (lot A : souris, doigt, mode clavier D, menu de ligne ; `core/gantt-drag.js`, `ui/drag.js`, `saveDates` /
+  `runDates` ; charges illisibles ou en double et capacité changée → refus `charges-illisibles`).
 - **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
   Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
   (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
