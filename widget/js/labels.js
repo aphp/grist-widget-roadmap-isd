@@ -282,6 +282,7 @@ const FR = Object.freeze({
   'gantt.drag.range': '{debut} → {fin} ({n} j)',
   'gantt.drag.delta': '{signe}{n} j',
   'gantt.drag.hours': 'Heures {avant} h → {apres} h (ETP conservé)',
+  'gantt.drag.hours.others': 'Heures {avant} h → {apres} h (ETP conservé pour les autres charges)',
   'gantt.drag.keptOver.one': '⚠ 1 charge laissée telle quelle (au-dessus de la borne)',
   'gantt.drag.keptOver.many': '⚠ {n} charges laissées telles quelles (au-dessus de la borne)',
   'gantt.drag.subtasksOut.one': '1 sous-tâche hors de la nouvelle période',

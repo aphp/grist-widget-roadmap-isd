@@ -455,6 +455,9 @@ function linesHtml(scale, today) {
  */
 export function render(el, ctx) {
   const gen = ++memory.generation;
+  // Barre choisie au doigt : oubliée à chaque rendu de la vue (enregistrement relu, autre onglet, édition fermée) ;
+  // les nouveaux dessins d'un même rendu (échelle, dépliage) la gardent
+  memory.touchSel = null;
   const saved = ctx.prefs ?? {};
   // Arbre affiché : toujours trié par date, une fois par rendu (copies : l'arbre du modèle reste intact)
   const tree = sortTreeByDate(ctx.view.tree);
@@ -1309,6 +1312,7 @@ export function render(el, ctx) {
     if (!ctx.dates || (g.now.start === g.from.start && g.now.end === g.from.end)) return;
     const saving = { key: g.key, now: g.now };
     memory.saving = saving;
+    memory.touchSel = null;
     let pending;
     try {
       paint();
@@ -1560,7 +1564,8 @@ export function render(el, ctx) {
     let handle = null;
     handle = trackPointer(e, {
       immediate: picked,
-      onArm: touch && !picked ? () => memory.dragView?.select(key) : undefined,
+      // Seule une barre s'étire : un jalon n'est jamais choisi (son appui long reste un glisser)
+      onArm: touch && !picked && bar.classList.contains('gbar') ? () => memory.dragView?.select(key) : undefined,
       onStart: () => memory.dragView?.begin(key, e, handle, edge) ?? false,
       onMove: (m) => memory.dragView?.move(m),
       onDrop: (m) => memory.dragView?.drop(m),

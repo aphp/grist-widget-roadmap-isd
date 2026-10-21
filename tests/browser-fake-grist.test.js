@@ -5180,3 +5180,70 @@ test(
     assert.ok(cells.dateEcheance > secOf('2026-06-14'));
   },
 );
+
+/** Tâche chargée du 1er au 14 juin, poignée d'échéance prête : id, personne, charges écrites. */
+async function chargedTaskWithGrip(charges) {
+  const task = await draggableTaskWithPeople();
+  const cell = charges ?? JSON.stringify([{ teamId: task.person, heures: 35 }]);
+  await remoteChange([
+    'UpdateRecord',
+    'Tasks',
+    task.id,
+    { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges: cell },
+  ]);
+  await until(
+    `[...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${task.id}'))?.querySelector('.gbar__grip--end')`,
+  );
+  return { ...task, charges: cell };
+}
+
+test('gantt : étirer l’échéance puis « Annuler » → dates et charges d’avant ensemble', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const task = await chargedTaskWithGrip();
+  await mouseDrag(await gripOf(task.id, 'end'), 90);
+  await until(`W.__writes.length === 1`, 8000);
+  assert.deepEqual(Object.keys(await w(`return W.__writes[0].args[0][0][3];`)).sort(), ['charges', 'dateEcheance']);
+  await until(`D.querySelector('.toast [data-toast-action]')`);
+  await clickOn('.toast [data-toast-action]');
+  await until(`W.__writes.length === 2`, 8000);
+  const undo = await w(`return W.__writes[1].args[0][0][3];`);
+  assert.deepEqual(undo, { dateEcheance: secOf('2026-06-14'), charges: task.charges });
+});
+
+test(
+  'gantt : étirement refusé (charges illisibles) → rien n’est écrit, message, barre à sa place',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await chargedTaskWithGrip('pas du JSON');
+    await mouseDrag(await gripOf(task.id, 'end'), 90);
+    await until(
+      `/doivent être corrigées dans la fiche/.test(D.querySelector('.toast__text')?.textContent ?? '')`,
+      8000,
+    );
+    await until(`!D.querySelector('.is-saving')`);
+    await sleep(200);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    assert.deepEqual(await taskCells(task.id), { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14') });
+  },
+);
+
+test('gantt : au doigt, l’appui long sur un jalon ne le choisit pas (pas de poignée)', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const task = await draggableTaskWithPeople();
+  await remoteChange([
+    'UpdateRecord',
+    'Tasks',
+    task.id,
+    { type: 'jalon', dateDebut: secOf('2026-06-10'), dateEcheance: secOf('2026-06-10') },
+  ]);
+  const rowOf = `[...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${task.id}'))`;
+  await until(`${rowOf}?.querySelector('.gms[data-drag]')`);
+  const at = await dragMark(task.id);
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+  await sleep(600);
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(300);
+  assert.equal(await w(`return D.querySelectorAll('.is-touch-selected').length;`), 0);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+});

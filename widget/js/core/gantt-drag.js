@@ -193,14 +193,18 @@ export function dragContext(model, target, from) {
   };
 }
 
-/** Heures de Tasks.charges avant et après le recalcul à ETP constant, ou null (pas de charges, capacité égale). */
+/**
+ * Heures de Tasks.charges avant et après le recalcul à ETP constant, ou null (pas de charges, capacité égale, ou
+ * total inchangé : toutes les entrées laissées telles quelles).
+ */
 function hoursEffect(model, ctx, to) {
   const toFte = periodFte(to.start, to.end);
   if (!ctx.raw || !ctx.fromFte || !toFte || toFte === ctx.fromFte) return { hours: null, keptOver: [] };
   const bound = chargeMaxOf(model);
   const maxOf = (teamId) => bound(teamId, toFte);
   const r = rescaleCharges(ctx.raw, ctx.refs, toFte, { maxOf });
-  return { hours: { from: ctx.fromHours, to: sumHours(r.raw) }, keptOver: r.over };
+  const total = sumHours(r.raw);
+  return { hours: total === ctx.fromHours ? null : { from: ctx.fromHours, to: total }, keptOver: r.over };
 }
 
 /**
@@ -215,7 +219,8 @@ function hoursEffect(model, ctx, to) {
  * @param {ReturnType<typeof dragContext>} [ctx]
  * @returns {{start:number, end:number, days:number, delta:number, hours:{from:number, to:number}|null,
  *   keptOver:number[], childrenOutside:number, childKind:'sous-tache'|'tache', lateCleared:boolean}}
- *   days : jours calendaires ; hours : null sans charges ou si la capacité standard ne change pas ; keptOver :
+ *   days : jours calendaires ; hours : null sans charges, si la capacité standard ne change pas ou si le total
+ *   d'heures reste le même (toutes les entrées laissées telles quelles) ; keptOver :
  *   personnes dont l'entrée dépasse la borne et reste telle quelle ; childrenOutside : enfants dont une date
  *   propre sort de `to` (même ceux qui en sortaient déjà)
  */
@@ -255,7 +260,14 @@ export function summaryText(s, mode) {
   ];
   if (mode === 'move' && s.delta !== 0)
     lines.push(label('gantt.drag.delta', { signe: s.delta > 0 ? '+' : '−', n: Math.abs(s.delta) }));
-  if (s.hours) lines.push(label('gantt.drag.hours', { avant: fr(s.hours.from), apres: fr(s.hours.to) }));
+  // Charges laissées telles quelles : l'ETP n'est conservé que pour les autres (alerte ⚠ à part)
+  if (s.hours)
+    lines.push(
+      label(s.keptOver.length ? 'gantt.drag.hours.others' : 'gantt.drag.hours', {
+        avant: fr(s.hours.from),
+        apres: fr(s.hours.to),
+      }),
+    );
   if (s.keptOver.length) lines.push(plural('gantt.drag.keptOver', s.keptOver.length));
   if (s.childrenOutside)
     lines.push(plural(s.childKind === 'tache' ? 'gantt.drag.tasksOut' : 'gantt.drag.subtasksOut', s.childrenOutside));

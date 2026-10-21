@@ -205,7 +205,19 @@ test('dragSummary : ancienne charge à 2 ETP raccourcie, laissée telle quelle',
   const m = modelOf(task(1, { charges: [{ personId: 7, heures: hoursOf('2026-11-02', '2026-11-29', 2) }] }));
   const s = dragSummary(m, T(1), span('2026-11-02', '2026-11-29'), span('2026-11-02', '2026-11-15'), 0);
   assert.deepEqual(s.keptOver, [7]);
-  assert.equal(s.hours.from, s.hours.to);
+  // Total inchangé : pas de ligne d'heures (l'ETP n'est pas conservé), seule l'alerte le dit
+  assert.equal(s.hours, null);
+});
+
+test('dragSummary : seule charge au-dessus de la borne, période allongée → heures null, une laissée telle quelle', () => {
+  const m = modelOf(task(1, { charges: [{ personId: 7, heures: hoursOf('2026-11-02', '2026-11-15', 1.5) }] }));
+  const s = dragSummary(m, T(1), span('2026-11-02', '2026-11-15'), span('2026-11-02', '2026-11-29'), 0);
+  assert.equal(s.hours, null);
+  assert.equal(s.keptOver.length, 1);
+  assert.deepEqual(summaryText(s, 'end'), [
+    '2 nov. → 29 nov. 2026 (28 j)',
+    '⚠ 1 charge laissée telle quelle (au-dessus de la borne)',
+  ]);
 });
 
 test('dragSummary : chantier dont une tâche sort, sous-tâches directes', () => {
@@ -275,7 +287,7 @@ test('summaryText : lignes de l’infobulle, alertes avec ⚠ et texte', () => {
     'move',
   );
   assert.deepEqual(full.slice(2), [
-    'Heures 80 h → 42,5 h (ETP conservé)',
+    'Heures 80 h → 42,5 h (ETP conservé pour les autres charges)',
     '⚠ 1 charge laissée telle quelle (au-dessus de la borne)',
     '2 sous-tâches hors de la nouvelle période',
     'Ne sera plus en retard',
@@ -313,6 +325,9 @@ test('dragSummary : une personne recalculée, une laissée telle quelle', () => 
   assert.deepEqual(s.keptOver, [8]);
   assert.equal(s.hours.from, hoursOf('2026-11-02', '2026-11-29', 3));
   assert.equal(s.hours.to, hoursOf('2026-11-02', '2026-11-15', 1) + hoursOf('2026-11-02', '2026-11-29', 2));
+  const lines = summaryText(s, 'end');
+  assert.match(lines[1], /^Heures [\d,]+ h → [\d,]+ h \(ETP conservé pour les autres charges\)$/);
+  assert.equal(lines[2], '⚠ 1 charge laissée telle quelle (au-dessus de la borne)');
 });
 
 test('dragContext : réutilisé, mêmes résultats qu’un appel neuf ; même période, même objet', () => {
@@ -695,19 +710,21 @@ test('gripAt : zone de 24 px au doigt, côté de la poignée, bord le plus proch
   assert.equal(gripAt(8, narrow, both, 6), 'move');
 });
 
-test('summaryText : décalage seulement en déplacement', () => {
+test('summaryText : décalage seulement en déplacement, heures sans réserve si aucune charge laissée', () => {
   const s = {
     start: d('2026-11-02'),
     end: d('2026-11-13'),
     days: 12,
     delta: 7,
-    hours: null,
+    hours: { from: 35, to: 84 },
     keptOver: [],
     childrenOutside: 0,
     childKind: 'sous-tache',
     lateCleared: false,
   };
-  assert.equal(summaryText(s, 'move').length, 2);
-  assert.equal(summaryText(s, 'end').length, 1);
-  assert.equal(summaryText(s, 'start').length, 1);
+  const range = '2 nov. → 13 nov. 2026 (12 j)';
+  const hours = 'Heures 35 h → 84 h (ETP conservé)';
+  assert.deepEqual(summaryText(s, 'move'), [range, '+7 j', hours]);
+  assert.deepEqual(summaryText(s, 'end'), [range, hours]);
+  assert.deepEqual(summaryText(s, 'start'), [range, hours]);
 });

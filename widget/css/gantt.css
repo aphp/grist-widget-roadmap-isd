@@ -725,8 +725,9 @@
 .is-grabbing * {
   cursor: grabbing !important;
 }
-/* ---- Étirer une barre : poignées de 6 px aux bords, visibles au survol et au focus ; au doigt, après l'appui
-   long qui choisit la barre (is-touch-selected : cadre, poignées, la barre ne fait plus défiler) ---- */
+/* ---- Étirer une barre : poignées de 6 px aux bords, visibles au survol, au focus de la barre ou de sa ligne ;
+   au doigt, après l'appui long qui choisit la barre (is-touch-selected : cadre, poignées, la barre ne fait plus
+   défiler) ---- */
 .gbar__grip {
   position: absolute;
   top: 0;
@@ -747,6 +748,7 @@
 }
 .gbar--draggable:hover > .gbar__grip,
 .gbar--draggable:focus > .gbar__grip,
+.grow:focus-visible .gbar--draggable > .gbar__grip,
 .gbar.is-touch-selected > .gbar__grip {
   opacity: 1;
 }
@@ -1097,6 +1099,16 @@ button.glist__title:focus-visible {
   .gantt .gms.is-late {
     border-width: 3px;
     border-style: double;
+  }
+  /* Creuse et en retard : pointillés gardés, retard en contour */
+  .gantt .gbar--hollow.is-late,
+  .gantt .gms--hollow.is-late {
+    border: 2px dashed CanvasText;
+  }
+  .gantt .gbar--hollow.is-late:not(:focus),
+  .gantt .gms--hollow.is-late:not(:focus) {
+    outline: 2px solid CanvasText;
+    outline-offset: 1px;
   }
   .gantt .gbar:focus,
   .gantt .gms:focus,
