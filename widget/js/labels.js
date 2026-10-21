@@ -1162,7 +1162,10 @@ const FR = Object.freeze({
   'quickStatus.busy': 'Un changement de statut est en cours d’envoi : rien n’a été modifié, réessayez dans un instant.',
   'quickStatus.fail.reread': 'Impossible de relire la tâche avant l’envoi : rien n’a été envoyé. Réessayez.',
   'kanban.help.edit':
+    'Une seule tabulation par colonne. Flèches haut et bas : se déplacer dans la colonne ; flèches gauche et droite : changer de colonne ; Entrée : ouvrir la fiche ; S : changer le statut de la carte ; Maj+F10 : menu de la carte.',
+  'kanban.help.editPriority':
     'Une seule tabulation par colonne. Flèches haut et bas : se déplacer dans la colonne ; flèches gauche et droite : changer de colonne ; Entrée : ouvrir la fiche ; S : changer le statut de la carte ; P : changer sa priorité ; Maj+F10 : menu de la carte.',
+  'kanban.drop.armed': '« {titre} » saisie : glissez-la vers une autre colonne.',
   'quickPriority.menu': 'Priorité de « {titre} »',
   'quickPriority.menu.title': 'Changer la priorité',
   'kanban.actions': 'Actions sur « {titre} »',

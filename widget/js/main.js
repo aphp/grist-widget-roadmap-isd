@@ -23,7 +23,7 @@ import { estimationIdsOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
 import { dayInZone, maxPlanDay, monthKey, monthsFrom } from './core/dates.js';
 import { initialView, sanitizeHomeView } from './core/home-view.js';
-import { label, statusLabel } from './labels.js';
+import { label } from './labels.js';
 import { createChrome } from './ui/chrome.js';
 import { TABS, THEMES } from './ui/kit.js';
 import { emptyFiltersHtml, emptyPeopleHtml, screenHtml, skeletonHtml, viewErrorHtml } from './ui/states.js';
@@ -41,7 +41,8 @@ import { editPanelHtml } from './ui/edit-panel.js';
 import { createTaskEditor } from './ui/task-editor.js';
 import { closeStatusPopover, openChoicePopover, openStatusPopover, statusPopoverKey } from './ui/status-popover.js';
 import { canQuickStatus, focusOrder, quickFields, statusMenuItems } from './core/quick-status.js';
-import { dropChanges, dropTargets, priorityMenuItems } from './core/kanban-drop.js';
+import { columnName, dropChanges, dropTargets, priorityMenuItems } from './core/kanban-drop.js';
+import { refusedText } from './views/task-form.js';
 import { createCreateDialog } from './ui/create-dialog.js';
 import { prefillFromFilters } from './core/create-form.js';
 import { createToast } from './ui/toast.js';
@@ -49,7 +50,6 @@ import { createPersonDialog } from './ui/person-dialog.js';
 import { isdDomainValue, personInScope } from './core/person-form.js';
 import { canWriteRowIn, canWriteValuesIn } from './core/write-scope.js';
 import { failureKind, runSetActive } from './core/task-session.js';
-import { refusedText } from './views/task-form.js';
 
 /** Vues par onglet ; chaque vue exporte `id` et `render(el, ctx)`. Factices jusqu'aux tâches suivantes. */
 export const VIEWS = Object.freeze({
@@ -273,6 +273,8 @@ function quickStatusCtx() {
     can: (id) => canQuickStatus(m, id, editState, writer),
     /** Statut et priorité modifiables pour cette tâche (une seule évaluation de l'édition). */
     fields: (id) => quickFields(m, id, editState, writer),
+    /** Colonne priorité permise par le writer (aide du Kanban : touche P). */
+    priority: Boolean(writer.can('Tasks', 'priorite')?.ok),
     open: openQuickStatus,
   };
 }
@@ -292,9 +294,6 @@ function dropCtx() {
     openActions: openCardActions,
   };
 }
-
-/** Nom d'une colonne du Kanban pour les messages : statut ou libellé de priorité. */
-const columnName = (group, key) => (group === 'status' ? statusLabel(key) : key || label('kanban.noPriority'));
 
 /**
  * Carte déposée dans une colonne (glisser, menu de priorité) : même chemin que les menus de statut et de priorité.
@@ -322,11 +321,23 @@ async function dropOnColumn(taskId, group, key, focusEl) {
   );
 }
 
+/**
+ * Menu rapide demandé alors que les droits ont changé depuis le rendu (session passée en lecture, tâche hors
+ * périmètre, colonne refusée) : même message que le statut rapide, jamais un raccourci sans effet.
+ */
+function refuseQuick(taskId, col) {
+  const a = editAvailability(state.model, { table: 'Tasks', id: taskId }, editState);
+  const reason =
+    !writer || writer.mode === 'off' ? 'off' : !a.editable ? a.reason : (writer.can('Tasks', col)?.reason ?? 'autre');
+  toast.show(label('form.fail.refused', { raison: refusedText(reason) }), { tone: 'error' });
+}
+
 /** Menu de priorité d'une carte (touche P, « Priorité… ») : un choix vaut un dépôt dans la colonne de ce libellé. */
 function openQuickPriority(anchor, taskId, focusEl = anchor) {
   const m = state.model;
   const t = m?.tasks.get(taskId);
-  if (!t || !quickFields(m, taskId, editState, writer).priorite) return;
+  if (!t) return;
+  if (!quickFields(m, taskId, editState, writer).priorite) return refuseQuick(taskId, 'priorite');
   const title = t.title || label('common.untitled');
   openChoicePopover({
     anchor,
@@ -355,7 +366,8 @@ function openCardActions(anchor, taskId, focusEl = anchor) {
     priority: () => openQuickPriority(anchor, taskId, focusEl),
   };
   const entries = [f.statut && 'status', f.priorite && 'priority'].filter(Boolean);
-  if (entries.length < 2) return entries.length ? open[entries[0]]() : undefined;
+  if (!entries.length) return refuseQuick(taskId, 'statut');
+  if (entries.length < 2) return open[entries[0]]();
   const title = t.title || label('common.untitled');
   openChoicePopover({
     anchor,
@@ -377,7 +389,8 @@ function openCardActions(anchor, taskId, focusEl = anchor) {
 function openQuickStatus(anchor, taskId, focusEl = anchor) {
   const m = state.model;
   const t = m?.tasks.get(taskId);
-  if (!t || !canQuickStatus(m, taskId, editState, writer)) return;
+  if (!t) return;
+  if (!canQuickStatus(m, taskId, editState, writer)) return refuseQuick(taskId, 'statut');
   openStatusPopover({
     anchor,
     returnFocus: focusEl,

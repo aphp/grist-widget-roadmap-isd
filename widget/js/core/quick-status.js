@@ -62,6 +62,19 @@ export function isRepeatedChoice(e) {
 }
 
 /**
+ * Effet d'une touche dans un menu de choix (openChoicePopover) : Entrée ou Espace maintenues ignorées, Échap et Tab
+ * ferment, flèches, Début et Fin déplacent le focus. Jamais un choix : seule l'activation franche d'une entrée
+ * (son clic) choisit.
+ * @returns {{action:'ignore'|'close'}|{action:'move', index:number}|null} null : touche laissée au bouton
+ */
+export function menuKey(e, count, index) {
+  if (isRepeatedChoice(e)) return { action: 'ignore' };
+  if (e.key === 'Escape' || e.key === 'Tab') return { action: 'close' };
+  const next = menuMove(count, index, e.key);
+  return next === null ? null : { action: 'move', index: next };
+}
+
+/**
  * Focus dans le menu : flèches haut et bas (en boucle), Début, Fin. Aucune autre touche ne déplace le focus.
  * @param {number} count nombre d'entrées
  * @param {number} index entrée focalisée (-1 : aucune)

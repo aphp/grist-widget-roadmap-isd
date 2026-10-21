@@ -35,7 +35,7 @@ import {
 } from '../core/kanban-data.js';
 import { displayRole } from '../core/team-directory.js';
 import { isMenuShortcut, isPriorityShortcut, isStatusShortcut, limitToReveal } from '../core/quick-status.js';
-import { dropChanges, dropColumns, hasDropTarget, pendingModel } from '../core/kanban-drop.js';
+import { columnName, dropChanges, dropColumns, hasDropTarget, isApplied, pendingModel } from '../core/kanban-drop.js';
 import { h, icon, keepFocus, roleFullText, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
 import { statusContextMenu } from '../ui/status-popover.js';
@@ -62,8 +62,6 @@ const listeners = new WeakMap();
 const memory = { gesture: null, saving: null, view: null };
 /** Annonces du glisser (#kanban-live, hors de la vue redessinée). */
 const announce = liveAnnouncer('kanban-live');
-/** Nom d'une colonne dans les annonces. */
-const columnName = (group, key) => (group === 'status' ? statusLabel(key) : key || label('kanban.noPriority'));
 
 /**
  * « Afficher plus » et carte d'entrée de chaque colonne, gardés d'un rendu à l'autre tant que la vue montre la même
@@ -285,6 +283,9 @@ export function render(el, ctx) {
     const board = el.querySelector('.kanban__board');
     const left = board?.scrollLeft ?? 0;
     // Carte en cours d'enregistrement : déjà dans sa nouvelle colonne (Q11)
+    // Valeurs déjà dans le modèle (correction locale après l'écriture) : l'état d'enregistrement s'arrête là, la
+    // réponse ne redessine pas une fois de plus
+    if (memory.saving && isApplied(ctx.model, memory.saving.taskId, memory.saving.changes)) memory.saving = null;
     const saving = memory.saving?.group === st.group ? memory.saving : null;
     const model = saving ? pendingModel(ctx.model, saving.taskId, saving.changes) : ctx.model;
     const cols = kanbanColumns(model, ctx.view.taskIds, st.group, st.sort);
@@ -302,7 +303,7 @@ export function render(el, ctx) {
           ${selectHtml('kanban-sort', 'kanban.sort', SORTS, st.sort, 'kanban.sort')}
         </div>`,
         )}
-        <p id="kanban-help" class="fr-sr-only">${label(qsOn ? 'kanban.help.edit' : 'kanban.help')}</p>
+        <p id="kanban-help" class="fr-sr-only">${label(qsOn ? (ctx.quickStatus.priority ? 'kanban.help.editPriority' : 'kanban.help.edit') : 'kanban.help')}</p>
         <div class="kanban__peeks" hidden>
           ${['left', 'right'].map((side) => h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary kanban__peek kanban__peek--${side}" data-peek="${side}" aria-controls="kanban-board" hidden>${icon(`arrow-${side}-s-line`)}<span class="kanban__peek-text"></span><span class="fr-sr-only kanban__peek-sr"></span></button>`)}
         </div>
@@ -552,7 +553,10 @@ export function render(el, ctx) {
       else if (v?.ok) col.classList.add('kcol--target');
       else {
         col.classList.add('kcol--refused');
-        col.title = label('kanban.drop.ghostRefused', { raison: label(`kanban.drop.no.${v?.reason ?? 'undeclared'}`) });
+        // Raison affichée sur la colonne pendant le geste (une infobulle title ne s'affiche pas sous la capture)
+        col.dataset.dropReason = label('kanban.drop.ghostRefused', {
+          raison: label(`kanban.drop.no.${v?.reason ?? 'undeclared'}`),
+        });
       }
     }
     el.querySelector(`#kc-${g.taskId}`)?.classList.add('kcard--origin');
@@ -565,7 +569,7 @@ export function render(el, ctx) {
   function unmarkBoard(view) {
     for (const col of view.querySelectorAll('.kcol--target, .kcol--refused, .kcol--origin, .kcol--over')) {
       col.classList.remove('kcol--target', 'kcol--refused', 'kcol--origin', 'kcol--over');
-      col.removeAttribute('title');
+      delete col.dataset.dropReason;
     }
     view.querySelector('.kcard--origin')?.classList.remove('kcard--origin');
     view.querySelector('.kanban__board--dragging')?.classList.remove('kanban__board--dragging');
@@ -607,6 +611,7 @@ export function render(el, ctx) {
     note.hidden = !reason;
     note.textContent = reason ? label('kanban.drop.ghostRefused', { raison: reason }) : '';
     g.ghost.classList.toggle('kghost--refused', Boolean(reason));
+    document.documentElement.classList.toggle('is-drop-refused', Boolean(reason));
     if (!v) return;
     const colonne = columnName(g.group, key);
     announce(
@@ -621,7 +626,7 @@ export function render(el, ctx) {
     if (!g) return null;
     g.ghost?.remove();
     unmarkBoard(g.view);
-    document.documentElement.classList.remove('is-grabbing');
+    document.documentElement.classList.remove('is-card-grabbing', 'is-drop-refused');
     return g;
   }
 
@@ -679,7 +684,9 @@ export function render(el, ctx) {
     pending
       .catch((err) => console.error(err))
       .finally(() => {
-        if (memory.saving === saving) memory.saving = null;
+        // Échec, refus, mode essai sans correction : la carte revient (seul cas où la réponse redessine)
+        if (memory.saving !== saving) return;
+        memory.saving = null;
         memory.view?.repaint();
       });
   }
@@ -725,7 +732,8 @@ export function render(el, ctx) {
         console.error(err);
         return false;
       }
-      document.documentElement.classList.add('is-grabbing');
+      el.querySelector('.kcard--armed')?.classList.remove('kcard--armed');
+      document.documentElement.classList.add('is-card-grabbing');
       const colonnes = [...g.targets]
         .filter(([, v]) => v.ok)
         .map(([k]) => columnName(g.group, k))
@@ -778,6 +786,21 @@ export function render(el, ctx) {
     repaint() {
       if (el.isConnected) paint();
     },
+    /** Appui long du doigt atteint : la carte paraît saisie jusqu'au relâcher ou au début du glisser. */
+    arm(taskId) {
+      const card = el.querySelector(`#kc-${taskId}`);
+      if (!card) return;
+      card.classList.add('kcard--armed');
+      const task = ctx.model.tasks.get(taskId);
+      announce(label('kanban.drop.armed', { titre: task?.title || label('common.untitled') }));
+      const off = new AbortController();
+      const clear = () => {
+        card.classList.remove('kcard--armed');
+        off.abort();
+      };
+      for (const type of ['pointerup', 'pointercancel'])
+        window.addEventListener(type, clear, { capture: true, signal: off.signal });
+    },
   };
   memory.view = view;
 
@@ -787,6 +810,8 @@ export function render(el, ctx) {
     const taskId = Number(card.dataset.task);
     let handle = null;
     handle = trackPointer(e, {
+      // Doigt : l'appui long saisit la carte (contour, annonce) ; relâchée sans glisser, elle n'ouvre pas la fiche
+      onArm: () => memory.view?.arm(taskId),
       onStart: (m) => memory.view?.begin(taskId, e, m, handle) ?? false,
       onMove: (m) => memory.view?.move(m),
       onDrop: (m) => memory.view?.drop(m),

@@ -414,14 +414,43 @@
   outline-width: 3px;
   background: color-mix(in srgb, var(--color-focus) 10%, var(--color-surface-2));
 }
-.kcol--refused {
+/* Colonne refusée : contenu grisé, raison lisible (::before hors du grisé) */
+.kcol--refused > * {
   filter: grayscale(0.8);
-  opacity: 0.6;
+  opacity: 0.55;
 }
 .kcol--refused.kcol--over {
-  cursor: not-allowed;
   outline: 2px solid var(--border-plain-error);
   outline-offset: -2px;
+}
+/* Raison du refus écrite en tête de la colonne pendant le geste (data-drop-reason, texte posé par textContent) */
+.kcol--refused::before {
+  content: attr(data-drop-reason);
+  order: -1;
+  margin: var(--space-2) var(--space-2) 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md, 6px);
+  background: var(--badge-error-bg);
+  color: var(--badge-error-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+}
+/* Curseur du glisser d'une carte (classes propres au Kanban, sans la règle .is-grabbing du Gantt) : main fermée,
+   interdit au-dessus d'une colonne refusée */
+.is-card-grabbing,
+.is-card-grabbing * {
+  cursor: grabbing !important;
+}
+.is-card-grabbing.is-drop-refused,
+.is-card-grabbing.is-drop-refused * {
+  cursor: not-allowed !important;
+}
+/* Doigt : appui long atteint, la carte est saisie (contour épais, légère élévation) */
+.kcard--armed {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-3);
 }
 .kcard--origin {
   opacity: 0.4;
@@ -440,7 +469,6 @@
 .kghost__card {
   box-shadow: var(--shadow-3);
   transform: rotate(2deg);
-  cursor: grabbing;
 }
 .kghost__note {
   margin: var(--space-1) 0 0;
@@ -471,7 +499,11 @@
   .kghost__card {
     border: 2px solid Highlight;
   }
-  .kghost__note {
+  .kghost__note,
+  .kcol--refused::before {
     border: 1px solid CanvasText;
+  }
+  .kcard--armed {
+    outline-color: Highlight;
   }
 }

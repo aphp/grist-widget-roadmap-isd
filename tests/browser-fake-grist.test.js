@@ -5378,6 +5378,7 @@ test(
     const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
     assert.ok(at, 'jeu synthétique : une carte glissable dans « À faire »');
     assert.equal(await w(`return D.getElementById('kc-${at.id}').getAttribute('aria-keyshortcuts');`), 'S P Shift+F10');
+    assert.match(await w(`return D.getElementById('kanban-help').textContent;`), /P : changer sa priorité/);
     await mouseTo(at, await colPoint('status:review'), { release: false });
     // Pendant le geste : fantôme, colonnes permises soulignées, colonne visée, aucun rendu de la vue
     await until(`D.querySelector('.kghost') && D.querySelector('.kcol--over[data-col="status:review"]')`);
@@ -5438,8 +5439,13 @@ test(
     const at = await cardPoint('.kcol[data-col="priority:Priorité 1"] .kcard[data-drag-card]');
     await mouseTo(at, await colPoint('priority:'), { release: false });
     await until(`D.querySelector('.kcol--over.kcol--refused[data-col="priority:"]')`);
-    assert.match(await w(`return D.querySelector('.kcol[data-col="priority:"]').title;`), /chantier ou du projet/);
+    // Raison visible en tête de la colonne, sur le fantôme, et curseur « interdit »
+    assert.match(
+      await w(`return W.getComputedStyle(D.querySelector('.kcol[data-col="priority:"]'), '::before').content;`),
+      /chantier ou du projet/,
+    );
     assert.match(await w(`return D.querySelector('.kghost__note').textContent;`), /Dépôt impossible/);
+    assert.equal(await w(`return W.getComputedStyle(D.getElementById('kc-${at.id}')).cursor;`), 'not-allowed');
     await mouseUp(await colPoint('priority:'));
     await until(`/Dépôt impossible dans « Sans priorité »/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
     await sleep(300);
@@ -5552,11 +5558,19 @@ test('kanban : défilement du plateau et de la page identiques après le dépôt
   const at = await w(`const c = D.querySelector('.kcol[data-col="status:inprogress"] .kcard[data-drag-card]');
     const r = c.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
     return { id: Number(c.dataset.task), x: f.left + r.left + 40, y: f.top + r.top + 20 };`);
+  // Rendus du Kanban après le dépôt : état « Enregistrement… », correction locale, relecture (jamais plus)
+  await w(`W.__kanbanRenders = 0; const seen = new W.WeakSet();
+    new W.MutationObserver((list) => { for (const m of list) for (const n of m.addedNodes) {
+      const k = n.nodeType === 1 ? (n.matches('.kanban') ? n : n.querySelector('.kanban')) : null;
+      if (k && !seen.has(k)) { seen.add(k); W.__kanbanRenders += 1; } } })
+    .observe(D.getElementById('app-main'), { childList: true, subtree: true }); return true;`);
   await mouseTo(at, await colPoint('status:review', 100));
   await until(`W.__writes.length === 1`);
   await until(`D.activeElement?.id === 'kc-${at.id}'`, 8000);
   await sleep(600); // relecture et rendu
   assert.deepEqual(await w(scrolls), before);
+  const renders = await w(`return W.__kanbanRenders;`);
+  assert.ok(renders <= 3, `rendus : ${renders}`);
 });
 
 test('kanban : doigt, appui long puis glisser', { skip: SKIP }, async () => {
@@ -5572,7 +5586,17 @@ test('kanban : doigt, appui long puis glisser', { skip: SKIP }, async () => {
   await touch('touchEnd');
   await sleep(300);
   assert.equal(await w(`return W.__writes.length;`), 0);
-  const again = await cardPoint(`#kc-${at.id}`);
+  // Appui long relâché sans glisser : carte saisie (contour, annonce), puis rien, pas de fiche
+  let again = await cardPoint(`#kc-${at.id}`);
+  await touch('touchStart', again.x, again.y);
+  await sleep(550);
+  assert.equal(await w(`return D.getElementById('kc-${at.id}').classList.contains('kcard--armed');`), true);
+  await until(`/saisie : glissez-la/.test(D.getElementById('kanban-live').textContent)`);
+  await touch('touchEnd');
+  await sleep(300);
+  assert.equal(await w(`return D.getElementById('kc-${at.id}').classList.contains('kcard--armed');`), false);
+  assert.notEqual(await w(`return D.getElementById('app-detail').dataset.open;`), 'true');
+  again = await cardPoint(`#kc-${at.id}`);
   await touch('touchStart', again.x, again.y);
   await sleep(550);
   for (let k = 1; k <= 6; k += 1) {

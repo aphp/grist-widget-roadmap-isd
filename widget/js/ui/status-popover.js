@@ -6,7 +6,7 @@
  * appelle onPick, jamais une touche maintenue (auto-répétition). Sans statut actuel, le focus va sur le menu
  * lui-même (position neutre). Échap ou Tab ferme le menu et rend le focus ; un clic ailleurs le ferme.
  */
-import { isRepeatedChoice, menuMove, menuStartIndex } from '../core/quick-status.js';
+import { menuKey, menuStartIndex } from '../core/quick-status.js';
 import { label, statusLabel } from '../labels.js';
 import { raw } from '../core/sanitize.js';
 import { h } from './kit.js';
@@ -94,22 +94,14 @@ export function openChoicePopover({ anchor, returnFocus = anchor, items, onPick,
     if (b) pick(b);
   });
   root.addEventListener('keydown', (e) => {
-    if (isRepeatedChoice(e)) {
-      e.preventDefault(); // Entrée maintenue : le clic n'a pas lieu
-      return;
-    }
     const list = buttons();
-    if (e.key === 'Escape' || e.key === 'Tab') {
-      e.preventDefault();
+    const k = menuKey(e, list.length, list.indexOf(document.activeElement));
+    if (!k) return;
+    e.preventDefault(); // Entrée maintenue : le clic n'a pas lieu
+    if (k.action === 'close') {
       e.stopPropagation();
       closeStatusPopover(true);
-      return;
-    }
-    const next = menuMove(list.length, list.indexOf(document.activeElement), e.key);
-    if (next !== null) {
-      e.preventDefault();
-      list[next].focus();
-    }
+    } else if (k.action === 'move') list[k.index].focus();
   });
   document.addEventListener(
     'pointerdown',

@@ -11,6 +11,7 @@ import {
   isRepeatedChoice,
   isStatusShortcut,
   limitToReveal,
+  menuKey,
   menuMove,
   menuStartIndex,
   quickFields,
@@ -97,6 +98,24 @@ test('isStatusShortcut : « s », Maj+F10 et touche Menu ; jamais avec Ctrl, Alt
   assert.equal(isStatusShortcut({ key: 's', metaKey: true }), false);
   assert.equal(isStatusShortcut({ key: 'F10', shiftKey: true, altKey: true }), false);
   for (const k of ['ArrowDown', 'Enter', ' ', 'd']) assert.equal(isStatusShortcut({ key: k }), false);
+});
+
+test('menuKey (openChoicePopover) : flèches, Début, Fin déplacent seulement ; Entrée maintenue ignorée ; Échap et Tab ferment', () => {
+  assert.deepEqual(menuKey({ key: 'ArrowDown' }, 4, 0), { action: 'move', index: 1 });
+  assert.deepEqual(menuKey({ key: 'ArrowUp' }, 4, 0), { action: 'move', index: 3 });
+  assert.deepEqual(menuKey({ key: 'Home' }, 4, 2), { action: 'move', index: 0 });
+  assert.deepEqual(menuKey({ key: 'End' }, 4, 0), { action: 'move', index: 3 });
+  // Aucune touche de déplacement ne choisit : seule l'activation franche du bouton (clic) choisit
+  for (const k of ['ArrowDown', 'ArrowUp', 'Home', 'End']) assert.notEqual(menuKey({ key: k }, 4, 1).action, 'pick');
+  assert.deepEqual(menuKey({ key: 'Enter', repeat: true }, 4, 1), { action: 'ignore' });
+  assert.deepEqual(menuKey({ key: ' ', repeat: true }, 4, 1), { action: 'ignore' });
+  assert.deepEqual(menuKey({ key: 'Escape' }, 4, 1), { action: 'close' });
+  assert.deepEqual(menuKey({ key: 'Tab' }, 4, 1), { action: 'close' });
+  // Entrée ou Espace franches : laissées au bouton (son clic choisit) ; autres touches : rien
+  assert.equal(menuKey({ key: 'Enter' }, 4, 1), null);
+  assert.equal(menuKey({ key: ' ' }, 4, 1), null);
+  assert.equal(menuKey({ key: 'a' }, 4, 1), null);
+  assert.equal(menuKey({ key: 'ArrowDown' }, 0, -1), null);
 });
 
 test('isPriorityShortcut : « p » seul ; jamais avec Maj, Ctrl, Alt ou Méta', () => {

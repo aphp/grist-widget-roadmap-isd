@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  columnName,
   dropChanges,
   dropColumns,
   dropTargets,
   hasDropTarget,
+  isApplied,
   pendingModel,
   priorityMenuItems,
   priorityValueFor,
@@ -196,4 +198,23 @@ test('pendingModel : la tâche porte le statut ou la priorité déposés, le res
   assert.equal(pendingModel(m, 2, { priorite: '2' }).tasks.get(2).priorite, '2');
   assert.equal(pendingModel(m, 2, { priorite: '' }).tasks.get(2).priorite, '');
   assert.equal(pendingModel(m, 99, { statut: 'done' }), m);
+});
+
+test('columnName : statut nommé, libellé de priorité, « Sans priorité »', () => {
+  assert.equal(columnName('status', 'review'), 'En revue');
+  assert.equal(columnName('priority', 'Priorité 2'), 'Priorité 2');
+  assert.equal(columnName('priority', ''), 'Sans priorité');
+});
+
+test('isApplied : le modèle porte déjà les valeurs déposées (correction locale reçue)', () => {
+  const m = mk([task(1), task(2, { priorite: '2' })]);
+  assert.equal(isApplied(m, 1, { statut: 'todo' }), true);
+  assert.equal(isApplied(m, 1, { statut: 'done', dateCloture: 5 }), false);
+  assert.equal(
+    isApplied(pendingModel(m, 1, { statut: 'done', dateCloture: 5 }), 1, { statut: 'done', dateCloture: 5 }),
+    true,
+  );
+  assert.equal(isApplied(m, 2, { priorite: '2' }), true);
+  assert.equal(isApplied(m, 2, { priorite: '' }), false);
+  assert.equal(isApplied(m, 99, { statut: 'todo' }), false);
 });

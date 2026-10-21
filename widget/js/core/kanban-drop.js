@@ -4,7 +4,7 @@
  * relève du lot D. L'écriture elle-même passe par le writer (relecture, conflits, droits y sont traités).
  */
 import { priorityText, taskPriority } from './kanban-data.js';
-import { label } from '../labels.js';
+import { label, statusLabel } from '../labels.js';
 import { statusChanges } from './task-form.js';
 
 const declaredPriorities = (model) =>
@@ -159,4 +159,18 @@ export function pendingModel(model, taskId, changes) {
   if ('dateCloture' in changes) next.closed = changes.dateCloture;
   if ('priorite' in changes) next.priorite = changes.priorite;
   return { ...model, tasks: new Map(model.tasks).set(taskId, next) };
+}
+
+/** Nom d'une colonne du Kanban dans les messages et annonces : statut nommé, libellé de priorité, « Sans priorité ». */
+export const columnName = (group, key) => (group === 'status' ? statusLabel(key) : key || label('kanban.noPriority'));
+
+/**
+ * Vrai si le modèle porte déjà le statut ou la priorité déposés (correction locale reçue après l'écriture) : la
+ * carte n'a plus besoin de l'état « Enregistrement… » pour rester à sa nouvelle place.
+ */
+export function isApplied(model, taskId, changes) {
+  const task = model.tasks.get(taskId);
+  if (!task) return false;
+  if ('statut' in changes && task.status !== changes.statut) return false;
+  return !('priorite' in changes) || (task.priorite ?? '') === changes.priorite;
 }
