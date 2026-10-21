@@ -751,6 +751,8 @@ test('ETP gardé : date de début changée ailleurs pendant un allongement, fen�
   const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
   assert.equal(r.kind, 'conflict');
   assert.ok(r.cols.includes('dateEcheance'));
+  // Dates du lot en conflit : la fenêtre les montre, pas de raison à part
+  assert.equal(r.period, undefined);
   assert.equal(g.batches.length, 0);
   // « Garder la mienne » : 9 au 29 novembre, heures recalculées sur cette période
   const batch = batchWithCharges(
@@ -781,12 +783,16 @@ test('charges seules envoyées, période changée ailleurs depuis la saisie : co
   g.otherUserSets('Tasks', 1002, { dateEcheance: 86400 * (base.dateEcheance + 7) });
   const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
   assert.deepEqual([r.kind, r.cols], ['conflict', ['charges']]);
+  // Raison donnée à la fenêtre : dates vues et dates relues
+  const dates = (row) => ({ dateDebut: row.dateDebut, dateEcheance: row.dateEcheance });
+  assert.deepEqual(r.period, { from: dates(base), to: dates(r.fresh) });
   assert.equal(g.batches.length, 0);
   // Après la fenêtre (dates de la ligne relue retenues), la période bouge encore : nouvelle fenêtre
   const batch = conflictBatch(base, draft, r.fresh, { charges: 'mine' });
   g.otherUserSets('Tasks', 1002, { dateEcheance: 86400 * (base.dateEcheance + 14) });
   const again = await runSave({ taskId: 1002, base: r.fresh, draft, writer, fetchRow, ...batch });
   assert.deepEqual([again.kind, again.cols], ['conflict', ['charges']]);
+  assert.deepEqual(again.period, { from: dates(r.fresh), to: dates(again.fresh) });
   assert.equal(g.batches.length, 0);
   // Même capacité qu'à la saisie : envoyé
   g.otherUserSets('Tasks', 1002, { dateEcheance: 86400 * (base.dateEcheance + 7) });

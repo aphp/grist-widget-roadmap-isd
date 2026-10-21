@@ -915,6 +915,37 @@ test(
   },
 );
 
+test(
+  'fiche : charge saisie, échéance changée ailleurs : fenêtre qui le dit, « Garder la mienne » garde l’ETP sur les dates relues',
+  { skip: SKIP },
+  async () => {
+    const { id, person } = await openCharged14();
+    await type(`tf-ch-${person}`, '0,5');
+    await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 26 h au total'`);
+    // Ailleurs : échéance du 15 au 29 novembre ; le formulaire ne le sait pas encore
+    await w(
+      `await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { dateEcheance: ${Date.UTC(2026, 10, 29) / 1000} }]]);
+      W.__writes.length = 0; return true;`,
+    );
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`D.getElementById('tf-cf-charges-mine')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    const note = await w(`return D.querySelector('.tf-conflict__note').textContent;`);
+    assert.match(note, /Les dates de la tâche ont été modifiées par ailleurs/);
+    assert.match(note, /15 nov\. 2026 → .*29 nov\. 2026/);
+    assert.ok(await w(`return D.getElementById('tf-cf-charges-mine').checked;`));
+    await w(`D.querySelector('[data-form="conflict-apply"]').click(); return true;`);
+    await until(`W.__writes.length === 1`);
+    const [, , rowId, cells] = (await writes())[0][0];
+    assert.equal(rowId, id);
+    // 0,5 ETP saisi : heures recalculées sur le 2 au 29 novembre relu (et non les 26 h du 2 au 15)
+    assert.deepEqual(cells, {
+      charges: JSON.stringify([{ teamId: person, heures: etpHours(0.5, '2026-11-02', '2026-11-29') }]),
+    });
+    assert.equal(etpHours(0.5, '2026-11-02', '2026-11-29'), 55);
+  },
+);
+
 test('fiche : valeur affichée ressaisie, puis charges relues : la ligne suit la Feuille', { skip: SKIP }, async () => {
   const retype = async (person) => {
     await type(`tf-ch-${person}`, '1,0');

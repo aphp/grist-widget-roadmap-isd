@@ -14,6 +14,15 @@ import { diffDraft, statusChanges } from './task-form.js';
 
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
 
+/**
+ * Conflit de période sur des charges seules (periodConflictCols rend ['charges']) : dates vues et relues, que la
+ * fenêtre affiche pour dire pourquoi les charges sont en conflit ; sinon rien.
+ */
+const periodNote = (seen, fresh, moved) =>
+  moved.includes('charges')
+    ? { period: { from: pick(seen, ['dateDebut', 'dateEcheance']), to: pick(fresh, ['dateDebut', 'dateEcheance']) } }
+    : {};
+
 /** Relecture d'une ligne limitée dans le temps (une requête bloquée ne fige jamais la fiche). */
 function readRow(fetchRow, id, ms) {
   return withTimeout(fetchRow(id), ms, () => new Error(`délai de ${ms / 1000} s dépassé`));
@@ -52,7 +61,8 @@ async function unknownOutcome(fetchRow, id, ms, changes) {
  *   en envoi réel, ces lignes sont recalculées sur la table Tasks relue (projet d'arrivée reattachTo).
  *   Charges modifiées aussi dans la Feuille : fusion personne par personne ; conflit seulement sur une même
  *   personne (mine.charges = cellule fusionnée où la saisie l'emporte).
- * @returns {Promise<{kind:'nothing'}|{kind:'conflict', cols:string[], fresh:object, mine:object}
+ *   Conflit venu d'une période changée ailleurs sous des charges seules : period {from, to} (dates vues, relues).
+ * @returns {Promise<{kind:'nothing'}|{kind:'conflict', cols:string[], fresh:object, mine:object, period?:object}
  *   |{kind:'reread-failed', error:string}
  *   |{kind:'missing'}|{kind:'saved', entry:object}|{kind:'failed', error:Error}
  *   |{kind:'unknown', stored:object|null|undefined, changes:object}>}
@@ -80,7 +90,8 @@ export async function runSave(snap) {
     source = fresh;
     // Période changée ailleurs depuis la fenêtre : les charges recalculées ne valent plus, nouvelle fenêtre
     const moved = snap.datesSeen ? periodConflictCols(snap.datesSeen, fresh, changes) : [];
-    if (moved.length) return { kind: 'conflict', cols: moved, fresh, mine: {} };
+    if (moved.length)
+      return { kind: 'conflict', cols: moved, fresh, mine: {}, ...periodNote(snap.datesSeen, fresh, moved) };
     if (rechecksCharges) {
       // Cellule que l'utilisateur a vue dans la fenêtre de conflit (ou à l'ouverture) et ce qu'il a choisi d'écrire
       // par rapport à elle (sa saisie l'emporte sur une même personne : choix déjà fait)
@@ -133,10 +144,17 @@ export async function runSave(snap) {
     delete others.tags;
     const cols = detectConflicts(base, fresh, others);
     // Charges envoyées, période changée ailleurs : conflit sur les dates du lot (sans date : sur les charges)
-    for (const c of periodConflictCols(base, fresh, changes)) if (!cols.includes(c)) cols.push(c);
+    const moved = periodConflictCols(base, fresh, changes);
+    for (const c of moved) if (!cols.includes(c)) cols.push(c);
     if (merged.conflict && !cols.includes('charges')) cols.push('charges');
     if (cols.length)
-      return { kind: 'conflict', cols, fresh, mine: merged.mine === null ? {} : { charges: merged.mine } };
+      return {
+        kind: 'conflict',
+        cols,
+        fresh,
+        mine: merged.mine === null ? {} : { charges: merged.mine },
+        ...periodNote(base, fresh, moved),
+      };
     changes = merged.changes;
     keys = Object.keys(changes);
     if (!keys.length) return { kind: 'nothing' };

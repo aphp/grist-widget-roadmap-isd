@@ -863,6 +863,9 @@ const FR = Object.freeze({
     'Quelqu’un a modifié ces champs pendant votre saisie. Choisissez, pour chacun, la valeur à garder.',
   'form.conflict.mine': 'Garder la mienne : {valeur}',
   'form.conflict.theirs': 'Prendre la leur : {valeur}',
+  'form.conflict.periodMoved':
+    'Les dates de la tâche ont été modifiées par ailleurs ({avant} → {apres}) : vos charges seraient recalculées sur la nouvelle période (ETP conservé).',
+  'form.conflict.periodRange': '{debut} – {fin}',
   'form.conflict.apply': 'Enregistrer avec ces choix',
   'form.conflict.cancel': 'Revenir à la saisie',
   'form.changedElsewhere':

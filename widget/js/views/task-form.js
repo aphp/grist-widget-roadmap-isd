@@ -205,6 +205,16 @@ const itemKey = (st, key) => {
   return suffix && hasLabel(`${key}.${suffix}`) ? `${key}.${suffix}` : key;
 };
 
+/** Raison d'un conflit sur des charges seules : dates de la tâche changées ailleurs (vues → relues). */
+function periodMovedText(model, { from, to }) {
+  const range = (d) =>
+    label('form.conflict.periodRange', {
+      debut: valueText(model, 'dateDebut', d.dateDebut),
+      fin: valueText(model, 'dateEcheance', d.dateEcheance),
+    });
+  return label('form.conflict.periodMoved', { avant: range(from), apres: range(to) });
+}
+
 export function alertHtml(st, model) {
   if (st.conflict) {
     const c = st.conflict;
@@ -213,6 +223,7 @@ export function alertHtml(st, model) {
       <p>${label('form.conflict.body')}</p>
       ${c.cols.map(
         (col) => h`<fieldset class="tf-conflict"><legend>${fieldLabel(col)}</legend>
+          ${col === 'charges' && c.period ? h`<p class="fr-text--sm tf-conflict__note">${periodMovedText(model, c.period)}</p>` : ''}
           <div class="fr-radio-group fr-radio-group--sm"><input type="radio" id="tf-cf-${col}-mine" name="tf-cf-${col}" value="mine" data-conflict="${col}" ${chk(c.choices[col] !== 'theirs')}>
             <label class="fr-label" for="tf-cf-${col}-mine">${label('form.conflict.mine', { valeur: valueText(model, col, col in c.mine ? c.mine[col] : st.draft[col]) })}</label></div>
           <div class="fr-radio-group fr-radio-group--sm"><input type="radio" id="tf-cf-${col}-theirs" name="tf-cf-${col}" value="theirs" data-conflict="${col}" ${chk(c.choices[col] === 'theirs')}>

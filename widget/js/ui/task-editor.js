@@ -513,7 +513,13 @@ export function createTaskEditor(deps) {
     cur.pendingLeave = null;
     if (result.kind === 'nothing') return close();
     if (result.kind === 'conflict') {
-      cur.conflict = { cols: result.cols, fresh: result.fresh, mine: result.mine ?? {}, choices: {} };
+      cur.conflict = {
+        cols: result.cols,
+        fresh: result.fresh,
+        mine: result.mine ?? {},
+        choices: {},
+        period: result.period ?? null,
+      };
       return render('tf-alert');
     }
     if (result.kind === 'reread-failed') {

@@ -451,6 +451,9 @@
 .tf-conflict legend {
   font-weight: var(--font-weight-bold);
 }
+.tf-conflict__note {
+  margin: 0 0 var(--space-1);
+}
 .tf-copy {
   width: 100%;
   margin-top: var(--space-1);
