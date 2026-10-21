@@ -107,7 +107,7 @@ export function keepFocus(container, markup) {
  * @param {string} text explication
  */
 export const infoTip = (id, name, text) => {
-  placeTipsInView();
+  setupTooltips();
   return h`<span class="info-tip has-tooltip">
     <button type="button" class="info-tip__btn" aria-label="${name}" aria-describedby="${id}">i</button>
     <span class="tooltip" role="tooltip" id="${id}">${text}</span>
@@ -115,11 +115,16 @@ export const infoTip = (id, name, text) => {
 };
 
 const TIP_MARGIN = 8;
-let tipsPlaced = false;
-/** Recale l'infobulle d'une pastille « i » pour qu'elle reste dans la fenêtre (écouteur posé une seule fois). */
-function placeTipsInView() {
-  if (tipsPlaced || typeof document === 'undefined') return;
-  tipsPlaced = true;
+let tipsReady = false;
+/**
+ * Infobulles (.has-tooltip > .tooltip, WCAG 1.4.13), écouteurs délégués posés une seule fois : l'infobulle d'une
+ * pastille « i » est recalée dans la fenêtre ; Échap masque l'infobulle montrée (survol ou focus) sans déplacer le
+ * focus, jusqu'à ce que le pointeur quitte l'élément et que le focus en sorte. Le survol de l'infobulle elle-même la
+ * garde ouverte (feuille de style).
+ */
+export function setupTooltips() {
+  if (tipsReady || typeof document === 'undefined') return;
+  tipsReady = true;
   const place = (e) => {
     const wrap = e.target instanceof Element ? e.target.closest('.info-tip') : null;
     const tip = wrap?.querySelector('.tooltip');
@@ -133,4 +138,27 @@ function placeTipsInView() {
   };
   document.addEventListener('mouseover', place);
   document.addEventListener('focusin', place);
+  const shown = (wrap) => wrap.matches(':hover') || wrap.contains(document.activeElement);
+  // Phase de capture sur window : Échap ferme l'infobulle avant le panneau ou la fenêtre qui la contient
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key !== 'Escape') return;
+      const open = [...document.querySelectorAll('.has-tooltip:not(.is-dismissed)')].filter(shown);
+      if (!open.length) return;
+      for (const wrap of open) wrap.classList.add('is-dismissed');
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true,
+  );
+  const restore = (e) => {
+    const wrap = e.target instanceof Element ? e.target.closest('.has-tooltip.is-dismissed') : null;
+    if (!wrap || wrap.contains(e.relatedTarget)) return;
+    // Masquée jusqu'à ce que le pointeur ET le focus aient quitté l'élément
+    if (e.type === 'mouseout' ? wrap.contains(document.activeElement) : wrap.matches(':hover')) return;
+    wrap.classList.remove('is-dismissed');
+  };
+  document.addEventListener('mouseout', restore);
+  document.addEventListener('focusout', restore);
 }

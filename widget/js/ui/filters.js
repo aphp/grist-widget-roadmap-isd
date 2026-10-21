@@ -6,7 +6,7 @@ import { raw } from '../core/sanitize.js';
 import { activeFilterChips, DEFAULT_FILTERS, EXTRA_FILTERS, filterChoices } from '../core/filters.js';
 import { SCOPES } from '../core/home-view.js';
 import { label, statusLabel } from '../labels.js';
-import { h, infoTip, keepFocus, personOptions, PROFILES, statusBadge } from './kit.js';
+import { h, infoTip, keepFocus, personOptions, PROFILES, setupTooltips, statusBadge } from './kit.js';
 
 /** Libellés des étiquettes de filtres actifs (à partir de activeFilterChips). */
 export function chipsFor(filters, model) {
@@ -59,6 +59,7 @@ export function extraCount(filters) {
  * @param {boolean} disabled aucune personne choisie
  */
 export function scopeHtml(f, disabled) {
+  if (disabled) setupTooltips();
   const current = disabled ? 'all' : f.scope;
   return h`<fieldset
     class="fr-segmented fr-segmented--sm filters__scope has-tooltip${raw(disabled ? ' is-disabled' : '')}"

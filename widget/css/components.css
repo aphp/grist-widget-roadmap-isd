@@ -276,9 +276,20 @@ details::details-content {
   pointer-events: none;
   transition: opacity var(--duration-fast);
 }
+/* Montrée : survolable (le pont ::before couvre l'écart avec l'élément), masquée par Échap (is-dismissed, kit.js) */
 .has-tooltip:hover > .tooltip,
 .has-tooltip:focus-within > .tooltip {
   opacity: 1;
+  pointer-events: auto;
+}
+.tooltip::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--space-1) - 1px) 0 100%;
+}
+.has-tooltip.is-dismissed > .tooltip {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Pastille « i » (infoTip de kit.js) : explication en infobulle, au survol comme au clavier */
