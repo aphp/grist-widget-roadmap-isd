@@ -260,6 +260,32 @@ test('planUndo : ligne disparue, tout est ignoré', () => {
   });
 });
 
+test('planUndo : dates et charges d’une tâche annulées ensemble ou pas du tout', () => {
+  const entry = {
+    table: 'Tasks',
+    before: { dateDebut: 10, dateEcheance: 20, charges: '[{"teamId":1,"heures":35}]', titre: 'a' },
+    after: { dateDebut: 17, dateEcheance: 27, charges: '[{"teamId":1,"heures":40}]', titre: 'b' },
+  };
+  // Rien de changé depuis : tout est remis
+  assert.deepEqual(planUndo(entry, { ...entry.after }), { changes: entry.before, skipped: [] });
+  // Une date changée ailleurs : ni les dates ni les charges, le titre reste annulé
+  assert.deepEqual(planUndo(entry, { ...entry.after, dateEcheance: 30 }), {
+    changes: { titre: 'a' },
+    skipped: ['dateDebut', 'dateEcheance', 'charges'],
+  });
+  // Charges changées ailleurs : les dates ne sont pas remises non plus
+  assert.deepEqual(planUndo(entry, { ...entry.after, charges: '[]' }), {
+    changes: { titre: 'a' },
+    skipped: ['dateDebut', 'dateEcheance', 'charges'],
+  });
+  // Groupe partiel (seule l'échéance écrite) : même règle sur ce qui a été écrit
+  const end = { table: 'Tasks', before: { dateEcheance: 20 }, after: { dateEcheance: 27 } };
+  assert.deepEqual(planUndo(end, { dateEcheance: 27, charges: 'x' }), { changes: { dateEcheance: 20 }, skipped: [] });
+  // Chantier : pas de groupe (cellule par cellule)
+  const ch = { table: 'Chantiers', before: { Debut: 1, Fin: 2 }, after: { Debut: 3, Fin: 4 } };
+  assert.deepEqual(planUndo(ch, { Debut: 3, Fin: 9 }), { changes: { Debut: 1 }, skipped: ['Fin'] });
+});
+
 test('applyToTables corrige une copie des tables brutes, sans toucher à l’original', () => {
   const tables = { Tasks: { id: [1, 2], titre: ['a', 'b'] }, Team: { id: [1] } };
   const out = applyToTables(tables, [

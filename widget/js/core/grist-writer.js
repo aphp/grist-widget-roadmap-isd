@@ -587,9 +587,16 @@ export function decodeRow(tableData, table, id) {
 }
 
 /**
+ * Cellules annulées ensemble ou pas du tout : les heures des charges d'une tâche suivent sa période (l'ETP fait
+ * foi), remettre les unes sans les autres changerait l'ETP.
+ */
+const UNDO_GROUPS = Object.freeze({ Tasks: ['dateDebut', 'dateEcheance', 'charges'] });
+
+/**
  * Plan d'annulation d'une écriture : remet les valeurs d'avant, sauf sur les cellules modifiées depuis par
- * quelqu'un d'autre (valeur relue différente de celle écrite). Fonction pure.
- * @param {{before:object, after:object}} entry
+ * quelqu'un d'autre (valeur relue différente de celle écrite). Les cellules d'un groupe (UNDO_GROUPS : dates et
+ * charges d'une tâche) écrites ensemble sont toutes ignorées dès que l'une l'est. Fonction pure.
+ * @param {{table?:string, before:object, after:object}} entry
  * @param {object|null} fresh valeurs relues de la ligne (null : ligne disparue)
  * @returns {{changes:object, skipped:string[]}}
  */
@@ -602,6 +609,15 @@ export function planUndo(entry, fresh) {
     else if (fresh && sameValue(fresh[col], v)) changes[col] = entry.before[col];
     else skipped.push(col);
   }
+  const group = UNDO_GROUPS[entry.table] ?? [];
+  if (group.some((c) => skipped.includes(c)))
+    for (const c of group)
+      if (c in changes) {
+        delete changes[c];
+        skipped.push(c);
+      }
+  const order = Object.keys(entry.after);
+  skipped.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   return { changes, skipped };
 }
 
