@@ -10,11 +10,14 @@
  */
 import { etpToHours, hoursToEtp } from './capacity.js';
 import {
+  HOURS_PER_WEEK_FTE,
   HOURS_STEP,
   chargeRows,
   entryHours,
   entryTeamId,
+  inputValue,
   readChargesCell,
+  roundEtp,
   roundHours,
   setPersonHours,
 } from './charges-edit.js';
@@ -74,6 +77,23 @@ export function rescaledHours(ref, toFte) {
   if (ref.etp === null || !toFte || toFte === ref.fte) return ref.heures;
   const h = roundHours(etpToHours(ref.etp, toFte));
   return ref.etp > 0 ? Math.max(h, HOURS_STEP) : h;
+}
+
+/**
+ * Valeur affichée dans la case de saisie d'une ligne : celle de sa référence (ETP saisi, ou ETP × 35 en h/semaine)
+ * tant que les heures de la ligne sont celles que la référence donne sur la période (une saisie « 14 » reste
+ * « 14 » après un nouveau rendu ou un changement de dates) ; sinon déduite des heures (inputValue).
+ * @param {number} heures heures de la ligne
+ * @param {'etp'|'hsem'} unit
+ * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
+ * @param {ChargeRef|null|undefined} ref
+ * @returns {number|null} null sans période
+ */
+export function displayValue(heures, unit, fte, ref) {
+  if (!fte) return null;
+  if (ref && ref.etp !== null && rescaledHours(ref, fte) === heures)
+    return unit === 'hsem' ? Math.round(ref.etp * HOURS_PER_WEEK_FTE * 10) / 10 : roundEtp(ref.etp);
+  return inputValue(heures, unit, fte);
 }
 
 /** Entrée valide unique d'une personne dans une cellule lisible : {index, heures, text}, sinon null. */

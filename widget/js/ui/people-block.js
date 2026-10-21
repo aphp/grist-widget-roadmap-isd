@@ -12,7 +12,14 @@ import {
   periodFte,
   readChargesCell,
 } from '../core/charges-edit.js';
-import { chargeRefs, followBaseRefs, refFromInput, rescaleCharges } from '../core/charges-rescale.js';
+import {
+  chargeRefs,
+  displayValue,
+  followBaseRefs,
+  refFromInput,
+  rescaleCharges,
+  rescaledHours,
+} from '../core/charges-rescale.js';
 import { addPersonLine, assignPerson, lineInput, removePersonLine } from '../core/task-people.js';
 import { chargeEqText, chargeRowMsgs, peopleBlockHtml, peopleCtx } from '../views/task-form.js';
 
@@ -200,7 +207,11 @@ export function createPeopleBlock(deps) {
     const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
     // Personne estimation (Team.aph) : pas de borne de 1 ETP, seulement la borne de bon sens
     const estimation = isEstimationPerson(model(), teamId);
-    const r = lineInput(s.draft, teamId, t.value, s.chargesUnit, fte, { estimation });
+    // Valeur affichée dans la case (celle de la référence si elle tient encore) : ressaisie, elle ne change rien
+    const cell = readChargesCell(s.draft.charges);
+    const row = cell.ok ? chargeRows(cell.entries).rows.find((x) => x.teamId === teamId) : null;
+    const shown = row ? displayValue(row.heures, s.chargesUnit, fte, s.chargeRefs.get(teamId)) : null;
+    const r = lineInput(s.draft, teamId, t.value, s.chargesUnit, fte, { estimation, shown });
     if (r.error) {
       s.chargeErrors.set(teamId, r.error);
       s.chargeInputs.set(teamId, t.value);
@@ -284,11 +295,15 @@ export function createPeopleBlock(deps) {
     }
     if (t.dataset.chargeMerge) {
       const teamId = Number(t.dataset.chargeMerge);
-      if (!deps.applyDraft({ ...s.draft, charges: mergeDuplicates(s.draft.charges, teamId) }, title)) return true;
-      // Entrée fusionnée : référence prise sur la période du brouillon
-      const ref = chargeRefs(s.draft.charges, periodFte(s.draft.dateDebut, s.draft.dateEcheance)).get(teamId);
-      if (ref) s.chargeRefs.set(teamId, ref);
-      else s.chargeRefs.delete(teamId);
+      const merged = mergeDuplicates(s.draft.charges, teamId);
+      if (!deps.applyDraft({ ...s.draft, charges: merged }, title)) return true;
+      // Entrée fusionnée : référence prise sur la période du brouillon, sauf si l'actuelle donne déjà ces heures
+      // (rien à fusionner : la saisie affichée reste celle de la référence)
+      const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
+      const ref = chargeRefs(s.draft.charges, fte).get(teamId);
+      const old = s.chargeRefs.get(teamId);
+      if (!ref) s.chargeRefs.delete(teamId);
+      else if (!old || rescaledHours(old, fte) !== ref.heures) s.chargeRefs.set(teamId, ref);
       s.chargesTyped.add(teamId);
       render(id(`ch-${teamId}`));
       return true;

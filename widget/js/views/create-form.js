@@ -68,7 +68,7 @@ function alertHtml(st) {
 
 /** Aide du bloc « Personnes » de la fenêtre (plus courte que dans la fiche ; « Je suis… » proposé par défaut). */
 export const peopleHelp = (st) =>
-  st.me ? `${label('create.people.help')} ${label('create.people.helpMe')}` : label('create.people.help');
+  st.me ? `${label('form.people.help')} ${label('create.people.helpMe')}` : label('form.people.help');
 
 /**
  * Corps de « Nouvelle tâche » ou « Sous-tâche ». Bloc « Personnes » de la fiche (views/task-form.js) juste après

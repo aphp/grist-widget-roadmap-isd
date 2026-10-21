@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chargeRefs,
+  displayValue,
   followBaseRefs,
   refFromInput,
   rescaleCharges,
@@ -116,4 +117,18 @@ test('décalage à durée égale de juin à juillet : heures recalculées, ETP g
   assert.equal(a, b);
   const sep = '[{"teamId":40, "heures":12}]';
   assert.equal(rescaleCharges(sep, chargeRefs(sep, a), b, { baseRaw: sep }).raw, sep);
+});
+
+test('valeur affichée : celle de la référence tant que les heures sont celles qu’elle donne, sinon déduite des heures', () => {
+  // 14 h/semaine saisies sur 1 ETP de 52 h : 0,4 ETP, 21 h ; déduite des heures, on lirait 14,1
+  const ref = refFromInput({ heures: 21, etp: 0.4, fte: 52 });
+  assert.equal(displayValue(21, 'hsem', 52, ref), 14);
+  assert.equal(displayValue(21, 'etp', 52, ref), 0.4);
+  // Période changée : heures recalculées depuis la référence (0,4 × 80,9 h = 32,5 h), même valeur affichée
+  assert.equal(displayValue(32.5, 'hsem', 80.888889, ref), 14);
+  // Heures changées ailleurs (relecture) : déduites des heures
+  assert.equal(displayValue(30, 'hsem', 52, ref), 20.2);
+  assert.equal(displayValue(21, 'hsem', 52, null), 14.1);
+  assert.equal(displayValue(21, 'hsem', 52, { etp: null, heures: 21, fte: null }), 14.1);
+  assert.equal(displayValue(21, 'hsem', null, ref), null);
 });

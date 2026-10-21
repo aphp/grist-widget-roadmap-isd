@@ -11,7 +11,6 @@ import {
   ESTIMATION_MAX_ETP,
   HOURS_PER_WEEK_FTE,
   hoursDelta,
-  inputValue,
   isEstimationPerson,
   maxHours,
   periodFte,
@@ -19,6 +18,7 @@ import {
   readChargesCell,
 } from '../core/charges-edit.js';
 import { formatDateFr } from '../core/dates.js';
+import { displayValue } from '../core/charges-rescale.js';
 import { ETP_SPLIT } from '../core/kanban-data.js';
 import { priorityText, taskPriority } from '../core/kanban-data.js';
 import { breadcrumb } from '../core/detail-data.js';
@@ -288,7 +288,8 @@ function personLineHtml(st, model, l, ctx) {
   const name = chargeName(model, id);
   // Sans période exploitable, aucune saisie (ETP comme h/semaine) : les heures stockées restent montrées (« = … au total »)
   const blocked = !ctx.readable || !ctx.canCharges || l.count > 1 || !l.known || !ctx.fte;
-  const value = l.charged && ctx.fte ? inputText(inputValue(l.heures, st.chargesUnit, ctx.fte), st.chargesUnit) : '';
+  const shown = l.charged ? displayValue(l.heures, st.chargesUnit, ctx.fte, st.chargeRefs?.get(id)) : null;
+  const value = shown === null ? '' : inputText(shown, st.chargesUnit);
   const typed = st.chargeInputs.get(id);
   const err = st.chargeErrors.get(id);
   const unit = label(`form.charges.unit.${st.chargesUnit}`);
@@ -327,7 +328,7 @@ const NO_PERIOD_NOTICE = Object.freeze({
 });
 const NO_PERIOD_ERROR = Object.freeze({ order: 'dateOrder', noWorkday: 'noWorkdays' });
 /** Erreurs de saisie dont le texte change en h/semaine (clé suffixée « Hsem »). */
-const HSEM_ERRORS = new Set(['max', 'maxEstimation', 'decimale']);
+const HSEM_ERRORS = new Set(['max', 'maxEstimation', 'decimale', 'petit']);
 
 /** Valeur d'une case de saisie : ETP (etpText) ou h/semaine à une décimale, sans séparateur de milliers. */
 const inputText = (v, unit) => (unit === 'hsem' ? hoursFormat.format(v) : etpText(v, false));
@@ -363,7 +364,7 @@ export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const over = ctx.fte && l.heures !== null && l.heures > max && !err;
   const etp = ESTIMATION_MAX_ETP;
   const hsem = ESTIMATION_MAX_ETP * HOURS_PER_WEEK_FTE;
-  return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0), etp, hsem })}</p>` : ''}${
+  return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0), etp, hsem, min: hoursFormat.format(err.min ?? 0) })}</p>` : ''}${
     over
       ? h`<p class="tf-warn">${label(estimation ? 'form.charges.overEstimation' : 'form.charges.over', { h: hoursFormat.format(max), etp })}</p>`
       : ''
@@ -460,9 +461,9 @@ export function peopleBlockHtml(st, model, opts = {}) {
   return h`<section class="tf-field tf-charges tf-people ${raw(err ? 'fr-input-group--error' : '')}" id="${p}-people" data-field="charges" aria-labelledby="${p}-people-title">
     <div class="tf-charges__head">
       <h3 class="dt-section__title tf-charges__title" id="${p}-people-title" tabindex="-1">${label('form.field.people')}</h3>
-      <span class="tf-charges__tools">${readable ? unitToggle : ''}${infoTip(`tip-fte-${p}`, label('capacity.fte.about'), `${label('capacity.fte.help')} ${label('capacity.fte.helpHsem')}`)}</span>
+      <span class="tf-charges__tools">${readable ? unitToggle : ''}${infoTip(`tip-fte-${p}`, label('capacity.fte.about'), `${label('capacity.fte.help')} ${label('capacity.fte.helpHsem')} ${label('capacity.fte.helpCharges')}`)}</span>
     </div>
-    <p class="fr-hint-text tf-hint">${opts.help ?? `${label('form.people.help')} ${label('form.charges.help')}`}</p>
+    <p class="fr-hint-text tf-hint">${opts.help ?? label('form.people.help')}</p>
     ${readable && !ctx.fte ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label(NO_PERIOD_NOTICE[ctx.period] ?? 'form.charges.noDates')}</p>` : ''}
     ${lines.length ? h`<ul class="list tf-charges__rows" aria-labelledby="${p}-people-title">${lines.map((l) => personLineHtml(st, model, l, ctx))}</ul>` : h`<p class="tf-empty">${label('form.people.empty')}</p>`}
     ${invalid.map(

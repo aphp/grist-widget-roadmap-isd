@@ -553,11 +553,11 @@ test(
       await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`),
       '= 21 h au total (congés et fériés déduits)',
     );
-    // Dates changées : l'ETP fait foi (0,4 ETP du 2 au 21 novembre = 32,5 h), écart d'heures signalé ; les h/semaine
-    // affichées viennent des heures arrondies (32,5 h ÷ 80,9 h × 35 = 14,1)
+    // Dates changées : l'ETP fait foi (0,4 ETP du 2 au 21 novembre = 32,5 h), écart d'heures signalé ; la saisie
+    // reste affichée telle quelle (14, et non 14,1 déduit des heures arrondies)
     await setDate('dateEcheance', '2026-11-21');
     assert.equal(etpHours(0.4, '2026-11-02', '2026-11-21'), 32.5);
-    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '14,1');
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '14');
     assert.match(
       await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`),
       /Dates modifiées : 21 h → 32,5 h \(ETP conservé\)/,
@@ -718,6 +718,12 @@ test(
     await tip('tip-fte-tf');
     // Bloc des charges : la pastille ajoute la quotité en h/semaine (les autres pastilles, non)
     assert.match(await w(`return D.getElementById('tip-fte-tf').textContent;`), /35 h\/semaine = 1 ETP/);
+    assert.match(await w(`return D.getElementById('tip-fte-tf').textContent;`), /0,5 h près ; si les dates changent/);
+    // Aide du bloc : une phrase, la formule est dans la pastille
+    assert.equal(
+      await w(`return D.querySelector('#tf-people .tf-hint').textContent.trim();`),
+      'Ajouter une personne l’assigne ; sa charge est facultative. 35 h/semaine = 1 ETP, 1 ETP au plus par personne (sauf la personne d’estimation).',
+    );
     // Événements de focus d'une page au premier plan (Chrome sans tête ne les émet pas sinon)
     await send('Emulation.setFocusEmulationEnabled', { enabled: true });
     const opacity = (id) => `getComputedStyle(D.getElementById('${id}')).opacity`;
@@ -3077,20 +3083,24 @@ test(
     );
     assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 47 h/);
     // Dates changées dans la fenêtre : l'ETP fait foi, les heures suivent (jusqu'au 8 : 0,5 ETP = 14,5 h ; 0,4 ETP =
-    // 11,5 h), les h/semaine affichées viennent des heures arrondies (17,6 et 13,9)
+    // 11,5 h), les saisies restent affichées (17,5 et 14)
     assert.deepEqual(
       [etpHours(0.5, '2026-11-02', '2026-11-08'), etpHours(0.4, '2026-11-02', '2026-11-08')],
       [14.5, 11.5],
     );
     await change('#cf-dateEcheance', '2026-11-08');
-    await until(`D.getElementById('cf-ch-5').value === '17,6' && D.getElementById('cf-ch-${b}').value === '13,9'`);
+    await until(`D.getElementById('cf-ch-5').value === '17,5' && D.getElementById('cf-ch-${b}').value === '14'`);
+    assert.equal(
+      await w(`return D.getElementById('cf-ch-${b}-eq').textContent;`),
+      '= 11,5 h au total (congés et fériés déduits)',
+    );
     assert.equal(
       await w(`return D.getElementById('cf-ch-5-eq').textContent;`),
       '= 14,5 h au total (congés et fériés déduits)',
     );
-    // Retour à la période de saisie : heures retrouvées (21 h s'affichent 14,1 h/semaine, depuis les heures arrondies)
+    // Retour à la période de saisie : heures et saisies retrouvées
     await change('#cf-dateEcheance', '2026-11-15');
-    await until(`D.getElementById('cf-ch-5').value === '17,5' && D.getElementById('cf-ch-${b}').value === '14,1'`);
+    await until(`D.getElementById('cf-ch-5').value === '17,5' && D.getElementById('cf-ch-${b}').value === '14'`);
     assert.equal(await w(`return W.__writes.length;`), 0);
     await clickOn('#cf-create');
     await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
@@ -3274,8 +3284,8 @@ test(
     await until(`!D.getElementById('cf-ch-${b}')`);
     assert.equal(await w(`return D.activeElement.id;`), 'cf-assignees');
     assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 15 h/);
-    // Bloc redessiné : h/semaine relues depuis les 15 h stockées (15 / 52 × 35 = 10,1)
-    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '10,1');
+    // Bloc redessiné : la saisie reste affichée telle quelle (10, et non 10,1 déduit des 15 h arrondies)
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '10');
     // Fusion et remplacement : états inaccessibles depuis la fenêtre (cellule neuve), donc boutons posés comme le
     // ferait le rendu, pour exercer les branches du contrôleur partagé avec la fiche
     await w(
@@ -3283,7 +3293,7 @@ test(
     );
     await clickOn('#cf-probe-merge');
     await until(`D.activeElement.id === 'cf-ch-5'`);
-    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '10,1');
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '10');
     await w(
       `const f = D.createElement('div'); f.innerHTML = '<button type="button" data-charges="replace-confirm" id="cf-probe-replace">r</button>'; D.getElementById('cf-people').append(f); return true;`,
     );

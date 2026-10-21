@@ -464,12 +464,13 @@ export function inputValue(heures, unit, fte) {
  * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
  * @param {number|null} [current] heures actuelles de la ligne : une saisie égale à la valeur affichée les
  *   conserve telles quelles (pas d'arrondi ni de dérive)
- * @param {{estimation?:boolean}} [opts] estimation : personne estimation (borne ESTIMATION_MAX_ETP, erreur
- *   'maxEstimation')
+ * @param {{estimation?:boolean, shown?:number|null}} [opts] estimation : personne estimation (borne
+ *   ESTIMATION_MAX_ETP, erreur 'maxEstimation') ; shown : valeur affichée dans la case (charges-rescale.js:
+ *   displayValue), ressaisie sans effet elle aussi
  * @returns {{heures:number}|{error:'nombre'|'negatif'|'dates'|'vide'|'decimale'|'petit'|'max'|'maxEstimation',
- *   max?:number}}
+ *   max?:number, min?:number}} min (h/semaine) : plus petite saisie permise sur la période
  */
-export function hoursFromInput(text, unit, fte, current = null, { estimation = false } = {}) {
+export function hoursFromInput(text, unit, fte, current = null, { estimation = false, shown = null } = {}) {
   let n;
   try {
     n = parseNumberFr(text);
@@ -480,12 +481,15 @@ export function hoursFromInput(text, unit, fte, current = null, { estimation = f
   if (n === null) return { error: 'vide' };
   if (n < 0) return { error: 'negatif' };
   if (!fte) return { error: 'dates' };
-  if (current !== null && n === inputValue(current, unit, fte)) return { heures: current };
+  if (current !== null && (n === inputValue(current, unit, fte) || n === shown)) return { heures: current };
   const k = unit === 'hsem' ? 10 : n < 1 ? 100 : 10;
   if (Math.abs(n * k - Math.round(n * k)) > 1e-9) return { error: 'decimale' };
   const etp = inputEtp(n, unit);
   const exact = etpToHours(etp, fte);
-  if (n > 0 && exact < MIN_HOURS) return { error: 'petit' };
+  if (n > 0 && exact < MIN_HOURS)
+    return unit === 'hsem'
+      ? { error: 'petit', min: Math.ceil(((MIN_HOURS * HOURS_PER_WEEK_FTE) / fte) * 10 - 1e-9) / 10 }
+      : { error: 'petit' };
   // Borne sur l'ETP saisi (1 ETP, ou ESTIMATION_MAX_ETP) : 1 ETP tout juste reste permis quand la capacité de la
   // période s'arrondit vers le bas ; ses heures valent alors exactement maxHours
   const limit = estimation ? ESTIMATION_MAX_ETP : MAX_ETP;

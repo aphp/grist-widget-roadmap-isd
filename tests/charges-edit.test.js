@@ -447,6 +447,8 @@ test('M3 : au plus 1 ETP par personne sur la période (2 000 h sans dates)', () 
   // Valeur existante au-dessus de la borne, ressaisie telle qu'affichée (50 h/semaine) : conservée
   assert.equal(inputValue(100, 'hsem', 70), 50);
   assert.deepEqual(hoursFromInput('50', 'hsem', 70, 100), { heures: 100 });
+  // Valeur affichée depuis la référence (opts.shown), ressaisie : heures conservées
+  assert.deepEqual(hoursFromInput('14', 'hsem', 52, 21, { shown: 14 }), { heures: 21 });
   assert.equal(
     chargesWriteProblem('[{"teamId":1,"heures":70.5}]', '', () => true, 70),
     'heures : au plus 70 h (1 ETP sur la période)',
@@ -486,7 +488,11 @@ test('N1 : une entrée invalide de la personne est remplacée, sans doublon', ()
 
 test('N2 : moins de 0,25 h refusé, 0 explicite accepté', () => {
   // 0,1 h/semaine sur 1 ETP de 25 h = 0,07 h : trop petit ; 0,4 h/semaine = 0,29 h → 0,5 h
-  assert.deepEqual(hoursFromInput('0,1', 'hsem', 25), { error: 'petit' });
+  // En h/semaine, la plus petite valeur permise sur la période est donnée (0,4 h/semaine sur 1 ETP de 25 h)
+  assert.deepEqual(hoursFromInput('0,1', 'hsem', 25), { error: 'petit', min: 0.4 });
+  assert.deepEqual(hoursFromInput('0,1', 'hsem', 25, null), hoursFromInput('0,1', 'hsem', 25));
+  assert.deepEqual(hoursFromInput('0,001', 'etp', 25), { error: 'decimale' });
+  assert.deepEqual(hoursFromInput('0,01', 'etp', 20), { error: 'petit' });
   assert.deepEqual(hoursFromInput('0', 'hsem', 25), { heures: 0 });
   assert.deepEqual(hoursFromInput('0', 'etp', 25), { heures: 0 });
   assert.deepEqual(hoursFromInput('0,4', 'hsem', 25), { heures: 0.5 });

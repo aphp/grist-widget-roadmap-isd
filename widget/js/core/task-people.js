@@ -87,12 +87,13 @@ export function removePersonLine(draft, teamId) {
  * @param {string} text valeur saisie
  * @param {'etp'|'hsem'} unit
  * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
- * @param {{estimation?:boolean}} [opts] estimation : la personne est la personne estimation (pas de borne de 1 ETP)
+ * @param {{estimation?:boolean, shown?:number|null}} [opts] estimation : la personne est la personne estimation (pas
+ *   de borne de 1 ETP) ; shown : valeur affichée dans la case (ressaisie sans effet)
  * @returns {{charges:string, heures:number|null, etp:number|null}|{error:{error:string, max?:number}}} heures
  *   null : charge vidée ; etp : ETP saisi, exact (en h/semaine : h/semaine ÷ 35) quand les heures changent, sinon
  *   null ; il fait foi si les dates changent ensuite
  */
-export function lineInput(draft, teamId, text, unit, fte, { estimation = false } = {}) {
+export function lineInput(draft, teamId, text, unit, fte, { estimation = false, shown = null } = {}) {
   const cell = readChargesCell(draft.charges);
   if (!cell.ok) return { error: { error: 'nombre' } };
   const current = chargeRows(cell.entries).rows.find((r) => r.teamId === teamId) ?? null;
@@ -100,7 +101,7 @@ export function lineInput(draft, teamId, text, unit, fte, { estimation = false }
     if (!draft.assignees.includes(teamId)) return { error: { error: 'vide' } };
     return { charges: current ? removePerson(draft.charges, teamId) : draft.charges, heures: null, etp: null };
   }
-  const r = hoursFromInput(text, unit, fte, current?.heures ?? null, { estimation });
+  const r = hoursFromInput(text, unit, fte, current?.heures ?? null, { estimation, shown });
   if (r.error) return { error: r };
   // Valeur déjà affichée ressaisie : rien ne change (pas de dérive des heures stockées, ni de l'ETP de référence,
   // déduit alors des heures)

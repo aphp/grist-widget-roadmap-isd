@@ -688,7 +688,8 @@ const FR = Object.freeze({
   'chip.tag': 'Tag : {valeur}',
   'form.field.charges': 'Charges',
   'form.field.people': 'Personnes',
-  'form.people.help': 'Ajouter une personne l’assigne à la tâche ; sa charge est facultative.',
+  'form.people.help':
+    'Ajouter une personne l’assigne ; sa charge est facultative. 35 h/semaine = 1 ETP, 1 ETP au plus par personne (sauf la personne d’estimation).',
   'form.people.add': 'Ajouter une personne…',
   'form.people.addLabel': 'Ajouter une personne à la tâche (assignée, charge facultative)',
   'form.people.empty': 'Personne n’est assigné et aucune charge n’est saisie.',
@@ -703,10 +704,10 @@ const FR = Object.freeze({
   'capacity.fte.about': 'À propos de l’ETP',
   'capacity.fte.help':
     '1 ETP = une personne à temps plein sur la période : 7 h par jour ouvré (hors week-ends et jours fériés), moins 44 jours de congés par an, et moins en mai (80 %), juillet (60 %), août (50 %) et décembre (80 %). Les heures du plan de charge et des tâches se comptent de la même façon.',
+  'capacity.fte.helpCharges':
+    'Les heures totales sont enregistrées à 0,5 h près ; si les dates changent, l’ETP est conservé et les heures sont recalculées.',
   'capacity.fte.helpHsem':
     '35 h/semaine = 1 ETP : une personne à temps plein ; le total tient compte des congés, des jours fériés et des ralentissements.',
-  'form.charges.help':
-    'Charge en ETP ou en heures par semaine (35 h/semaine = 1 ETP, une personne à temps plein sur la période du début à l’échéance : voir la pastille « i ») ; 1 ETP au plus par personne (sauf la personne d’estimation). Les heures totales sont calculées et enregistrées à 0,5 h près. Si les dates changent, l’ETP est conservé et les heures sont recalculées.',
   'form.charges.noDates': 'Indiquez début et échéance pour saisir une charge',
   'form.charges.noWorkdays': 'La période ne compte aucun jour ouvré : changez les dates pour saisir une charge',
   'form.charges.dateOrder': 'L’échéance précède le début : corrigez les dates pour saisir une charge',
@@ -737,6 +738,8 @@ const FR = Object.freeze({
   'form.charges.error.decimale': 'ETP : deux décimales au plus sous 1 (0,25), une au-delà (1,5).',
   'form.charges.error.decimaleHsem': 'h/semaine : une décimale au plus (14,5).',
   'form.charges.error.petit': 'Moins de 0,25 h au total : saisissez 0 pour aucune charge, ou une charge plus grande.',
+  'form.charges.error.petitHsem':
+    'Moins de 0,25 h au total sur la période : saisissez 0 pour aucune charge, ou au moins {min} h/semaine.',
   'form.charges.error.max': '1 ETP maximum par personne (soit {h} h sur la période).',
   'form.charges.error.maxHsem': '35 h/semaine maximum par personne (soit {h} h sur la période).',
   'form.charges.error.maxEstimation': '{etp} ETP maximum pour la personne d’estimation (soit {h} h sur la période).',
@@ -958,8 +961,6 @@ const FR = Object.freeze({
   'create.field.cible.choose': '— Choisir un chantier —',
   'create.field.cible.path': 'Rattachement : {chemin}',
   'create.field.parent': 'Sous-tâche de',
-  'create.people.help':
-    'Ajouter une personne l’assigne ; sa charge est facultative, en ETP ou en heures par semaine (35 h/semaine = 1 ETP, une personne à temps plein sur la période : voir la pastille « i »), 1 ETP au plus par personne (sauf la personne d’estimation).',
   'create.people.helpMe': 'Par défaut : vous (« Je suis… »).',
   'create.error.chargesOver':
     'Une charge dépasse la borne sur la période ({h} h par personne) : corrigez-la ou les dates.',
