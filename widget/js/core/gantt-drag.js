@@ -2,7 +2,10 @@
  * Gantt : déplacer une barre dans le temps. Fonctions pures, en jours entiers UTC : pas selon l'échelle,
  * décalage d'un jour, d'une semaine ou d'un mois, conversion d'un déplacement en pixels, bornes et droit de glisser.
  */
-import { DAY_MS } from './dates.js';
+import { DAY_MS, formatDayShort } from './dates.js';
+import { label } from '../labels.js';
+import { chargeRefs, rescaleCharges } from './charges-rescale.js';
+import { entryHours, isEstimationPerson, maxHours, periodFte, readChargesCell } from './charges-edit.js';
 import { isMilestone, nodeBar } from './gantt-data.js';
 import { editAvailability } from './task-form.js';
 
@@ -110,4 +113,84 @@ export function dragTarget(model, node, { edit, writer, narrow }) {
   const cols = isTask ? ['dateDebut', 'dateEcheance'] : ['Debut', 'Fin'];
   if (!writer || !cols.every((c) => writer.can(table, c)?.ok)) return { ok: false, reason: 'column' };
   return { ok: true, table, id: node.ref.id, cols, milestone: isMilestone(model, node) };
+}
+
+const sumHours = (raw) =>
+  readChargesCell(raw).entries.reduce(
+    (total, e) => total + (e !== null && typeof e === 'object' ? (entryHours(e) ?? 0) : 0),
+    0,
+  );
+
+/** Heures de Tasks.charges avant et après le recalcul à ETP constant, ou null (pas de charges, capacité égale). */
+function hoursEffect(model, task, from, to) {
+  const fromFte = periodFte(from.start, from.end);
+  const toFte = periodFte(to.start, to.end);
+  if (!task.charges.length || !fromFte || !toFte || fromFte === toFte) return { hours: null, keptOver: [] };
+  const raw = JSON.stringify(task.charges.map((c) => ({ teamId: c.personId, heures: c.heures })));
+  const maxOf = (teamId) => maxHours(toFte, isEstimationPerson(model, teamId));
+  const r = rescaleCharges(raw, chargeRefs(raw, fromFte), toFte, { maxOf });
+  return { hours: { from: sumHours(raw), to: sumHours(r.raw) }, keptOver: r.over };
+}
+
+/** Éléments enfants (sous-tâches directes, ou tâches de premier niveau d'un chantier) dont une date propre sort de `to`. */
+function outsideCount(model, target, to) {
+  const ids =
+    target.table === 'Tasks'
+      ? (model.tasks.get(target.id)?.childIds ?? [])
+      : [...model.tasks.values()].filter((t) => t.chantierId === target.id && !t.parentId).map((t) => t.id);
+  return ids.filter((id) => {
+    const t = model.tasks.get(id);
+    return t && ((t.start !== null && t.start < to.start) || (t.end !== null && t.end > to.end));
+  }).length;
+}
+
+/**
+ * Effets d'un glisser sur la période d'une tâche ou d'un chantier, pour l'infobulle et les annonces.
+ * @param {object} model
+ * @param {{table:'Tasks'|'Chantiers', id:number}} target voir dragTarget
+ * @param {{start:number, end:number}} from période d'origine
+ * @param {{start:number, end:number}} to nouvelle période
+ * @param {number} today
+ * @returns {{start:number, end:number, days:number, delta:number, hours:{from:number, to:number}|null,
+ *   keptOver:number[], childrenOutside:number, childKind:'sous-tache'|'tache', lateCleared:boolean}}
+ *   days : jours calendaires ; hours : null sans charges ou si la capacité standard ne change pas ; keptOver :
+ *   personnes dont l'entrée dépasse la borne et reste telle quelle
+ */
+export function dragSummary(model, target, from, to, today) {
+  const task = target.table === 'Tasks' ? model.tasks.get(target.id) : null;
+  const { hours, keptOver } = task ? hoursEffect(model, task, from, to) : { hours: null, keptOver: [] };
+  return {
+    start: to.start,
+    end: to.end,
+    days: to.end - to.start + 1,
+    delta: to.start - from.start,
+    hours,
+    keptOver,
+    childrenOutside: outsideCount(model, target, to),
+    childKind: target.table === 'Tasks' ? 'sous-tache' : 'tache',
+    lateCleared: Boolean(task && task.end !== null && task.end < today && !task.done && to.end >= today),
+  };
+}
+
+const fr = (n) => String(n).replace('.', ',');
+const plural = (key, n) => label(`${key}.${n === 1 ? 'one' : 'many'}`, { n });
+
+/**
+ * Lignes de l'infobulle d'un glisser. Les alertes portent « ⚠ » et un texte : jamais la couleur seule.
+ * @param {ReturnType<typeof dragSummary>} s
+ * @param {'move'|'start'|'end'} mode le décalage n'est affiché qu'en déplacement
+ * @returns {string[]}
+ */
+export function summaryText(s, mode) {
+  const lines = [
+    label('gantt.drag.range', { debut: formatDayShort(s.start, s.end), fin: formatDayShort(s.end), n: s.days }),
+  ];
+  if (mode === 'move' && s.delta !== 0)
+    lines.push(label('gantt.drag.delta', { signe: s.delta > 0 ? '+' : '−', n: Math.abs(s.delta) }));
+  if (s.hours) lines.push(label('gantt.drag.hours', { avant: fr(s.hours.from), apres: fr(s.hours.to) }));
+  if (s.keptOver.length) lines.push(plural('gantt.drag.keptOver', s.keptOver.length));
+  if (s.childrenOutside)
+    lines.push(plural(s.childKind === 'tache' ? 'gantt.drag.tasksOut' : 'gantt.drag.subtasksOut', s.childrenOutside));
+  if (s.lateCleared) lines.push(label('gantt.drag.notLate'));
+  return lines;
 }

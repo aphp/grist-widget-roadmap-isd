@@ -5,12 +5,16 @@ import { buildModel } from '../widget/js/core/model.js';
 import { dayOfIso, isoOfDay } from '../widget/js/core/dates.js';
 import {
   clampShift,
+  dragSummary,
   dragTarget,
   movedDates,
   shiftDay,
   snapUnit,
   stepsFromPixels,
+  summaryText,
 } from '../widget/js/core/gantt-drag.js';
+import { etpToHours } from '../widget/js/core/capacity.js';
+import { periodFte, roundHours } from '../widget/js/core/charges-edit.js';
 import { feuille } from './fixtures/feuille.js';
 
 const d = dayOfIso;
@@ -121,4 +125,144 @@ test('dragTarget : chaque condition', () => {
   });
 
   assert.equal(dragTarget(model, { ...chantier, ref: { table: 'Chantiers', id: 400 } }, ctx).reason, 'scope');
+});
+
+// ---------- dragSummary et summaryText ----------
+const task = (id, extra = {}) => ({
+  id,
+  start: null,
+  end: null,
+  done: false,
+  childIds: [],
+  chantierId: null,
+  parentId: null,
+  charges: [],
+  ...extra,
+});
+const modelOf = (...tasks) => ({ tasks: new Map(tasks.map((t) => [t.id, t])), estimation: { ids: new Set() } });
+const T = (id) => ({ table: 'Tasks', id });
+const span = (a, b) => ({ start: d(a), end: d(b) });
+const hoursOf = (a, b, etp = 1) => roundHours(etpToHours(etp, periodFte(d(a), d(b))));
+
+test('dragSummary : déplacement simple à capacité égale, heures non recalculées', () => {
+  const m = modelOf(task(1, { start: d('2026-10-05'), end: d('2026-10-16'), charges: [{ personId: 7, heures: 40 }] }));
+  const s = dragSummary(m, T(1), span('2026-10-05', '2026-10-16'), span('2026-10-19', '2026-10-30'), d('2026-10-01'));
+  assert.equal(s.delta, 14);
+  assert.equal(s.days, 12);
+  assert.equal(s.hours, null);
+  assert.deepEqual(s.keptOver, []);
+  assert.equal(
+    dragSummary(modelOf(task(2)), T(2), span('2026-10-05', '2026-10-16'), span('2026-10-19', '2026-10-30'), 0).hours,
+    null,
+  );
+});
+
+test('dragSummary : de juin à juillet à durée égale, heures recalculées à ETP gardé', () => {
+  const from = span('2027-06-07', '2027-06-27');
+  const to = span('2027-07-05', '2027-07-25');
+  const before = hoursOf('2027-06-07', '2027-06-27');
+  const m = modelOf(task(1, { charges: [{ personId: 7, heures: before }] }));
+  const s = dragSummary(m, T(1), from, to, 0);
+  assert.deepEqual(s.hours, { from: before, to: hoursOf('2027-07-05', '2027-07-25') });
+  assert.ok(s.hours.to < s.hours.from);
+});
+
+test('dragSummary : tâche étirée, heures proportionnelles', () => {
+  const m = modelOf(task(1, { charges: [{ personId: 7, heures: hoursOf('2026-11-02', '2026-11-15', 0.5) }] }));
+  const s = dragSummary(m, T(1), span('2026-11-02', '2026-11-15'), span('2026-11-02', '2026-11-29'), 0);
+  assert.deepEqual(s.hours, {
+    from: hoursOf('2026-11-02', '2026-11-15', 0.5),
+    to: hoursOf('2026-11-02', '2026-11-29', 0.5),
+  });
+});
+
+test('dragSummary : ancienne charge à 2 ETP raccourcie, laissée telle quelle', () => {
+  const m = modelOf(task(1, { charges: [{ personId: 7, heures: hoursOf('2026-11-02', '2026-11-29', 2) }] }));
+  const s = dragSummary(m, T(1), span('2026-11-02', '2026-11-29'), span('2026-11-02', '2026-11-15'), 0);
+  assert.deepEqual(s.keptOver, [7]);
+  assert.equal(s.hours.from, s.hours.to);
+});
+
+test('dragSummary : chantier dont une tâche sort, sous-tâches directes', () => {
+  const m = modelOf(
+    task(1, { chantierId: 5, start: d('2026-11-02'), end: d('2026-11-06') }),
+    task(2, { chantierId: 5, start: d('2026-11-20'), end: d('2026-11-30') }),
+    task(3, { chantierId: 5, parentId: 2, start: d('2026-01-01'), end: d('2026-01-02') }),
+    task(4, { chantierId: 5 }),
+    task(10, { childIds: [11, 12, 13] }),
+    task(11, { parentId: 10, start: d('2026-11-02'), end: d('2026-11-06') }),
+    task(12, { parentId: 10, start: d('2026-11-02'), end: d('2026-12-30') }),
+    task(13, { parentId: 10 }),
+  );
+  const ch = dragSummary(
+    m,
+    { table: 'Chantiers', id: 5 },
+    span('2026-11-01', '2026-11-30'),
+    span('2026-11-01', '2026-11-10'),
+    0,
+  );
+  assert.equal(ch.childrenOutside, 1);
+  assert.equal(ch.hours, null);
+  const sub = dragSummary(m, T(10), span('2026-11-01', '2026-11-30'), span('2026-11-01', '2026-11-30'), 0);
+  assert.equal(sub.childrenOutside, 1);
+  assert.equal(
+    dragSummary(m, T(404), span('2026-11-01', '2026-11-30'), span('2026-11-01', '2026-11-30'), 0).childrenOutside,
+    0,
+  );
+});
+
+test('dragSummary : tâche en retard déplacée après aujourd’hui', () => {
+  const late = task(1, { start: d('2026-10-01'), end: d('2026-10-10') });
+  const today = d('2026-10-21');
+  const m = modelOf(late, { ...late, id: 2, done: true });
+  assert.equal(
+    dragSummary(m, T(1), span('2026-10-01', '2026-10-10'), span('2026-10-20', '2026-10-29'), today).lateCleared,
+    true,
+  );
+  assert.equal(
+    dragSummary(m, T(1), span('2026-10-01', '2026-10-10'), span('2026-10-05', '2026-10-14'), today).lateCleared,
+    false,
+  );
+  assert.equal(
+    dragSummary(m, T(2), span('2026-10-01', '2026-10-10'), span('2026-10-20', '2026-10-29'), today).lateCleared,
+    false,
+  );
+});
+
+test('summaryText : lignes de l’infobulle, alertes avec ⚠ et texte', () => {
+  const base = {
+    start: d('2026-11-17'),
+    end: d('2026-12-12'),
+    days: 26,
+    delta: 14,
+    hours: null,
+    keptOver: [],
+    childrenOutside: 0,
+    childKind: 'sous-tache',
+    lateCleared: false,
+  };
+  assert.deepEqual(summaryText(base, 'move'), ['17 nov. → 12 déc. 2026 (26 j)', '+14 j']);
+  assert.deepEqual(summaryText({ ...base, delta: -3 }, 'move')[1], '−3 j');
+  assert.deepEqual(summaryText({ ...base, delta: 0 }, 'move'), ['17 nov. → 12 déc. 2026 (26 j)']);
+  assert.deepEqual(summaryText(base, 'end'), ['17 nov. → 12 déc. 2026 (26 j)']);
+  const full = summaryText(
+    { ...base, hours: { from: 80, to: 42.5 }, keptOver: [7], childrenOutside: 2, lateCleared: true },
+    'move',
+  );
+  assert.deepEqual(full.slice(2), [
+    'Heures 80 h → 42,5 h (ETP conservé)',
+    '⚠ 1 charge laissée telle quelle (au-dessus de la borne)',
+    '2 sous-tâches hors de la nouvelle période',
+    'Ne sera plus en retard',
+  ]);
+  assert.ok(summaryText({ ...base, keptOver: [1, 2] }, 'move')[2].startsWith('⚠ 2 charges'));
+  assert.equal(
+    summaryText({ ...base, childrenOutside: 1, childKind: 'tache' }, 'move')[2],
+    '1 tâche hors de la nouvelle période',
+  );
+  assert.ok(
+    summaryText({ ...base, start: d('2026-12-20'), end: d('2027-01-05') }, 'move')[0].startsWith(
+      '20 déc. 2026 → 5 janv.',
+    ),
+  );
 });
