@@ -2774,6 +2774,19 @@ test(
     await until(`${cards} === 1`);
     assert.equal(await w(`return ${count};`), '1 tâche');
     assert.equal(await w(`return D.getElementById('chip-isdOnly') === null;`), true);
+    // Aide en pastille « i » : infobulle liée au bouton, visible au focus et dans la fenêtre
+    await w(`D.querySelector('#f-isd-only ~ .info-tip .info-tip__btn').focus(); return true;`);
+    await until(`getComputedStyle(D.getElementById('tip-isd-only')).opacity === '1'`);
+    assert.equal(
+      await w(`return D.querySelector('[aria-describedby="tip-isd-only"]').getAttribute('aria-label');`),
+      'À propos de « ISD seulement »',
+    );
+    assert.equal(
+      await w(
+        `const r = D.getElementById('tip-isd-only').getBoundingClientRect(); return r.left >= 0 && r.right <= D.documentElement.clientWidth;`,
+      ),
+      true,
+    );
     await w(`D.getElementById('f-isd-only').click(); return true;`);
     await until(`D.getElementById('chip-isdOnly') && ${cards} === 0`);
     assert.match(await w(`return D.getElementById('chip-isdOnly').textContent;`), /ISD seulement/);

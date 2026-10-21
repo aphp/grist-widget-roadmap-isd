@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Filters: the "ISD seulement" help moves from a hint under the checkbox to an "i" button with a tooltip (hover
+  and keyboard focus, kept inside the window), so the filter row no longer wraps. Reusable `infoTip` in the UI kit.
 - Delete from the edit form: a "Supprimer" button (tertiary, left of the form footer, task and chantier forms, shown
   only with the delete right and inside the ISD scope) deletes a task with all its subtasks (any depth) or an empty
   chantier, in one `applyUserActions` batch of `RemoveRecord`. A confirmation dialog names the item and lists the

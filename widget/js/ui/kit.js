@@ -98,3 +98,38 @@ export function keepFocus(container, markup) {
   container.innerHTML = markup;
   if (id) document.getElementById(id)?.focus();
 }
+
+/**
+ * Pastille « i » : bouton qui montre une explication en infobulle (survol et focus clavier), lue par les
+ * lecteurs d'écran via aria-describedby.
+ * @param {string} id identifiant de l'infobulle (unique dans la page)
+ * @param {string} name nom accessible du bouton (« À propos de … »)
+ * @param {string} text explication
+ */
+export const infoTip = (id, name, text) => {
+  placeTipsInView();
+  return h`<span class="info-tip has-tooltip">
+    <button type="button" class="info-tip__btn" aria-label="${name}" aria-describedby="${id}">i</button>
+    <span class="tooltip" role="tooltip" id="${id}">${text}</span>
+  </span>`;
+};
+
+const TIP_MARGIN = 8;
+let tipsPlaced = false;
+/** Recale l'infobulle d'une pastille « i » pour qu'elle reste dans la fenêtre (écouteur posé une seule fois). */
+function placeTipsInView() {
+  if (tipsPlaced || typeof document === 'undefined') return;
+  tipsPlaced = true;
+  const place = (e) => {
+    const wrap = e.target instanceof Element ? e.target.closest('.info-tip') : null;
+    const tip = wrap?.querySelector('.tooltip');
+    if (!tip) return;
+    tip.style.left = '0px';
+    const box = tip.getBoundingClientRect();
+    const right = document.documentElement.clientWidth - TIP_MARGIN;
+    const shift = Math.max(Math.min(0, right - box.right), TIP_MARGIN - box.left);
+    tip.style.left = `${shift}px`;
+  };
+  document.addEventListener('mouseover', place);
+  document.addEventListener('focusin', place);
+}

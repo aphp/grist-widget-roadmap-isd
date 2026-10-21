@@ -281,6 +281,37 @@ details::details-content {
   opacity: 1;
 }
 
+/* Pastille « i » (infoTip de kit.js) : explication en infobulle, au survol comme au clavier */
+.info-tip {
+  display: inline-flex;
+  flex: none;
+}
+.info-tip__btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  font:
+    italic 700 0.6875rem/1 Georgia,
+    serif;
+  cursor: help;
+}
+.info-tip__btn:hover,
+.info-tip__btn:focus-visible {
+  color: var(--color-accent-text);
+}
+.info-tip > .tooltip {
+  font-style: normal;
+  font-weight: 400;
+  white-space: normal;
+}
+
 /* ---- Panneau latéral (aspect de la modale DSFR, sans son JavaScript) ---- */
 .drawer {
   position: fixed;

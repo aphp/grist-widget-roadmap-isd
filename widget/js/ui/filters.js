@@ -6,7 +6,7 @@ import { raw } from '../core/sanitize.js';
 import { activeFilterChips, DEFAULT_FILTERS, EXTRA_FILTERS, filterChoices } from '../core/filters.js';
 import { SCOPES } from '../core/home-view.js';
 import { label, statusLabel } from '../labels.js';
-import { h, keepFocus, personOptions, PROFILES, statusBadge } from './kit.js';
+import { h, infoTip, keepFocus, personOptions, PROFILES, statusBadge } from './kit.js';
 
 /** Libellés des étiquettes de filtres actifs (à partir de activeFilterChips). */
 export function chipsFor(filters, model) {
@@ -234,10 +234,8 @@ export function createFilters(root, on, popovers) {
                   data-filter-check="isdOnly"
                   ${raw(f.isdOnly ? 'checked' : '')}
                 />
-                <label class="fr-label" for="f-isd-only">
-                  ${label('filters.isdOnly')}
-                  <span class="fr-hint-text">${label('filters.isdOnly.title')}</span>
-                </label>
+                <label class="fr-label" for="f-isd-only">${label('filters.isdOnly')}</label>
+                ${infoTip('tip-isd-only', label('filters.isdOnly.about'), label('filters.isdOnly.title'))}
               </div>
             </div>
             <button

@@ -76,6 +76,7 @@ const FR = Object.freeze({
   'filters.scope.disabled': 'Choisissez d’abord qui vous êtes dans « Je suis… ».',
   'filters.outOfScope': 'Hors périmètre ISD aussi',
   'filters.isdOnly': 'ISD seulement',
+  'filters.isdOnly.about': 'À propos de « ISD seulement »',
   'filters.isdOnly.title': 'Masque les chantiers et les tâches où personne de l’équipe ISD n’intervient.',
   'filters.active': 'Filtres actifs',
   'filters.clear': 'Tout effacer',
