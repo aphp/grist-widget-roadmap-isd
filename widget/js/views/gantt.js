@@ -10,10 +10,14 @@ import {
   clampShift,
   dragContext,
   dragSummary,
+  gripAt,
+  handleSides,
+  keyEdges,
   keyMode,
   movedDates,
   periodOf,
   reattachDrag,
+  resizedDates,
   snapUnit,
   stepsFromPixels,
   summaryText,
@@ -82,9 +86,10 @@ const LIVE_DELAY = 300;
 const REPEAT_DELAY = 60;
 /**
  * État conservé entre deux rendus de la vue (rechargement des données) : période affichée, génération, poignée de
- * largeur (drag, applyWidth), glisser d'une barre (gesture, saving) et fonctions du dernier rendu (dragView).
- * gesture : { key, target, seen, now, unit, startX, pxPerDay, anchor, … } ; saving : { key, now } (barre dessinée à
- * `now`, aria-busy, jusqu'à la réponse de l'enregistrement).
+ * largeur (drag, applyWidth), glisser d'une barre (gesture, saving), barre choisie au doigt par un appui long
+ * (touchSel, sa clé : poignées actives) et fonctions du dernier rendu (dragView).
+ * gesture : { key, target, seen, now, edge, unit, startX, pxPerDay, anchor, … } (edge : 'move', 'start' ou 'end',
+ * bord saisi) ; saving : { key, now } (barre dessinée à `now`, aria-busy, jusqu'à la réponse de l'enregistrement).
  */
 const memory = {
   anchor: null,
@@ -97,6 +102,7 @@ const memory = {
   dragView: null,
   liveTimer: null,
   notice: null,
+  touchSel: null,
 };
 /** Durée pendant laquelle le message d'un geste annulé survit aux nouveaux rendus (ms). */
 const NOTICE_MS = 5000;
@@ -191,12 +197,20 @@ function barKind(n, colorBy, tone) {
   return LEAF_KINDS.has(n.kind) ? fillOf(colorKey(n, colorBy), colorBy) : 'summary';
 }
 
+/** Poignées d'étirement d'une barre glissable (décoratives : le clavier passe par Tab dans le mode « D »). */
+const gripsHtml = (sides) =>
+  raw(
+    (sides.start ? '<span class="gbar__grip gbar__grip--start" data-grip="start" aria-hidden="true"></span>' : '') +
+      (sides.end ? '<span class="gbar__grip gbar__grip--end" data-grip="end" aria-hidden="true"></span>' : ''),
+  );
+
 /**
  * Frise d'une ligne. drag : droit de glisser ({target: dragTarget, canAdd()}, null en lecture seule, mémorisé par
- * rendu) ; une barre glissable porte
- * seulement une classe et data-drag. Ligne en cours d'enregistrement : barre à sa nouvelle place, aria-busy.
+ * rendu) ; une barre glissable porte seulement une classe et data-drag, et ses poignées si elle est assez large
+ * (trackPx : largeur estimée de la frise, sans lecture de la page). Ligne en cours d'enregistrement : barre à sa
+ * nouvelle place, aria-busy.
  */
-function trackHtml(ctx, r, i, scale, colorBy, tone, drag) {
+function trackHtml(ctx, r, i, scale, colorBy, tone, drag, trackPx) {
   const info = drag?.target ?? null;
   const n = r.node;
   const bar = shownBar(r);
@@ -236,7 +250,21 @@ function trackHtml(ctx, r, i, scale, colorBy, tone, drag) {
     .filter(Boolean)
     .join(' ');
   const text = LEAF_KINDS.has(n.kind) ? barText(n, colorBy) : '';
-  return h`<button type="button" class="${cls}" style="left:${pct(g.left)};width:${pct(g.width)}" data-i="${i}" tabindex="-1"${state} aria-label="${desc}">${text ? h`<span class="gbar__text" aria-hidden="true">${text}</span>` : ''}</button>`;
+  // Nœuds des poignées pour la souris, le stylet et le clavier ; au doigt, actives seulement sur la barre choisie
+  // par un appui long (is-touch-selected, voir startBarDrag)
+  const sides = grab
+    ? handleSides({
+        milestone: false,
+        deduced: bar.deduced,
+        widthPx: (g.width / 100) * trackPx,
+        clipStart: g.clipStart,
+        clipEnd: g.clipEnd,
+        touchSelected: true,
+      })
+    : null;
+  const grips = sides ? gripsHtml(sides) : '';
+  const picked = grab && memory.touchSel === r.key ? ' is-touch-selected' : '';
+  return h`<button type="button" class="${cls}${picked}" style="left:${pct(g.left)};width:${pct(g.width)}" data-i="${i}" tabindex="-1"${state} aria-label="${desc}">${text ? h`<span class="gbar__text" aria-hidden="true">${text}</span>` : ''}${grips}</button>`;
 }
 
 /**
@@ -282,7 +310,7 @@ function barText(n, colorBy) {
  * pour tout l'arbre, focus itinérant), son niveau, sa position dans la fratrie et son état déplié.
  * Flèche et titre restent cliquables à la souris ; au clavier : ←/→, ↑/↓, Début/Fin, Entrée.
  */
-function rowHtml(ctx, r, i, scale, colorBy, focusIndex, slots, dragOf) {
+function rowHtml(ctx, r, i, scale, colorBy, focusIndex, slots, dragOf, trackPx) {
   const n = r.node;
   const tone = slots ? chantierTone(ctx.model, n, slots) : null;
   const title = n.title || label('common.untitled');
@@ -299,7 +327,7 @@ function rowHtml(ctx, r, i, scale, colorBy, focusIndex, slots, dragOf) {
   const keys = drag?.target.ok ? raw(' aria-keyshortcuts="D"') : '';
   return h`<div class="grow grow--${n.kind}${cls}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}"${keys} aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy, tone)}">
     <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${chip}${name}${empty}</div>
-    <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy, tone, drag)}</div>
+    <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy, tone, drag, trackPx)}</div>
   </div>`;
 }
 
@@ -486,6 +514,7 @@ export function render(el, ctx) {
       min: LABEL_WIDTH.min,
       max: labelWidthMax(viewWidth),
       value: clampLabelWidth(wanted ?? fallback, viewWidth, fallback),
+      view: viewWidth,
     };
   }
 
@@ -559,6 +588,9 @@ export function render(el, ctx) {
     const shownLevel = searching ? null : st.level;
     const width = widthInfo();
     const dragOf = dragRights(ctx);
+    // Largeur de la frise estimée (vue moins colonne des noms et bordures, au moins sa largeur minimale) : décide
+    // des poignées sans lire la géométrie d'une ligne
+    const trackPx = Math.max(TIMELINE_MIN[st.scale], width.view - width.value - 2);
     keepFocus(
       el,
       h`<div class="gantt" style="--gantt-label:${width.value}px">
@@ -634,7 +666,11 @@ export function render(el, ctx) {
               ${linesHtml(scale, ctx.today)}
               ${
                 rows.length
-                  ? raw(rows.map((r, i) => rowHtml(ctx, r, i, scale, st.colorBy, focusIndex, slots, dragOf)).join(''))
+                  ? raw(
+                      rows
+                        .map((r, i) => rowHtml(ctx, r, i, scale, st.colorBy, focusIndex, slots, dragOf, trackPx))
+                        .join(''),
+                    )
                   : h`<div class="gantt__empty" role="row"><div role="gridcell">
                     <p class="gantt__empty-title">${label('gantt.empty')}</p>
                     <p>${label('gantt.empty.hint')}</p>
@@ -1064,7 +1100,11 @@ export function render(el, ctx) {
       w = Math.max(4, Math.min(dayX(g.now.end + 1), g.box.right) - x);
     }
     ghost.hidden = x + w < g.box.left || x > g.box.right;
-    ghost.className = `gghost${g.target.milestone ? ' gghost--ms' : ''}${g.off ? ' gghost--off' : ''}`;
+    // Poignées du fantôme : le bord saisi ; au clavier, les deux (le bord du mode en évidence)
+    const grips = g.target.milestone
+      ? ''
+      : `${g.keyboard ? ' gghost--grips' : ''}${g.edge !== 'move' ? ` gghost--edge-${g.edge}` : ''}`;
+    ghost.className = `gghost${g.target.milestone ? ' gghost--ms' : ''}${grips}${g.off ? ' gghost--off' : ''}`;
     ghost.style.cssText = `width:${w}px;height:${g.barHeight}px;transform:translate(${x}px,${g.rowTop + g.barOffset}px);--g-fill:${g.fill}`;
     g.ghostX = Math.min(Math.max(x, g.box.left), g.box.right);
   }
@@ -1076,9 +1116,12 @@ export function render(el, ctx) {
   function placeTip(g) {
     const tip = el.querySelector('#gantt-tip');
     if (!tip) return;
+    const edges = g.keyboard && keyEdges(g.target).length > 1;
     tip.innerHTML = h`<strong class="gtip__title">${g.title}</strong>
-      ${summaryText(summaryOf(g), 'move').map((line) => h`<span class="gtip__line">${line}</span>`)}
-      ${g.keyboard ? h`<span class="gtip__line gtip__hint">${label('gantt.key.hint')}</span>` : ''}`.toString();
+      ${edges ? h`<span class="gtip__line gtip__mode">${label(`gantt.key.mode.${g.edge}`)}</span>` : ''}
+      ${summaryText(summaryOf(g), g.edge).map((line) => h`<span class="gtip__line">${line}</span>`)}
+      ${g.keyboard ? h`<span class="gtip__line gtip__hint">${label('gantt.key.hint')}</span>` : ''}
+      ${edges ? h`<span class="gtip__line gtip__hint">${label('gantt.key.hint.edges')}</span>` : ''}`.toString();
     tip.hidden = false;
     tip.style.left = `${Math.max(8, Math.min(g.ghostX, g.vw - TIP_MAX - 8))}px`;
     if (g.tipAbove) {
@@ -1090,12 +1133,18 @@ export function render(el, ctx) {
     }
   }
 
-  /** Période alignée sous le pointeur (pas de l'échelle, Maj au jour, bornée), fantôme et infobulle. */
+  /**
+   * Période alignée sous le pointeur (pas de l'échelle, Maj au jour, bornée), fantôme et infobulle. Bord saisi
+   * (poignée) : seul ce bord bouge, en pas comptés depuis sa date d'origine.
+   */
   function dragUpdate(g, force = false) {
-    const { from } = g;
+    const { from, edge } = g;
     const unit = snapUnit(st.scale, g.shift);
-    const n = stepsFromPixels(g.lastX - g.startX, g.pxPerDay, unit, from.start);
-    const now = movedDates(from.start, from.end, unit, clampShift(from.start, from.end, n, unit, { max: maxDay }));
+    const n = stepsFromPixels(g.lastX - g.startX, g.pxPerDay, unit, edge === 'end' ? from.end : from.start);
+    const now =
+      edge === 'move'
+        ? movedDates(from.start, from.end, unit, clampShift(from.start, from.end, n, unit, { max: maxDay }))
+        : resizedDates(from.start, from.end, edge, unit, n, { max: maxDay });
     const off =
       g.lastX < g.box.left ||
       g.lastX > g.box.right ||
@@ -1140,7 +1189,7 @@ export function render(el, ctx) {
     const g = memory.gesture;
     memory.gesture = null;
     unwatch(g);
-    document.documentElement.classList.remove('is-grabbing');
+    document.documentElement.classList.remove('is-grabbing', 'is-resizing');
     dragClear();
     return g;
   }
@@ -1185,14 +1234,25 @@ export function render(el, ctx) {
     }, LIVE_DELAY);
   }
   const fullDate = (d) => formatDateFr(d);
-  /** Période et écart dits (« Du 17 novembre au 12 décembre, plus 14 jours. »), puis l'alerte des charges. */
+  /**
+   * Période et écart dits (« Du 17 novembre au 12 décembre, plus 14 jours. » ; sur un bord : « …, échéance plus
+   * 7 jours. », écart de ce bord depuis sa date d'origine), puis l'alerte des charges.
+   */
   function stepText(g) {
     const s = summaryOf(g);
-    const delta = s.start - g.from.start;
+    const delta = g.edge === 'end' ? s.end - g.from.end : s.start - g.from.start;
     const ecart = delta
       ? label(delta > 0 ? 'gantt.key.delta.plus' : 'gantt.key.delta.minus', { n: Math.abs(delta) })
       : label('gantt.key.delta.none');
-    const text = label('gantt.key.step', { debut: fullDate(s.start), fin: fullDate(s.end), ecart });
+    const dates = { debut: fullDate(s.start), fin: fullDate(s.end) };
+    const text =
+      g.edge === 'move'
+        ? label('gantt.key.step', { ...dates, ecart })
+        : label(delta ? 'gantt.key.step.edge' : 'gantt.key.step.edgeSame', {
+            ...dates,
+            ecart,
+            bord: label(`gantt.key.edgeName.${g.edge}`),
+          });
     return s.keptOver.length ? `${text} ${label('gantt.key.over', { n: s.keptOver.length })}` : text;
   }
 
@@ -1214,6 +1274,8 @@ export function render(el, ctx) {
       seen,
       from,
       now: null,
+      edge: 'move',
+      base: from,
       unit: snapUnit(st.scale, false),
       startX: 0,
       pxPerDay: 0,
@@ -1262,12 +1324,25 @@ export function render(el, ctx) {
       });
   }
 
-  /** Mode clavier : la période suit les pas ; hors de la période affichée, celle-ci suit (un pas de navigation). */
-  function keyStep(g, next) {
+  /** Texte dit au changement de bord : « Début : 2 novembre 2026. » (déplacer : la période). */
+  function edgeText(g) {
+    if (g.edge === 'move')
+      return label('gantt.key.edge.move', { debut: fullDate(g.now.start), fin: fullDate(g.now.end) });
+    return label(`gantt.key.edge.${g.edge}`, { date: fullDate(g.edge === 'start' ? g.now.start : g.now.end) });
+  }
+
+  /**
+   * Mode clavier : la période suit les pas ; hors de la période affichée, celle-ci suit (un pas de navigation).
+   * edgeSwitch : Tab, le bord du mode change (annonce du bord au lieu de la période).
+   */
+  function keyStep(g, next, edgeSwitch = false) {
     g.now = next.now;
     g.limit = next.limit;
+    g.minimum = next.minimum;
     g.steps = next.steps ?? 0;
     g.days = next.days ?? 0;
+    g.edge = next.edge;
+    g.base = next.base ?? g.base;
     let anchor = st.anchor;
     for (let k = 0; k < 24; k += 1) {
       const sc = timeScale(st.scale, anchor);
@@ -1279,11 +1354,14 @@ export function render(el, ctx) {
       st.anchor = anchor;
       paint(); // rattache le geste (measure, refresh)
     } else refresh(g);
-    announce(g.limit ? label('gantt.key.limit', { date: fullDate(maxDay) }) : stepText(g));
+    if (edgeSwitch) announce(edgeText(g));
+    else if (g.limit) announce(label('gantt.key.limit', { date: fullDate(maxDay) }));
+    else announce(g.minimum ? label('gantt.key.minimum') : stepText(g));
   }
 
   const dragView = {
-    begin(key, down, handle) {
+    /** Geste au pointeur sur la barre d'une ligne ; edge : bord saisi par une poignée ('move' sinon). */
+    begin(key, down, handle, edge = 'move') {
       if (!ctx.dates || memory.gesture || memory.saving || !el.isConnected) return false;
       const index = rows.findIndex((r) => r.key === key);
       if (!el.querySelector(`[data-row="${index}"] [data-drag]`)) return false;
@@ -1291,6 +1369,7 @@ export function render(el, ctx) {
       try {
         g = prepare(index, { handle, lastX: down.clientX, lastY: down.clientY, shift: Boolean(down.shiftKey) });
         if (!g) return false;
+        if (keyEdges(g.target).includes(edge)) g.edge = edge;
         g.grabDay = g.scaleStart + (down.clientX - g.trackLeft) / g.pxPerDay;
         g.startX = down.clientX;
         dragUpdate(g, true);
@@ -1303,8 +1382,8 @@ export function render(el, ctx) {
         return false;
       }
       tipFor = null;
-      document.documentElement.classList.add('is-grabbing');
-      announce(label('gantt.drag.grab', { titre: g.title }));
+      document.documentElement.classList.add(g.edge === 'move' ? 'is-grabbing' : 'is-resizing');
+      announce(label(g.edge === 'move' ? 'gantt.drag.grab' : `gantt.drag.grab.${g.edge}`, { titre: g.title }));
       return true;
     },
     move(m) {
@@ -1355,8 +1434,11 @@ export function render(el, ctx) {
     repaint() {
       if (gen === memory.generation && el.isConnected) paint();
     },
-    /** Touche D (ou menu « Déplacer les dates ») sur une ligne : mode clavier, ou la raison du refus. */
-    keyStart(index) {
+    /**
+     * Touche D (ou menu « Déplacer les dates », « Changer le début », « Changer l’échéance ») sur une ligne : mode
+     * clavier sur ce bord, ou la raison du refus.
+     */
+    keyStart(index, edge = 'move') {
       if (!ctx.dates || memory.gesture || memory.saving) return;
       const r = rows[index];
       const why = r ? ctx.dates.target(r.node) : null;
@@ -1364,7 +1446,10 @@ export function render(el, ctx) {
         if (why) announce(label(`gantt.key.no.${why.reason}`));
         return;
       }
-      const g = guard(() => prepare(index, { keyboard: true, steps: 0, days: 0, limit: false }));
+      const mode = keyEdges(why).includes(edge) ? edge : 'move';
+      const g = guard(() =>
+        prepare(index, { keyboard: true, edge: mode, steps: 0, days: 0, limit: false, minimum: false }),
+      );
       if (!g) {
         announce(label('gantt.key.no.view'));
         return;
@@ -1383,24 +1468,37 @@ export function render(el, ctx) {
       memory.gesture = g;
       tipFor = null;
       const s = summaryOf(g);
-      announce(
-        `${label('gantt.drag.grab', { titre: g.title })}. ${label('gantt.key.enter', {
-          debut: fullDate(s.start),
-          fin: fullDate(s.end),
-          pas: label(`gantt.key.unit.${g.unit}`),
-        })}`,
-      );
+      const enter = label('gantt.key.enter', {
+        debut: fullDate(s.start),
+        fin: fullDate(s.end),
+        pas: label(`gantt.key.unit.${g.unit}`),
+      });
+      const edges = keyEdges(g.target).length > 1 ? ` ${label('gantt.key.edges')}` : '';
+      const side = g.edge === 'move' ? '' : ` ${edgeText(g)}`;
+      announce(`${label('gantt.drag.grab', { titre: g.title })}.${side} ${enter}${edges}`);
     },
     /** Même chose depuis le menu de ligne, la ligne retrouvée par sa clé dans le dernier rendu. */
-    keyStartKey(key) {
+    keyStartKey(key, edge = 'move') {
       const index = rows.findIndex((r) => r.key === key);
-      if (index >= 0) dragView.keyStart(index);
+      if (index >= 0) dragView.keyStart(index, edge);
+    },
+    /**
+     * Appui long du doigt sur une barre : elle devient la barre choisie (poignées actives, touch-action: none),
+     * sans nouveau rendu ; null : plus aucune.
+     */
+    select(key) {
+      if (memory.touchSel === key) return;
+      memory.touchSel = key;
+      for (const b of el.querySelectorAll('.is-touch-selected')) b.classList.remove('is-touch-selected');
+      if (key === null) return;
+      const index = rows.findIndex((r) => r.key === key);
+      el.querySelector(`[data-row="${index}"] [data-drag]`)?.classList.add('is-touch-selected');
     },
     /** Touche pendant le mode clavier : vrai si elle lui appartient (rien d'autre ne la traite). */
     key(e) {
       const g = memory.gesture;
       if (!g?.keyboard) return false;
-      // Touches de l'arbre et du menu : sans effet dans le mode (Tab : début / échéance au lot B)
+      // Touches de l'arbre et du menu : sans effet dans le mode (Tab : déplacer, début, échéance)
       if (['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'ContextMenu', 'F10'].includes(e.key))
         return true;
       const r = keyMode(
@@ -1408,12 +1506,14 @@ export function render(el, ctx) {
           target: g.target,
           seen: g.seen,
           now: g.now,
-          edge: 'move',
+          edge: g.edge,
+          base: g.base,
           unit: g.unit,
           max: maxDay,
           steps: g.steps,
           days: g.days,
           limit: g.limit,
+          minimum: g.minimum,
         },
         e,
       );
@@ -1426,19 +1526,42 @@ export function render(el, ctx) {
         if (done.now.start === done.from.start && done.now.end === done.from.end)
           announce(label('gantt.key.unchanged'));
         else commit(done);
-      } else guard(() => keyStep(g, r.state));
+      } else guard(() => keyStep(g, r.state, r.action === 'edge'));
       return true;
     },
   };
   memory.dragView = dragView;
 
+  /**
+   * Appui sur une barre glissable : à la souris ou au stylet, la poignée sous le pointeur choisit le bord ; au
+   * doigt, un appui long choisit la barre (poignées actives), puis un appui dans la zone d'une poignée (24 px)
+   * étire, ailleurs déplace, sans attendre (barre en touch-action: none).
+   */
   function startBarDrag(e, bar) {
     if (!ctx.dates || memory.gesture || memory.saving) return;
     const key = rows[Number(bar.dataset.drag)]?.key;
     if (!key) return;
+    const touch = e.pointerType === 'touch';
+    const picked = touch && memory.touchSel === key && bar.classList.contains('is-touch-selected');
+    let edge = 'move';
+    if (!touch) edge = e.target.closest?.('[data-grip]')?.dataset.grip ?? 'move';
+    else if (picked) {
+      const box = bar.getBoundingClientRect(); // une lecture, au début du geste
+      const sides = handleSides({
+        milestone: bar.classList.contains('gms'),
+        deduced: false,
+        widthPx: box.width,
+        clipStart: bar.classList.contains('gbar--clip-start'),
+        clipEnd: bar.classList.contains('gbar--clip-end'),
+        touchSelected: true,
+      });
+      edge = gripAt(e.clientX, box, sides);
+    }
     let handle = null;
     handle = trackPointer(e, {
-      onStart: () => memory.dragView?.begin(key, e, handle) ?? false,
+      immediate: picked,
+      onArm: touch && !picked ? () => memory.dragView?.select(key) : undefined,
+      onStart: () => memory.dragView?.begin(key, e, handle, edge) ?? false,
       onMove: (m) => memory.dragView?.move(m),
       onDrop: (m) => memory.dragView?.drop(m),
       onCancel: () => memory.dragView?.cancel(),
@@ -1485,15 +1608,22 @@ export function render(el, ctx) {
     const handle = e.target.closest?.('[data-resizer]');
     if (handle) return void startResize(e, handle);
     const bar = e.target.closest?.('[data-drag]');
+    // Appui hors de la barre choisie au doigt : elle ne l'est plus
+    if (memory.touchSel !== null && rows[Number(bar?.dataset.drag)]?.key !== memory.touchSel)
+      memory.dragView?.select(null);
     if (bar && !e.ctrlKey && !e.metaKey && !e.altKey) startBarDrag(e, bar);
   };
   // ---------- Menu de ligne (Maj+F10, touche Menu, clic droit sur une ligne glissable) ----------
-  /** Ouvre le menu d'une ligne glissable : « Déplacer les dates », « Ouvrir la fiche ». Faux si non glissable. */
+  /**
+   * Ouvre le menu d'une ligne glissable : « Déplacer les dates », « Changer le début », « Changer l’échéance »
+   * (pas pour un jalon), « Ouvrir la fiche ». Faux si non glissable.
+   */
   function openRowMenu(i) {
     const r = rows[i];
     const rowEl = el.querySelector(`[data-row="${i}"]`);
     const anchor = rowEl?.querySelector('[data-drag]');
-    if (!r || !anchor || !ctx.dates || memory.gesture || memory.saving || !ctx.dates.target(r.node)?.ok) return false;
+    const target = r && anchor && ctx.dates && !memory.gesture && !memory.saving ? ctx.dates.target(r.node) : null;
+    if (!target?.ok) return false;
     const { key } = r;
     const title = r.node.title || label('common.untitled');
     openStatusPopover({
@@ -1503,14 +1633,17 @@ export function render(el, ctx) {
       menuLabel: label('gantt.menu', { titre: title }),
       heading: label('gantt.menu.title'),
       items: [
-        { value: 'dates', text: label('gantt.menu.dates') },
+        { value: 'move', text: label('gantt.menu.dates') },
+        ...keyEdges(target)
+          .filter((edge) => edge !== 'move')
+          .map((edge) => ({ value: edge, text: label(`gantt.menu.${edge}`) })),
         { value: 'open', text: label('gantt.menu.open') },
       ],
       start: 0,
       // Ligne retrouvée par sa clé au choix : un rendu a pu avoir lieu entre-temps
       onPick: (v) => {
         if (v === 'open') ctx.openDetail(r.node.ref);
-        else memory.dragView?.keyStartKey(key);
+        else memory.dragView?.keyStartKey(key, v);
       },
     });
     rowMenuOpen = true;

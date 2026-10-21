@@ -79,9 +79,10 @@ function swallowAfterRelease(win) {
  * d'abord le mouvement en attente. Écouteurs optionnels de test : `win`, `doc`, `raf`.
  * @param {PointerEvent} down
  * @param {{onStart(e):boolean|void, onMove(e, dx:number, dy:number):void, onDrop(e):void, onCancel(why:string):void,
- *   onEdge?(side:-1|1):void, edgeBox?():DOMRect|null, immediate?:boolean, win?:Window, doc?:Document,
- *   raf?(fn:Function):unknown}} handlers  onStart rend false pour refuser le geste ; immediate : le doigt glisse
- *   sans appui long (élément en touch-action: none, comme la poignée de largeur)
+ *   onEdge?(side:-1|1):void, edgeBox?():DOMRect|null, onArm?():void, immediate?:boolean, win?:Window,
+ *   doc?:Document, raf?(fn:Function):unknown}} handlers  onStart rend false pour refuser le geste ; immediate : le
+ *   doigt glisse sans appui long (élément en touch-action: none, comme la poignée de largeur) ; onArm : appui long
+ *   du doigt atteint (sélection) ; le clic qui suit un relâcher sans glisser est alors avalé
  * @returns {{cancel(why:string):void}}
  */
 export function trackPointer(down, handlers) {
@@ -222,7 +223,9 @@ export function trackPointer(down, handlers) {
     (e) => {
       if (done || !mine(e)) return;
       if (!dragging) {
+        const selected = touch && armed && !handlers.immediate && Boolean(handlers.onArm);
         finish();
+        if (selected) swallowNextClick(win); // appui long qui sélectionne : pas un toucher (fiche non ouverte)
         return;
       }
       flush();
@@ -244,6 +247,11 @@ export function trackPointer(down, handlers) {
       longTimer = null;
       if (done) return;
       armed = true;
+      try {
+        handlers.onArm?.();
+      } catch (err) {
+        console.error(err); // la sélection est un plus : le geste continue
+      }
       // touch-action est lu au début du toucher : touchmove non passif pour que le navigateur ne défile pas
       win.addEventListener('touchmove', (e) => e.preventDefault(), { ...opts, passive: false });
       if (root) {

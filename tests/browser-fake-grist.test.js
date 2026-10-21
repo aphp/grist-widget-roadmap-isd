@@ -4608,7 +4608,7 @@ test(
 
 /** Touche réelle (CDP) sur l'élément focalisé. */
 async function hit(k, { shift = false } = {}) {
-  const codes = { d: 68, ArrowRight: 39, ArrowLeft: 37, Enter: 13, Escape: 27, Backspace: 8, F10: 121 };
+  const codes = { d: 68, ArrowRight: 39, ArrowLeft: 37, Enter: 13, Escape: 27, Backspace: 8, F10: 121, Tab: 9 };
   const base = {
     key: k,
     code: k.length === 1 ? `Key${k.toUpperCase()}` : k,
@@ -4725,7 +4725,7 @@ test(
     await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
     assert.deepEqual(
       await w(`return [...D.querySelectorAll('#qs-menu [role="menuitem"]')].map((b) => b.textContent.trim());`),
-      ['Déplacer les dates', 'Ouvrir la fiche'],
+      ['Déplacer les dates', 'Changer le début', 'Changer l’échéance', 'Ouvrir la fiche'],
     );
     await hit('Enter');
     await until(`!D.getElementById('gantt-ghost').hidden && D.activeElement?.id === ${JSON.stringify(rowId)}`);
@@ -4987,5 +4987,196 @@ test(
     await hit('Enter');
     await sleep(300);
     assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+// ---------- Gantt : étirer une barre (lot B) ----------
+
+/** Centre (page hôte) de la poignée d'une barre de tâche, ou null si la barre n'en a pas de ce côté. */
+const gripOf = (id, side) =>
+  w(`const row = [...D.querySelectorAll('.grow')].find((r) => r.id.endsWith('/T${id}'));
+    const b = row?.querySelector('.gbar[data-drag]');
+    if (!b) return null;
+    b.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const g = b.querySelector('.gbar__grip--${side}');
+    if (!g) return null;
+    const r = g.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+
+/** Ids des tâches glissables (barres pleines), dans l'ordre affiché. */
+const draggableTaskIds = () =>
+  w(
+    `return [...D.querySelectorAll('.gbar[data-drag]')].map((b) => Number(b.closest('.grow').id.match(/T(\\d+)$/)?.[1])).filter(Boolean);`,
+  );
+
+test(
+  'gantt : étirer l’échéance d’une tâche chargée → dates et charges recalculées dans la même écriture',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    const charges = JSON.stringify([{ teamId: task.person, heures: 35 }]);
+    await remoteChange([
+      'UpdateRecord',
+      'Tasks',
+      task.id,
+      { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges },
+    ]);
+    await until(`(() => { const r = [...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${task.id}'));
+      return r?.querySelector('.gbar__grip--end'); })()`);
+    const at = await gripOf(task.id, 'end');
+    assert.ok(at, 'poignée d’échéance');
+    await mouseDrag(at, 90, { release: false });
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    assert.equal(await w(`return D.documentElement.classList.contains('is-resizing');`), true);
+    assert.equal(await w(`return D.getElementById('gantt-ghost').classList.contains('gghost--edge-end');`), true);
+    assert.match(
+      await w(`return D.getElementById('gantt-tip').textContent;`),
+      /Heures 35 h → [\d,]+ h \(ETP conservé\)/,
+    );
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + 90,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await until(`W.__writes.length === 1`, 8000);
+    const [action] = await w(`return W.__writes[0].args[0];`);
+    assert.deepEqual(action.slice(0, 3), ['UpdateRecord', 'Tasks', task.id]);
+    const cells = action[3];
+    assert.deepEqual(Object.keys(cells).sort(), ['charges', 'dateEcheance']);
+    const grown = cells.dateEcheance - secOf('2026-06-14');
+    assert.ok(grown > 0 && grown % (7 * SEC) === 0, `échéance allongée de semaines entières : ${grown / SEC} j`);
+    const after = JSON.parse(cells.charges);
+    assert.equal(after[0].teamId, task.person);
+    assert.ok(after[0].heures > 35, 'période plus longue, ETP gardé : plus d’heures');
+    assert.equal(await w(`return D.documentElement.classList.contains('is-resizing');`), false);
+  },
+);
+
+test('gantt : étirer le début au-delà de l’échéance → durée d’un jour', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const task = await draggableTaskWithPeople();
+  await remoteChange([
+    'UpdateRecord',
+    'Tasks',
+    task.id,
+    { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges: null },
+  ]);
+  await until(`(() => { const r = [...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${task.id}'));
+    return r?.querySelector('.gbar__grip--start'); })()`);
+  const at = await gripOf(task.id, 'start');
+  await mouseDrag(at, 300);
+  await until(`W.__writes.length === 1`, 8000);
+  const cells = await w(`return W.__writes[0].args[0][0][3];`);
+  assert.deepEqual(cells, { dateDebut: secOf('2026-06-14') });
+});
+
+test(
+  'gantt : jalon sans poignée ; barre étroite sans poignée ; barre coupée sans poignée du côté coupé',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const ids = await draggableTaskIds();
+    assert.ok(ids.length >= 4, 'jeu synthétique : quatre tâches glissables');
+    const [ms, narrow, before, after] = ids;
+    await remoteChange([
+      [
+        'UpdateRecord',
+        'Tasks',
+        ms,
+        { type: 'jalon', dateDebut: secOf('2026-06-10'), dateEcheance: secOf('2026-06-10') },
+      ],
+      ['UpdateRecord', 'Tasks', narrow, { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-02') }],
+      ['UpdateRecord', 'Tasks', before, { dateDebut: secOf('2024-01-01'), dateEcheance: secOf('2026-06-30') }],
+      ['UpdateRecord', 'Tasks', after, { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2027-06-30') }],
+    ]);
+    const rowOf = (id) => `[...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${id}'))`;
+    await until(`${rowOf(ms)}?.querySelector('.gms[data-drag]')`);
+    const grips = (id) =>
+      w(`const r = ${rowOf(id)}; const b = r?.querySelector('[data-drag]');
+        return { drag: Boolean(b), clip: [...(b?.classList ?? [])].filter((c) => c.startsWith('gbar--clip')),
+          sides: [...(b?.querySelectorAll('.gbar__grip') ?? [])].map((g) => g.dataset.grip) };`);
+    assert.deepEqual(await grips(ms), { drag: true, clip: [], sides: [] });
+    assert.deepEqual(await grips(narrow), { drag: true, clip: [], sides: [] });
+    assert.deepEqual(await grips(before), { drag: true, clip: ['gbar--clip-start'], sides: ['end'] });
+    assert.deepEqual(await grips(after), { drag: true, clip: ['gbar--clip-end'], sides: ['start'] });
+    // Menu de ligne d'un jalon : déplacer seulement
+    await focusTaskRow(ms);
+    await hit('F10', { shift: true });
+    await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+    assert.deepEqual(
+      await w(`return [...D.querySelectorAll('#qs-menu [role="menuitem"]')].map((b) => b.textContent.trim());`),
+      ['Déplacer les dates', 'Ouvrir la fiche'],
+    );
+    await hit('Escape');
+  },
+);
+
+test('gantt : clavier D, Tab, Tab, → , Entrée → seule l’échéance change', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const task = await draggableTaskWithPeople();
+  const before = await taskCells(task.id);
+  await focusTaskRow(task.id);
+  await hit('d');
+  await until(`!D.getElementById('gantt-ghost').hidden`);
+  await until(`/Tab pour changer le début ou l’échéance/.test(D.getElementById('gantt-live').textContent)`);
+  await hit('Tab');
+  await until(`/^Début : /.test(D.getElementById('gantt-live').textContent)`);
+  assert.match(await w(`return D.getElementById('gantt-tip').textContent;`), /Mode : début/);
+  await hit('Tab');
+  await until(`/^Échéance : /.test(D.getElementById('gantt-live').textContent)`);
+  assert.equal(await w(`return D.getElementById('gantt-ghost').classList.contains('gghost--edge-end');`), true);
+  await hit('ArrowRight');
+  await until(`/échéance plus 7 jour/.test(D.getElementById('gantt-live').textContent)`);
+  await hit('Enter');
+  await until(`W.__writes.length === 1`, 8000);
+  const cells = await w(`return W.__writes[0].args[0][0][3];`);
+  assert.equal('dateDebut' in cells, false);
+  assert.equal(cells.dateEcheance, before.dateEcheance + 7 * SEC);
+  const stored = await taskCells(task.id);
+  assert.equal(stored.dateDebut, before.dateDebut);
+});
+
+test(
+  'gantt : au doigt, appui long choisit la barre (fiche fermée), puis poignée d’échéance étirée',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    await remoteChange([
+      'UpdateRecord',
+      'Tasks',
+      task.id,
+      { dateDebut: secOf('2026-05-04'), dateEcheance: secOf('2026-06-14'), charges: null },
+    ]);
+    const rowOf = `[...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${task.id}'))`;
+    await until(`${rowOf}?.querySelector('.gbar__grip--end')`);
+    const box = await w(`const b = ${rowOf}.querySelector('.gbar[data-drag]');
+    b.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const r = b.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { left: f.left + r.left, right: f.left + r.right, y: f.top + r.top + r.height / 2 };`);
+    const touch = (type, x) =>
+      send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y: box.y, id: 1 }] });
+    const mid = (box.left + box.right) / 2;
+    await touch('touchStart', mid);
+    await sleep(600);
+    await touch('touchEnd', mid);
+    await until(`${rowOf}.querySelector('.gbar.is-touch-selected')`);
+    await sleep(300);
+    assert.notEqual(await w(`return D.getElementById('app-detail').dataset.open;`), 'true');
+    // Poignée d'échéance au doigt (zone de 24 px) : étirée sans attendre
+    const x0 = box.right - 6;
+    await touch('touchStart', x0);
+    for (let k = 1; k <= 6; k += 1) {
+      await touch('touchMove', x0 + 15 * k);
+      await sleep(20);
+    }
+    await touch('touchEnd', x0 + 90);
+    await until(`W.__writes.length === 1`, 8000);
+    const cells = await w(`return W.__writes[0].args[0][0][3];`);
+    assert.deepEqual(Object.keys(cells), ['dateEcheance']);
+    assert.ok(cells.dateEcheance > secOf('2026-06-14'));
   },
 );

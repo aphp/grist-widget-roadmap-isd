@@ -120,6 +120,15 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   chantier) », barres déduites (période des enfants), lignes sans leurs dates (« Ajouter des dates » ouvre la fiche ;
   un jalon n'a besoin que de son échéance), échéance avant le début, lignes hors périmètre ISD ou en lecture seule ;
   D annonce la raison.
+- **Étirer dans le Gantt** (édition ouverte) : une tâche, une sous-tâche ou un chantier s'étire par l'un de ses
+  bords ; poignées de 6 px (curseur ↔) aux deux bouts de la barre, visibles au survol ; au doigt, un appui long
+  choisit la barre (cadre, poignées), puis un appui dans les 24 px d'un bord l'étire, ailleurs la déplace. Seul ce
+  bord bouge, d'un pas de l'échelle compté depuis sa date d'origine, et s'arrête sur l'autre (un jour au moins) ;
+  heures recalculées à ETP constant dans la même écriture (« Heures x h → y h (ETP conservé) » dans l'infobulle).
+  Pas de poignée sur un jalon, une barre de moins de 20 px, ni du côté coupé par la frise. Au clavier, dans le mode
+  D : Tab / Maj+Tab passent de « déplacer » au début puis à l'échéance (annoncés, rappelés dans l'infobulle) ; le
+  menu de ligne propose aussi « Changer le début » et « Changer l'échéance » (pas pour un jalon). En couleurs
+  forcées (contraste élevé de Windows), barres, poignées et focus ont des bordures en couleurs système.
 - **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
   le total portent sur les profils DE, DA, DS et PO seulement.
 

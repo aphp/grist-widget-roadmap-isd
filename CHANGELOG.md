@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Gantt: tasks, subtasks and chantiers stretch from either edge. 6 px handles (`.gbar__grip--start` / `--end`,
+  ew-resize cursor) show on hover and focus; by finger, a long press selects the bar (frame, handles, no scrolling
+  on it), then a press within 24 px of an edge stretches it and elsewhere moves it. Only that edge moves, in steps of
+  the scale counted from its own original date, and stops on the other edge (one day at least); hours are rescaled
+  at constant ETP in the same write, shown as "Heures x h → y h (ETP conservé)". No handle on milestones, bars under
+  20 px, or a side clipped by the timeline. Keyboard: in the D mode, Tab / Shift+Tab cycle move, start and due date
+  (announced, hinted in the tooltip; the new dates become the base of the steps); the row menu adds "Changer le
+  début" and "Changer l'échéance" (not for milestones). One gesture model (`memory.gesture.edge`) for move and
+  resize. A long press that selects no longer opens the form on release. Forced colors: bars, milestones, handles
+  and focus rings get system-colour borders. A due date already past the bound steps back from itself instead of
+  jumping to the bound.
 - Gantt: tasks, subtasks, milestones and chantiers move in time by dragging their bar (mouse, pen; finger after a
   400 ms long press), duration kept. Steps follow the scale (day in Week, week in Month and Year, month in 2 years,
   day with Shift) and never pass 31 December of next year. A ghost and the tooltip show the new dates, the shift, the

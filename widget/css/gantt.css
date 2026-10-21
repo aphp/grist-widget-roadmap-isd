@@ -725,6 +725,43 @@
 .is-grabbing * {
   cursor: grabbing !important;
 }
+/* ---- Étirer une barre : poignées de 6 px aux bords, visibles au survol et au focus ; au doigt, après l'appui
+   long qui choisit la barre (is-touch-selected : cadre, poignées, la barre ne fait plus défiler) ---- */
+.gbar__grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-text);
+  cursor: ew-resize;
+  opacity: 0;
+}
+.gbar__grip--start {
+  left: 0;
+  border-radius: 4px 0 0 4px;
+}
+.gbar__grip--end {
+  right: 0;
+  border-radius: 0 4px 4px 0;
+}
+.gbar--draggable:hover > .gbar__grip,
+.gbar--draggable:focus > .gbar__grip,
+.gbar.is-touch-selected > .gbar__grip {
+  opacity: 1;
+}
+.gbar--origin > .gbar__grip {
+  visibility: hidden;
+}
+.gantt .gbar.is-touch-selected {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  touch-action: none;
+}
+.is-resizing,
+.is-resizing * {
+  cursor: ew-resize !important;
+}
 /* Fantôme : position fixe hors du flux de la grille, placé par transform (views/gantt.js) */
 .gghost {
   position: fixed;
@@ -742,6 +779,33 @@
 }
 .gghost[hidden] {
   display: none;
+}
+/* Poignées du fantôme (::before début, ::after échéance) : le bord saisi en couleur de focus ; au clavier, les deux */
+.gghost--grips::before,
+.gghost--grips::after,
+.gghost--edge-start::before,
+.gghost--edge-end::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 6px;
+  border-radius: 3px;
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-text);
+}
+.gghost--grips::before,
+.gghost--edge-start::before {
+  left: -3px;
+}
+.gghost--grips::after,
+.gghost--edge-end::after {
+  right: -3px;
+}
+.gghost--edge-start::before,
+.gghost--edge-end::after {
+  background: var(--color-focus);
+  box-shadow: 0 0 0 1px var(--color-surface);
 }
 /* Jalon : losange dessiné par ::before (le transform du fantôme ne porte que la position) */
 .gghost--ms {
@@ -1016,6 +1080,43 @@ button.glist__title:focus-visible {
   }
   .gantt__grid--chantier .grow--ch .grow__title {
     border-left-color: CanvasText;
+  }
+  /* Barres, jalons, poignées et focus en couleurs système (fonds et ombres effacés par le navigateur) */
+  .gantt .gbar,
+  .gantt .gms {
+    border: 1px solid CanvasText;
+  }
+  .gantt .gbar--deduced {
+    border-style: dashed;
+  }
+  .gantt .gbar--hollow,
+  .gantt .gms--hollow {
+    border: 2px dashed CanvasText;
+  }
+  .gantt .gbar.is-late,
+  .gantt .gms.is-late {
+    border-width: 3px;
+    border-style: double;
+  }
+  .gantt .gbar:focus,
+  .gantt .gms:focus,
+  .gantt .gout:focus,
+  .gantt .gbar.is-touch-selected {
+    outline: 2px solid Highlight;
+  }
+  .grow:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .gbar__grip,
+  .gghost--grips::before,
+  .gghost--grips::after,
+  .gghost--edge-start::before,
+  .gghost--edge-end::after {
+    forced-color-adjust: none;
+    background: Highlight;
+    box-shadow: none;
+    outline: 1px solid CanvasText;
   }
 }
 

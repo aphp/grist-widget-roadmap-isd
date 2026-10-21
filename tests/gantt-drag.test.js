@@ -9,6 +9,8 @@ import {
   dragContext,
   dragSummary,
   dragTarget,
+  gripAt,
+  keyEdges,
   keyMode,
   movedDates,
   handleSides,
@@ -414,7 +416,7 @@ test('keyMode : flèches d’un pas de l’échelle, Maj d’un jour, durée gar
   assert.deepEqual(iso2(keyState().now), ['2026-11-02', '2026-11-06']);
 });
 
-test('keyMode : Retour arrière remet les dates vues, Entrée enregistre, Échap annule, Tab reste sur move', () => {
+test('keyMode : Retour arrière remet les dates vues, Entrée enregistre, Échap annule, Tab change de bord', () => {
   const moved = keyMode(keyState(), { key: 'ArrowRight' }).state;
   const back = keyMode(moved, { key: 'Backspace' });
   assert.equal(back.action, 'announce');
@@ -422,7 +424,7 @@ test('keyMode : Retour arrière remet les dates vues, Entrée enregistre, Échap
   assert.equal(keyMode(moved, { key: 'Enter' }).action, 'save');
   assert.equal(keyMode(moved, { key: 'Escape' }).action, 'cancel');
   const tab = keyMode(moved, { key: 'Tab', shiftKey: true });
-  assert.deepEqual([tab.action, tab.state.edge], ['none', 'move']);
+  assert.deepEqual([tab.action, tab.state.edge], ['edge', 'end']);
   assert.equal(keyMode(moved, { key: 'x' }).action, 'none');
 });
 
@@ -535,4 +537,177 @@ test('handleSides : jalon, barre déduite, moins de 20 px, côté coupé, doigt'
   assert.deepEqual(handleSides({ ...base, clipStart: true }), { start: false, end: true });
   assert.deepEqual(handleSides({ ...base, clipEnd: true }), { start: true, end: false });
   assert.deepEqual(handleSides({ ...base, touchSelected: false }), { start: false, end: false });
+});
+
+// ---------- Lot B : bords au clavier, poignées ----------
+test('keyEdges : jalon déplacé seulement ; tâche et chantier : déplacer, début, échéance', () => {
+  assert.deepEqual(keyEdges({ milestone: true }), ['move']);
+  assert.deepEqual(keyEdges({ milestone: false }), ['move', 'start', 'end']);
+});
+
+test('keyMode : Tab passe move → start → end → move, Maj+Tab dans l’autre sens', () => {
+  const tab = (st, shiftKey = false) => keyMode(st, { key: 'Tab', shiftKey });
+  let st = keyState();
+  const seq = [];
+  for (let k = 0; k < 3; k += 1) {
+    const r = tab(st);
+    assert.equal(r.action, 'edge');
+    st = r.state;
+    seq.push(st.edge);
+  }
+  assert.deepEqual(seq, ['start', 'end', 'move']);
+  const back = [];
+  for (let k = 0; k < 3; k += 1) {
+    st = tab(st, true).state;
+    back.push(st.edge);
+  }
+  assert.deepEqual(back, ['end', 'start', 'move']);
+  // Jalon : un seul mode, Tab sans effet
+  const ms = keyState({ target: { ok: true, table: 'Tasks', id: 1, cols: ['dateEcheance'], milestone: true } });
+  assert.deepEqual([tab(ms).action, tab(ms).state.edge], ['none', 'move']);
+});
+
+test('keyMode : bord début ou échéance, seul ce bord bouge, pas relatifs à sa date', () => {
+  const end = keyMode(keyState(), { key: 'Tab', shiftKey: true }).state;
+  let r = keyMode(end, { key: 'ArrowRight' });
+  assert.equal(r.action, 'announce');
+  assert.deepEqual(iso2(r.state.now), ['2026-11-02', '2026-11-13']);
+  r = keyMode(r.state, { key: 'ArrowRight', shiftKey: true });
+  assert.deepEqual(iso2(r.state.now), ['2026-11-02', '2026-11-14']);
+  const start = keyMode(keyState(), { key: 'Tab' }).state;
+  r = keyMode(start, { key: 'ArrowLeft' });
+  assert.deepEqual(iso2(r.state.now), ['2026-10-26', '2026-11-06']);
+  // Pas au mois depuis le 31 janv. : 28 févr. puis 31 mars (jamais de dérive)
+  const jan = keyState({
+    unit: 'month',
+    edge: 'end',
+    seen: { start: d('2027-01-05'), end: d('2027-01-31') },
+    now: { start: d('2027-01-05'), end: d('2027-01-31') },
+  });
+  const m1 = keyMode(jan, { key: 'ArrowRight' }).state;
+  assert.deepEqual(iso2(m1.now), ['2027-01-05', '2027-02-28']);
+  assert.deepEqual(iso2(keyMode(m1, { key: 'ArrowRight' }).state.now), ['2027-01-05', '2027-03-31']);
+  // Retour arrière : dates vues, bord gardé
+  const back = keyMode(m1, { key: 'Backspace' }).state;
+  assert.deepEqual([iso2(back.now), back.edge, back.steps, back.days], [['2027-01-05', '2027-01-31'], 'end', 0, 0]);
+});
+
+test('keyMode : changer de bord garde les dates choisies, compteurs remis à zéro', () => {
+  const moved = keyMode(keyState(), { key: 'ArrowRight' }).state; // 9 → 13 nov.
+  const end = keyMode(keyMode(moved, { key: 'Tab' }).state, { key: 'Tab' }).state;
+  assert.deepEqual([end.edge, end.steps, end.days], ['end', 0, 0]);
+  assert.deepEqual(iso2(end.now), ['2026-11-09', '2026-11-13']);
+  assert.deepEqual(iso2(keyMode(end, { key: 'ArrowRight' }).state.now), ['2026-11-09', '2026-11-20']);
+  // Retour au déplacement après un étirement : la nouvelle durée est gardée
+  const longer = keyMode(end, { key: 'ArrowRight' }).state;
+  const move = keyMode(longer, { key: 'Tab' }).state;
+  assert.deepEqual(iso2(keyMode(move, { key: 'ArrowLeft' }).state.now), ['2026-11-02', '2026-11-13']);
+});
+
+test('keyMode : bord arrêté sur l’autre (un jour), pas de plus refusé (minimum), réversible', () => {
+  const start = keyState({ edge: 'start' });
+  const a = keyMode(start, { key: 'ArrowRight' }); // + 1 semaine depuis le 2 nov. : arrêté au 6 nov.
+  assert.deepEqual(iso2(a.state.now), ['2026-11-06', '2026-11-06']);
+  assert.equal(a.state.minimum, false);
+  const b = keyMode(a.state, { key: 'ArrowRight' });
+  assert.equal(b.action, 'announce');
+  assert.equal(b.state.minimum, true);
+  assert.equal(b.state.steps, a.state.steps);
+  assert.deepEqual(b.state.now, a.state.now);
+  const c = keyMode(b.state, { key: 'ArrowLeft' });
+  assert.deepEqual(iso2(c.state.now), ['2026-11-02', '2026-11-06']);
+  assert.equal(c.state.minimum, false);
+});
+
+test('keyMode : échéance au-delà du 31/12 de l’année suivante refusée ; barre déjà au-delà ramenable', () => {
+  const st = keyState({
+    edge: 'end',
+    seen: { start: d('2027-12-01'), end: d('2027-12-28') },
+    now: { start: d('2027-12-01'), end: d('2027-12-28') },
+  });
+  const a = keyMode(st, { key: 'ArrowRight' });
+  assert.equal(a.state.limit, true);
+  assert.deepEqual(a.state.now, st.now);
+  const past = keyState({
+    edge: 'end',
+    seen: { start: d('2027-12-01'), end: d('2028-01-20') },
+    now: { start: d('2027-12-01'), end: d('2028-01-20') },
+  });
+  const p = keyMode(past, { key: 'ArrowLeft' });
+  assert.equal(p.state.limit, false);
+  assert.deepEqual(iso2(p.state.now), ['2027-12-01', '2028-01-13']);
+  assert.equal(keyMode(past, { key: 'ArrowRight' }).state.limit, true);
+});
+
+test('resizedDates : pas au mois sur les deux bords', () => {
+  const max = d('2027-12-31');
+  assert.deepEqual(iso2(resizedDates(d('2026-03-31'), d('2026-06-30'), 'start', 'month', -1, { max })), [
+    '2026-02-28',
+    '2026-06-30',
+  ]);
+  assert.deepEqual(iso2(resizedDates(d('2026-03-31'), d('2026-06-30'), 'start', 'month', 2, { max })), [
+    '2026-05-31',
+    '2026-06-30',
+  ]);
+  assert.deepEqual(iso2(resizedDates(d('2026-03-31'), d('2026-06-30'), 'end', 'month', -1, { max })), [
+    '2026-03-31',
+    '2026-05-30',
+  ]);
+});
+
+test('resizedDates : échéance déjà au-delà de la borne, pas en arrière depuis l’échéance (jamais ramenée à max)', () => {
+  const max = d('2027-12-31');
+  assert.deepEqual(iso2(resizedDates(d('2027-12-01'), d('2028-02-15'), 'end', 'week', -1, { max })), [
+    '2027-12-01',
+    '2028-02-08',
+  ]);
+  // pas en avant : l'échéance ne s'éloigne pas davantage, ni n'est ramenée
+  assert.deepEqual(iso2(resizedDates(d('2027-12-01'), d('2028-02-15'), 'end', 'week', 2, { max })), [
+    '2027-12-01',
+    '2028-02-15',
+  ]);
+});
+
+test('handleSides : touchSelected absent = vrai (souris), largeur NaN ou absente = aucune poignée', () => {
+  const base = { milestone: false, deduced: false, widthPx: 100, clipStart: false, clipEnd: false };
+  assert.deepEqual(handleSides(base), { start: true, end: true });
+  assert.deepEqual(handleSides({ ...base, widthPx: Number.NaN }), { start: false, end: false });
+  assert.deepEqual(handleSides({ ...base, widthPx: undefined }), { start: false, end: false });
+});
+
+test('gripAt : zone de 24 px au doigt, côté de la poignée, bord le plus proche sur une barre étroite', () => {
+  const box = { left: 100, right: 300 };
+  const both = { start: true, end: true };
+  assert.equal(gripAt(105, box, both), 'start');
+  assert.equal(gripAt(124, box, both), 'start');
+  assert.equal(gripAt(125, box, both), 'move');
+  assert.equal(gripAt(200, box, both), 'move');
+  assert.equal(gripAt(290, box, both), 'end');
+  assert.equal(gripAt(105, box, { start: false, end: true }), 'move');
+  assert.equal(gripAt(290, box, { start: true, end: false }), 'move');
+  // Barre de 30 px : zones d'un tiers, milieu au déplacement
+  const narrow = { left: 0, right: 30 };
+  assert.equal(gripAt(5, narrow, both), 'start');
+  assert.equal(gripAt(15, narrow, both), 'move');
+  assert.equal(gripAt(27, narrow, both), 'end');
+  assert.equal(gripAt(5, narrow, { start: false, end: false }), 'move');
+  assert.equal(gripAt(5, narrow, both, 6), 'start');
+  assert.equal(gripAt(8, narrow, both, 6), 'move');
+});
+
+test('summaryText : décalage seulement en déplacement', () => {
+  const s = {
+    start: d('2026-11-02'),
+    end: d('2026-11-13'),
+    days: 12,
+    delta: 7,
+    hours: null,
+    keptOver: [],
+    childrenOutside: 0,
+    childKind: 'sous-tache',
+    lateCleared: false,
+  };
+  assert.equal(summaryText(s, 'move').length, 2);
+  assert.equal(summaryText(s, 'end').length, 1);
+  assert.equal(summaryText(s, 'start').length, 1);
 });

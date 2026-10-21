@@ -264,43 +264,80 @@ export function summaryText(s, mode) {
 }
 
 /**
- * Période d'un déplacement compté depuis les dates d'origine : n pas de l'échelle puis d jours (pas relatifs aux
+ * Période d'un déplacement compté depuis la période de base : n pas de l'échelle puis d jours (pas relatifs aux
  * dates d'origine, Q1 : 31 janv. + 2 mois = 31 mars).
  */
-function keyPeriod(seen, unit, steps, days) {
-  const from = periodOf(seen);
-  const start = shiftDay(from.start, unit, steps) + days;
-  return { start, end: start + (from.end - from.start) };
+function keyPeriod(base, unit, steps, days) {
+  const start = shiftDay(base.start, unit, steps) + days;
+  return { start, end: start + (base.end - base.start) };
 }
 
 /**
- * Mode clavier « D » d'une ligne : ←/→ d'un pas de l'échelle (Maj : d'un jour), comptés depuis les dates d'origine
- * (compteurs steps et days), durée gardée ; un pas qui passerait la borne du 31/12 de l'année suivante est refusé
- * (limit) sans toucher aux compteurs. Retour arrière remet les dates vues ; Entrée enregistre, Échap annule.
- * Tab / Maj+Tab passent de move à start et end au lot B : au lot A, rien. Pure.
+ * Modes du mode clavier d'une barre, dans l'ordre de Tab : un jalon se déplace seulement (pas de poignée).
+ * @param {{milestone:boolean}} target voir dragTarget
+ * @returns {('move'|'start'|'end')[]}
+ */
+export function keyEdges(target) {
+  return target.milestone ? ['move'] : ['move', 'start', 'end'];
+}
+
+/**
+ * Mode clavier « D » d'une ligne : ←/→ d'un pas de l'échelle (Maj : d'un jour), comptés depuis la période de base
+ * (compteurs steps et days, Q1). En déplacement (move), la durée est gardée ; sur un bord (start, end), seul ce
+ * bord bouge et s'arrête sur l'autre (un jour au moins : un pas de plus est refusé, minimum). Un pas qui passerait
+ * la borne du 31/12 de l'année suivante est refusé (limit) sans toucher aux compteurs. Tab / Maj+Tab passent de
+ * move à start puis end (keyEdges) : la période choisie devient la base, compteurs remis à zéro. Retour arrière
+ * remet les dates vues ; Entrée enregistre, Échap annule. Pure.
  * @param {{target:object, seen:{start:number|null, end:number}, now:{start:number, end:number},
- *   edge:'move'|'start'|'end', unit:Unit, max:number, steps?:number, days?:number, limit?:boolean}} state
- *   unit : pas de l'échelle (snapUnit(scale, false)) ; max : voir maxPlanDay
+ *   edge:'move'|'start'|'end', unit:Unit, max:number, base?:{start:number, end:number}, steps?:number,
+ *   days?:number, limit?:boolean, minimum?:boolean}} state
+ *   unit : pas de l'échelle (snapUnit(scale, false)) ; max : voir maxPlanDay ; base : dates vues par défaut
  * @param {{key:string, shiftKey?:boolean}} e
- * @returns {{state:object, action:'none'|'save'|'cancel'|'announce'}}
+ * @returns {{state:object, action:'none'|'save'|'cancel'|'announce'|'edge'}}
  */
 export function keyMode(state, e) {
   if (e.key === 'Enter') return { state, action: 'save' };
   if (e.key === 'Escape') return { state, action: 'cancel' };
-  if (e.key === 'Backspace')
-    return { state: { ...state, now: periodOf(state.seen), steps: 0, days: 0, limit: false }, action: 'announce' };
+  const reset = { steps: 0, days: 0, limit: false, minimum: false };
+  if (e.key === 'Backspace') {
+    const seen = periodOf(state.seen);
+    return { state: { ...state, ...reset, now: seen, base: seen }, action: 'announce' };
+  }
+  if (e.key === 'Tab') {
+    const edges = keyEdges(state.target);
+    if (edges.length < 2) return { state, action: 'none' };
+    const i = Math.max(0, edges.indexOf(state.edge));
+    const edge = edges[(i + (e.shiftKey ? edges.length - 1 : 1)) % edges.length];
+    return { state: { ...state, ...reset, edge, base: state.now }, action: 'edge' };
+  }
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return { state, action: 'none' };
   const sign = e.key === 'ArrowRight' ? 1 : -1;
   const steps = (state.steps ?? 0) + (e.shiftKey ? 0 : sign);
   const days = (state.days ?? 0) + (e.shiftKey ? sign : 0);
-  const now = keyPeriod(state.seen, state.unit, steps, days);
-  if (now.start < 1 || now.end > state.max) return { state: { ...state, limit: true }, action: 'announce' };
-  return { state: { ...state, now, steps, days, limit: false }, action: 'announce' };
+  const base = state.base ?? periodOf(state.seen);
+  const refused = (why) => ({
+    state: { ...state, limit: why === 'limit', minimum: why === 'minimum' },
+    action: 'announce',
+  });
+  if (state.edge === 'start' || state.edge === 'end') {
+    const from = state.edge === 'start' ? base.start : base.end;
+    const day = shiftDay(from, state.unit, steps) + days;
+    // Seul un pas qui éloigne encore le bord hors des bornes est refusé (une date déjà au-delà se ramène)
+    if (state.edge === 'end' ? day > state.max && day > state.now.end : day < 1 && day < state.now.start)
+      return refused('limit');
+    const now = resizedDates(base.start, base.end, state.edge, 'day', day - from, { max: state.max });
+    if (now.start === state.now.start && now.end === state.now.end && day !== from) return refused('minimum');
+    return { state: { ...state, now, steps, days, limit: false, minimum: false }, action: 'announce' };
+  }
+  const now = keyPeriod(base, state.unit, steps, days);
+  if (now.start < 1 || now.end > state.max) return refused('limit');
+  return { state: { ...state, now, steps, days, limit: false, minimum: false }, action: 'announce' };
 }
 
 /**
  * Période dont seul le bord saisi bouge de n pas, comptés depuis la date d'origine de ce bord (Q1). Le bord
- * s'arrête sur l'autre (durée minimale d'un jour) et sur les bornes : jour 1 et max (voir maxPlanDay).
+ * s'arrête sur l'autre (durée minimale d'un jour) et sur les bornes : jour 1 et max (voir maxPlanDay) ; un bord
+ * déjà au-delà se ramène vers elles sans y être tiré.
  * @param {number} start
  * @param {number} end
  * @param {'start'|'end'} edge
@@ -311,8 +348,9 @@ export function keyMode(state, e) {
  */
 export function resizedDates(start, end, edge, unit, n, { max }) {
   if (n === 0) return { start, end };
-  if (edge === 'start') return { start: Math.max(1, Math.min(shiftDay(start, unit, n), end)), end };
-  return { start, end: Math.min(max, Math.max(shiftDay(end, unit, n), start)) };
+  // Bord déjà hors des bornes : il se ramène, ne s'éloigne pas davantage, n'est jamais tiré jusqu'à la borne
+  if (edge === 'start') return { start: Math.max(Math.min(1, start), Math.min(shiftDay(start, unit, n), end)), end };
+  return { start, end: Math.min(Math.max(max, end), Math.max(shiftDay(end, unit, n), start)) };
 }
 
 /** Largeur minimale d'une barre qui porte des poignées, en pixels. */
@@ -329,4 +367,23 @@ const HANDLE_MIN_WIDTH = 20;
 export function handleSides({ milestone, deduced, widthPx, clipStart, clipEnd, touchSelected = true }) {
   if (milestone || deduced || !touchSelected || !(widthPx >= HANDLE_MIN_WIDTH)) return { start: false, end: false };
   return { start: !clipStart, end: !clipEnd };
+}
+
+/** Zone de saisie d'une poignée au doigt, en pixels, à l'intérieur de la barre. */
+const TOUCH_GRIP = 24;
+
+/**
+ * Bord saisi par un appui en x sur une barre : poignée de début ou d'échéance si x tombe dans sa zone (24 px au
+ * doigt, au plus un tiers de la barre : le milieu reste au déplacement), sinon déplacement.
+ * @param {number} x
+ * @param {{left:number, right:number}} box rectangle de la barre (lu une fois, au début du geste)
+ * @param {{start:boolean, end:boolean}} sides voir handleSides
+ * @param {number} [zone]
+ * @returns {'move'|'start'|'end'}
+ */
+export function gripAt(x, box, sides, zone = TOUCH_GRIP) {
+  const reach = Math.min(zone, (box.right - box.left) / 3);
+  if (sides.start && x - box.left <= reach) return 'start';
+  if (sides.end && box.right - x <= reach) return 'end';
+  return 'move';
 }

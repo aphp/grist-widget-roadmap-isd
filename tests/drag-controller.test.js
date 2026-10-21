@@ -584,3 +584,36 @@ test('stylet : survol sans contact (buttons 0) après un relâchement perdu = an
   f.win.emit('pointermove', { clientX: 120, buttons: 0, pointerType: 'touch' });
   assert.deepEqual(f.calls, [['start']]);
 });
+
+test('doigt : onArm à l’appui long ; relâché sans bouger, le clic qui suit est avalé (appui long ≠ toucher)', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const s = setup({ onArm: () => s.calls.push(['arm']) });
+  trackPointer(down({ pointerType: 'touch' }), s.handlers);
+  t.mock.timers.tick(399);
+  assert.deepEqual(s.calls, []);
+  t.mock.timers.tick(1);
+  assert.deepEqual(s.calls, [['arm']]);
+  s.win.emit('pointerup', { pointerType: 'touch' });
+  assert.equal(s.win.emit('click').defaultPrevented, true);
+  assert.equal(s.win.emit('click').defaultPrevented, false);
+  // Appui long puis glisser : geste normal après onArm
+  trackPointer(down({ pointerType: 'touch' }), s.handlers);
+  t.mock.timers.tick(400);
+  s.win.emit('pointermove', { clientX: 112, pointerType: 'touch' });
+  assert.deepEqual(s.calls, [['arm'], ['arm'], ['start']]);
+});
+
+test('onArm qui lève : erreur journalisée, le geste continue', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const errors = t.mock.method(console, 'error', () => {});
+  const s = setup({
+    onArm: () => {
+      throw new Error('arm');
+    },
+  });
+  trackPointer(down({ pointerType: 'touch' }), s.handlers);
+  t.mock.timers.tick(400);
+  assert.equal(errors.mock.callCount(), 1);
+  s.win.emit('pointermove', { clientX: 112, pointerType: 'touch' });
+  assert.deepEqual(s.calls, [['start']]);
+});
