@@ -16,6 +16,8 @@
   when it is one of the offered options, `quickFields` reports `chantier`. After a drop, a keyboard or scripted click
   (`detail` 0, e.g. Enter on the focused "Déplacer") is no longer swallowed and any key ends the swallow window; the
   board help lists M only when a shown card can move; a move dialog that cannot open says why.
+- Statistics: a reload from Grist (a change made by anyone) no longer closes the load-plan cell detail, the expanded
+  quality lists or "Voir plus" of the people chart, so the page keeps its height and scroll position.
 - Kanban: cards move between status or priority columns by dragging (mouse, pen; finger after a 400 ms long press),
   through the shared `ui/drag.js` controller. During the gesture nothing is repainted: a ghost on `<body>`, allowed
   columns outlined (`.kcol--target`), refused ones greyed with their reason in a tooltip and on the ghost
