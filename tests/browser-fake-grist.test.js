@@ -5267,3 +5267,41 @@ test(
     await hit('Escape');
   },
 );
+
+test(
+  'gantt : poignées visibles au survol de la ligne, zone de 10 px, plus hautes qu’une barre de chantier',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const pick = (sel) =>
+      w(`const b = [...D.querySelectorAll('${sel} .gbar[data-drag]')].find((x) => x.querySelector('.gbar__grip--end'));
+      if (!b) return null;
+      b.scrollIntoView({ block: 'center', inline: 'nearest' });
+      return b.closest('.grow').id;`);
+    const look = (rowId) =>
+      w(`const row = D.getElementById(${JSON.stringify(rowId)}); const b = row.querySelector('.gbar[data-drag]');
+      const g = b.querySelector('.gbar__grip--end'); const k = W.getComputedStyle(g, '::before');
+      return { opacity: Number(W.getComputedStyle(g).opacity), zone: g.getBoundingClientRect().width,
+        cursor: W.getComputedStyle(g).cursor, mark: parseFloat(k.height), bar: b.getBoundingClientRect().height };`);
+    const hover = async (rowId) => {
+      const at =
+        await w(`const r = D.getElementById(${JSON.stringify(rowId)}).querySelector('.grow__label').getBoundingClientRect();
+      const f = W.frameElement.getBoundingClientRect(); return { x: f.left + r.left + 20, y: f.top + r.top + r.height / 2 };`);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+      await sleep(100);
+    };
+    for (const sel of ['.grow--tache', '.grow--chantier']) {
+      const rowId = await pick(sel);
+      assert.ok(rowId, `barre glissable avec poignées : ${sel}`);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+      await sleep(100);
+      assert.equal((await look(rowId)).opacity, 0, `${sel} : cachées hors de la ligne`);
+      await hover(rowId);
+      const s = await look(rowId);
+      assert.equal(s.opacity, 1, `${sel} : visibles au survol de la ligne`);
+      assert.ok(s.zone >= 10, `${sel} : zone de ${s.zone} px`);
+      assert.equal(s.cursor, 'ew-resize');
+      assert.ok(s.mark >= 16 && s.mark > s.bar, `${sel} : poignée de ${s.mark} px sur une barre de ${s.bar} px`);
+    }
+  },
+);

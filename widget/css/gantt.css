@@ -725,28 +725,54 @@
 .is-grabbing * {
   cursor: grabbing !important;
 }
-/* ---- Étirer une barre : poignées de 6 px aux bords, visibles au survol, au focus de la barre ou de sa ligne ;
-   au doigt, après l'appui long qui choisit la barre (is-touch-selected : cadre, poignées, la barre ne fait plus
-   défiler) ---- */
+/* ---- Étirer une barre : zone de 10 px à cheval sur chaque bord (curseur ↔), poignée blanche dessinée par
+   ::before (plus haute que la barre, deux traits), visible au survol de la ligne, au focus de la barre ou de sa
+   ligne ; au doigt, après l'appui long qui choisit la barre (is-touch-selected : cadre, poignées, la barre ne fait
+   plus défiler). Barre glissable sans découpe : la pastille du nom garde sa propre ellipse ---- */
+.gantt .gbar--draggable {
+  overflow: visible;
+}
 .gbar__grip {
   position: absolute;
+  z-index: 1;
   top: 0;
   bottom: 0;
-  width: 6px;
-  background: var(--color-surface);
-  box-shadow: inset 0 0 0 1px var(--color-text);
+  width: 10px;
   cursor: ew-resize;
   opacity: 0;
 }
 .gbar__grip--start {
-  left: 0;
-  border-radius: 4px 0 0 4px;
+  left: -5px;
 }
 .gbar__grip--end {
-  right: 0;
-  border-radius: 0 4px 4px 0;
+  right: -5px;
 }
-.gbar--draggable:hover > .gbar__grip,
+.gbar__grip::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: 7px;
+  height: max(16px, calc(100% + 6px));
+  transform: translate(-50%, -50%);
+  border: 1.5px solid var(--color-text);
+  border-radius: 3px;
+  background-color: var(--color-surface);
+  /* deux traits courts au milieu */
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(50% - 3px),
+    var(--color-text) calc(50% - 3px) calc(50% - 2px),
+    transparent calc(50% - 2px) calc(50% + 2px),
+    var(--color-text) calc(50% + 2px) calc(50% + 3px),
+    transparent calc(50% + 3px)
+  );
+  background-repeat: no-repeat;
+  background-size: 2px 100%;
+  background-position: center;
+}
+.grow:hover .gbar--draggable > .gbar__grip,
 .gbar--draggable:focus > .gbar__grip,
 .grow:focus-visible .gbar--draggable > .gbar__grip,
 .gbar.is-touch-selected > .gbar__grip {
@@ -1120,13 +1146,14 @@ button.glist__title:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
-  .gbar__grip,
+  .gbar__grip::before,
   .gghost--grips::before,
   .gghost--grips::after,
   .gghost--edge-start::before,
   .gghost--edge-end::after {
     forced-color-adjust: none;
     background: Highlight;
+    border-color: CanvasText;
     box-shadow: none;
     outline: 1px solid CanvasText;
   }
