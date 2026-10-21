@@ -89,6 +89,20 @@ export function clampShift(start, end, n, unit, { min = 1, max }) {
   return 0;
 }
 
+/** Raisons de refus de dragTarget (chacune a son annonce du mode clavier, gantt.key.no.<raison>). */
+export const DRAG_REASONS = Object.freeze([
+  'list',
+  'kind',
+  'deduced',
+  'nodates',
+  'order',
+  'virtual',
+  'edit',
+  'scope',
+  'column',
+]);
+const refuse = (reason) => ({ ok: false, reason: DRAG_REASONS.includes(reason) ? reason : 'edit' });
+
 /**
  * Une barre est-elle glissable ? Tâche, sous-tâche ou chantier avec ses deux dates propres, édition ouverte,
  * dans le périmètre, colonnes de dates permises par le writer.
@@ -101,22 +115,21 @@ export function clampShift(start, end, n, unit, { min = 1, max }) {
  *   |{ok:false, reason:'list'|'kind'|'deduced'|'nodates'|'order'|'virtual'|'edit'|'scope'|'column'}}
  */
 export function dragTarget(model, node, { edit, writer, narrow }) {
-  if (narrow) return { ok: false, reason: 'list' };
+  if (narrow) return refuse('list');
   const isTask = node.kind === 'tache' || node.kind === 'sous-tache';
-  if (!isTask && node.kind !== 'chantier') return { ok: false, reason: 'kind' };
-  if (!node.ref) return { ok: false, reason: 'virtual' };
+  if (!isTask && node.kind !== 'chantier') return refuse('kind');
+  if (!node.ref) return refuse('virtual');
   const hasStart = node.start !== null && node.start !== undefined;
   const hasEnd = node.end !== null && node.end !== undefined;
   // Jalon à la seule échéance : glissé sur l'échéance seule (début = fin = échéance)
   const endOnly = isTask && !hasStart && hasEnd && isMilestone(model, node);
-  if ((!hasStart || !hasEnd) && !endOnly)
-    return { ok: false, reason: !hasStart && !hasEnd && nodeBar(node) ? 'deduced' : 'nodates' };
-  if (node.start > node.end) return { ok: false, reason: 'order' };
+  if ((!hasStart || !hasEnd) && !endOnly) return refuse(!hasStart && !hasEnd && nodeBar(node) ? 'deduced' : 'nodates');
+  if (node.start > node.end) return refuse('order');
   const availability = editAvailability(model, node.ref, edit);
-  if (!availability.editable) return { ok: false, reason: availability.reason === 'scope' ? 'scope' : 'edit' };
+  if (!availability.editable) return refuse(availability.reason === 'scope' ? 'scope' : 'edit');
   const table = isTask ? 'Tasks' : 'Chantiers';
   const cols = endOnly ? ['dateEcheance'] : isTask ? ['dateDebut', 'dateEcheance'] : ['Debut', 'Fin'];
-  if (!writer || !cols.every((c) => writer.can(table, c)?.ok)) return { ok: false, reason: 'column' };
+  if (!writer || !cols.every((c) => writer.can(table, c)?.ok)) return refuse('column');
   return { ok: true, table, id: node.ref.id, cols, milestone: isMilestone(model, node) };
 }
 
@@ -251,12 +264,23 @@ export function summaryText(s, mode) {
 }
 
 /**
- * Mode clavier « D » d'une ligne : ←/→ d'un pas de l'échelle (Maj : d'un jour), durée gardée et borne du
- * 31/12 de l'année suivante (limit : pas refusé par la borne) ; Retour arrière remet les dates vues ; Entrée
- * enregistre, Échap annule. Tab / Maj+Tab passent de move à start et end au lot B : au lot A, rien. Pure.
+ * Période d'un déplacement compté depuis les dates d'origine : n pas de l'échelle puis d jours (pas relatifs aux
+ * dates d'origine, Q1 : 31 janv. + 2 mois = 31 mars).
+ */
+function keyPeriod(seen, unit, steps, days) {
+  const from = periodOf(seen);
+  const start = shiftDay(from.start, unit, steps) + days;
+  return { start, end: start + (from.end - from.start) };
+}
+
+/**
+ * Mode clavier « D » d'une ligne : ←/→ d'un pas de l'échelle (Maj : d'un jour), comptés depuis les dates d'origine
+ * (compteurs steps et days), durée gardée ; un pas qui passerait la borne du 31/12 de l'année suivante est refusé
+ * (limit) sans toucher aux compteurs. Retour arrière remet les dates vues ; Entrée enregistre, Échap annule.
+ * Tab / Maj+Tab passent de move à start et end au lot B : au lot A, rien. Pure.
  * @param {{target:object, seen:{start:number|null, end:number}, now:{start:number, end:number},
- *   edge:'move'|'start'|'end', unit:Unit, max:number, limit?:boolean}} state unit : pas de l'échelle
- *   (snapUnit(scale, false)) ; max : voir maxPlanDay
+ *   edge:'move'|'start'|'end', unit:Unit, max:number, steps?:number, days?:number, limit?:boolean}} state
+ *   unit : pas de l'échelle (snapUnit(scale, false)) ; max : voir maxPlanDay
  * @param {{key:string, shiftKey?:boolean}} e
  * @returns {{state:object, action:'none'|'save'|'cancel'|'announce'}}
  */
@@ -264,11 +288,12 @@ export function keyMode(state, e) {
   if (e.key === 'Enter') return { state, action: 'save' };
   if (e.key === 'Escape') return { state, action: 'cancel' };
   if (e.key === 'Backspace')
-    return { state: { ...state, now: periodOf(state.seen), limit: false }, action: 'announce' };
+    return { state: { ...state, now: periodOf(state.seen), steps: 0, days: 0, limit: false }, action: 'announce' };
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return { state, action: 'none' };
-  const unit = e.shiftKey ? 'day' : state.unit;
-  const { start, end } = state.now;
-  const n = clampShift(start, end, e.key === 'ArrowRight' ? 1 : -1, unit, { max: state.max });
-  if (!n) return { state: { ...state, limit: true }, action: 'announce' };
-  return { state: { ...state, now: movedDates(start, end, unit, n), limit: false }, action: 'announce' };
+  const sign = e.key === 'ArrowRight' ? 1 : -1;
+  const steps = (state.steps ?? 0) + (e.shiftKey ? 0 : sign);
+  const days = (state.days ?? 0) + (e.shiftKey ? sign : 0);
+  const now = keyPeriod(state.seen, state.unit, steps, days);
+  if (now.start < 1 || now.end > state.max) return { state: { ...state, limit: true }, action: 'announce' };
+  return { state: { ...state, now, steps, days, limit: false }, action: 'announce' };
 }

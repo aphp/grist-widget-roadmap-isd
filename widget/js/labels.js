@@ -304,6 +304,7 @@ const FR = Object.freeze({
   'gantt.key.over': 'Attention : {n} charge(s) au-dessus de la borne, laissée(s) telle(s) quelle(s).',
   'gantt.key.limit': 'Limite atteinte : aucune date après le {date}.',
   'gantt.key.cancel': 'Déplacement annulé : dates inchangées.',
+  'gantt.key.no.list': 'Déplacement indisponible dans la liste chronologique.',
   'gantt.key.no.kind': 'Un projet ou une catégorie ne se déplace pas : déplacez ses chantiers ou ses tâches.',
   'gantt.key.no.virtual': '« Sans chantier » n’a pas de dates : déplacez ses tâches.',
   'gantt.key.no.deduced': 'Période déduite des sous-éléments : déplacez-les, ou ajoutez des dates dans la fiche.',

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { buildModel } from '../widget/js/core/model.js';
 import { dayOfIso, isoOfDay } from '../widget/js/core/dates.js';
 import {
+  DRAG_REASONS,
   clampShift,
   dragContext,
   dragSummary,
@@ -439,9 +440,43 @@ test('keyMode : jalon à la seule échéance, borne du 31/12 de l’année suiva
   assert.deepEqual(iso2(keyMode(day1.state, { key: 'Backspace' }).state.now), ['2027-12-27', '2027-12-27']);
 });
 
-test('mode clavier : chaque refus de dragTarget (hors liste) a son annonce, chaque pas son nom', async () => {
+test('mode clavier : chaque pas a son nom', async () => {
   const { hasLabel } = await import('../widget/js/labels.js');
-  for (const r of ['kind', 'virtual', 'deduced', 'nodates', 'order', 'edit', 'scope', 'column'])
-    assert.ok(hasLabel(`gantt.key.no.${r}`), r);
   for (const u of ['day', 'week', 'month']) assert.ok(hasLabel(`gantt.key.unit.${u}`), u);
+});
+
+test('keyMode : pas relatifs aux dates d’origine (compteurs de pas et de jours), Retour arrière les remet à zéro', () => {
+  const jan = keyState({
+    unit: 'month',
+    seen: { start: d('2027-01-31'), end: d('2027-02-02') },
+    now: { start: d('2027-01-31'), end: d('2027-02-02') },
+  });
+  const press = (st, key, shiftKey = false) => keyMode(st, { key, shiftKey }).state;
+  const r2 = press(press(jan, 'ArrowRight'), 'ArrowRight');
+  assert.deepEqual(iso2(r2.now), ['2027-03-31', '2027-04-02']);
+  assert.deepEqual(iso2(press(press(jan, 'ArrowRight'), 'ArrowLeft').now), ['2027-01-31', '2027-02-02']);
+  // Maj : un jour, mêlé aux pas en mois sans dériver
+  const mixed = press(press(jan, 'ArrowRight'), 'ArrowRight', true);
+  assert.deepEqual(iso2(mixed.now), ['2027-03-01', '2027-03-03']);
+  assert.deepEqual(iso2(press(mixed, 'ArrowRight').now), ['2027-04-01', '2027-04-03']);
+  const back = keyMode(mixed, { key: 'Backspace' }).state;
+  assert.deepEqual([back.steps, back.days], [0, 0]);
+  assert.deepEqual(iso2(press(back, 'ArrowRight').now), ['2027-02-28', '2027-03-02']);
+});
+
+test('keyMode : borne refusée sans toucher aux compteurs (réversible)', () => {
+  const st = keyState({ unit: 'week', seen: { start: d('2027-12-24'), end: d('2027-12-28') } });
+  st.now = { ...st.seen };
+  const a = keyMode(st, { key: 'ArrowRight' });
+  assert.equal(a.state.limit, true);
+  assert.deepEqual([a.state.steps ?? 0, a.state.days ?? 0], [0, 0]);
+  const b = keyMode(a.state, { key: 'ArrowLeft' });
+  assert.deepEqual(iso2(b.state.now), ['2027-12-17', '2027-12-21']);
+  assert.deepEqual(iso2(keyMode(b.state, { key: 'ArrowRight' }).state.now), ['2027-12-24', '2027-12-28']);
+});
+
+test('DRAG_REASONS : chaque raison de refus de dragTarget a son annonce du mode clavier', async () => {
+  const { hasLabel } = await import('../widget/js/labels.js');
+  assert.ok(DRAG_REASONS.includes('order'));
+  for (const r of DRAG_REASONS) assert.ok(hasLabel(`gantt.key.no.${r}`), r);
 });
