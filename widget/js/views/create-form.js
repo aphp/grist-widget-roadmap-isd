@@ -35,7 +35,7 @@ function targetHint(model, value) {
 
 /** Liste « chantier dans un projet » (valeur chantier:projet), groupée par projet du périmètre ISD. */
 function targetSelect(st, model, current) {
-  return h`<select id="cf-cible" class="fr-select" data-cf="cible" ${attrs(st, 'cible')}>
+  return h`<select id="cf-cible" class="fr-select" data-cf="cible" ${attrs(st, 'cible', Boolean(st.ask))}>
     <option value="" ${sel(!current)}>${label('create.field.cible.choose')}</option>
     ${chantierOptions(model).map(
       (g) =>
@@ -181,7 +181,12 @@ export function moveBody(st, model) {
       <div class="dt-field"><dt>${label('move.task')}</dt><dd>${untitled(task?.title)}</dd></div>
       <div class="dt-field"><dt>${label('move.current')}</dt><dd>${pathText(model, { table: 'Tasks', id: st.taskId })}</dd></div>
     </dl>
-    ${field(st, 'cible', targetSelect(st, model, st.target), { required: true, labelText: label('move.target') })}
+    ${field(st, 'cible', targetSelect(st, model, st.target), {
+      required: true,
+      labelText: label('move.target'),
+      // Dépôt sur un chantier de plusieurs projets : le projet présélectionné est à confirmer
+      help: st.ask ? label('move.ask', { chantier: untitled(st.ask) }) : undefined,
+    })}
     <p class="fr-hint-text tf-hint" id="cf-follow" aria-live="polite">${
       st.count === 0
         ? label('move.follow.none')

@@ -42,6 +42,7 @@ import { createTaskEditor } from './ui/task-editor.js';
 import { closeStatusPopover, openChoicePopover, openStatusPopover, statusPopoverKey } from './ui/status-popover.js';
 import { canQuickStatus, focusOrder, quickFields, statusMenuItems } from './core/quick-status.js';
 import { columnName, dropChanges, dropTargets, priorityMenuItems } from './core/kanban-drop.js';
+import { chantierOfColumn } from './core/kanban-data.js';
 import { refusedText } from './views/task-form.js';
 import { createCreateDialog } from './ui/create-dialog.js';
 import { prefillFromFilters } from './core/create-form.js';
@@ -320,7 +321,11 @@ async function dropOnColumn(taskId, group, key, focusEl) {
     );
     return `refused:${r.error}`;
   }
-  if (group === 'chantier') return r.target === undefined ? 'nothing' : openMoveFromView(taskId, focusEl, r.target);
+  if (group === 'chantier') {
+    if (r.target === undefined) return 'nothing';
+    const ask = r.ask ? (state.model.chantiers.get(chantierOfColumn(key))?.title ?? '') : null;
+    return openMoveFromView(taskId, focusEl, r.target, ask);
+  }
   if (!Object.keys(r.changes).length) return 'nothing';
   if (group === 'status') return changeStatusFromView(taskId, key, focusEl);
   const value = r.changes.priorite;
@@ -365,9 +370,10 @@ function openQuickPriority(anchor, taskId, focusEl = anchor) {
  * confirmation (Q7), rien n'est écrit si elle est fermée. Le focus revient à la carte à la fermeture, et après
  * l'envoi la suit dans sa nouvelle colonne (gardée visible) ; « Annuler » y ramène le focus.
  * @param {string} [target] chantier présélectionné (targetValue), vide : l'utilisateur choisit
+ * @param {string|null} [ask] nom du chantier dont le projet est à choisir parmi plusieurs (consigne de la fenêtre)
  * @returns {Promise<string>} 'saved', 'closed' ou 'refused'
  */
-async function openMoveFromView(taskId, focusEl, target = '') {
+async function openMoveFromView(taskId, focusEl, target = '', ask = null) {
   const t = state.model?.tasks.get(taskId);
   if (!t) return 'refused';
   if (t.parentId) {
@@ -388,6 +394,7 @@ async function openMoveFromView(taskId, focusEl, target = '') {
         const opened = createDialog.open('move', {
           taskId,
           target,
+          ask,
           // Envoi réussi : le focus suit la carte au rendu qui suit, même après une fenêtre restée longtemps ouverte
           onSaving: () => {
             focus.expires = Date.now() + 30000;
@@ -395,7 +402,11 @@ async function openMoveFromView(taskId, focusEl, target = '') {
           },
           onClose: resolve,
         });
-        if (!opened) resolve('refused');
+        if (opened) return;
+        // Jamais un dépôt ou une touche sans effet visible : autre fenêtre ouverte, droit retiré entre-temps
+        if (createDialog.isOpen()) toast.show(label('move.otherDialog'), { tone: 'error' });
+        else refuseQuick(taskId, writer?.can('Tasks', 'Chantier')?.ok ? 'projet' : 'Chantier');
+        resolve('refused');
       }),
   );
   if (kind === 'saved')

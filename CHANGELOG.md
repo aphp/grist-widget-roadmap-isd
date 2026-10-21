@@ -4,8 +4,8 @@
 
 - Kanban: grouped by chantier, a top-level task card is dragged onto another chantier. The drop writes nothing:
   it opens the existing move dialog ("Changer de chantier") with that chantier preselected (its only project, or the
-  task's current project when the chantier carries it; a chantier of two other projects asks for the project), focus
-  on "Déplacer"; sending goes through `runMove` (row re-read, the task and all its subtasks in one batch, "Annuler"
+  task's current project when the chantier carries it; otherwise its first in-scope project, focus on the list and
+  "Choisissez le projet de « … »" read with it), focus on "Déplacer"; sending goes through `runMove` (row re-read, the task and all its subtasks in one batch, "Annuler"
   refocusing the card), closing writes nothing and returns focus to the card. Refused columns show their reason
   during the gesture: "(sans chantier)", chantiers out of ISD scope, the card's own chantier. A subtask never lifts
   ("Une sous-tâche suit le chantier de sa tâche." as tooltip, and as a message when dragged or on M). New M key on a
@@ -13,7 +13,9 @@
   the ⋯ menu gains "Chantier…". `aria-keyshortcuts` and the board help list M only when the move is allowed.
   `dropTargets`, `dropColumns`, `hasDropTarget`, `dropChanges` and `columnName` handle the chantier grouping
   (`chantierDropTarget`), `moveRefusal` holds the checks of `movePlan`, `moveTarget` keeps a preselected target only
-  when it is one of the offered options, `quickFields` reports `chantier`.
+  when it is one of the offered options, `quickFields` reports `chantier`. After a drop, a keyboard or scripted click
+  (`detail` 0, e.g. Enter on the focused "Déplacer") is no longer swallowed and any key ends the swallow window; the
+  board help lists M only when a shown card can move; a move dialog that cannot open says why.
 - Kanban: cards move between status or priority columns by dragging (mouse, pen; finger after a 400 ms long press),
   through the shared `ui/drag.js` controller. During the gesture nothing is repainted: a ghost on `<body>`, allowed
   columns outlined (`.kcol--target`), refused ones greyed with their reason in a tooltip and on the ghost

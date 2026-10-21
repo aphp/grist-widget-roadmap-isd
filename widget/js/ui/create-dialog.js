@@ -243,8 +243,10 @@ export function createCreateDialog(deps) {
    * Ouvre une fenêtre.
    * @param {'task'|'subtask'|'chantier'|'move'} kind
    * @param {{chantierId?:number|null, projectId?:number|null, parentId?:number|null, status?:string|null,
-   *          me?:number|null, taskId?:number, target?:string, onSaving?():void, onClose?(kind:string):void}} ctx
+   *          me?:number|null, taskId?:number, target?:string, ask?:string, onSaving?():void,
+   *          onClose?(kind:string):void}} ctx
    *   move : target présélectionne le chantier (dépôt d'une carte du Kanban, gardée si c'est une option proposée) ;
+   *   ask : nom du chantier dont le projet est à choisir parmi plusieurs (consigne, focus sur la liste) ;
    *   onSaving : envoi réussi, juste avant la mise à jour des vues ; onClose('saved' | 'closed') à la fermeture
    */
   function open(kind, ctx = {}) {
@@ -282,6 +284,7 @@ export function createCreateDialog(deps) {
       // Cible présélectionnée : pas une saisie (fermer sans rien changer ne demande pas de confirmation)
       st.initial = JSON.stringify(st.target);
       st.count = 0;
+      st.ask = st.target && ctx.ask !== undefined && ctx.ask !== null ? ctx.ask : null;
       st.onSaving = ctx.onSaving;
       st.onClose = ctx.onClose;
     } else {
@@ -304,7 +307,7 @@ export function createCreateDialog(deps) {
       body: body(),
       foot: dialogFoot(st, errorCount()),
       // Chantier présélectionné par un dépôt : le focus va au bouton « Déplacer » (la fenêtre confirme)
-      focus: kind === 'move' && st.target ? 'cf-submit' : FIRST[kind],
+      focus: kind === 'move' && st.target && st.ask === null ? 'cf-submit' : FIRST[kind],
       onRequestClose: requestClose,
     });
     bind(dlg.root);
@@ -404,23 +407,29 @@ export function createCreateDialog(deps) {
     }
     cur.busy = false;
     if (st !== cur) return;
-    if (result.kind === 'saved') {
-      const entry = result.entry;
-      cur.onSaving?.();
-      close(true);
-      deps.onWritten(entry);
-      if (cur.kind === 'move') {
+    if (result.kind === 'saved' && cur.kind === 'move') {
+      // Fenêtre ouverte depuis une vue : onClose toujours appelé, même si une mise à jour qui suit échoue
+      try {
+        cur.onSaving?.();
+        close(true);
+        deps.onWritten(result.entry);
         const n = result.count ?? cur.plan.count;
         deps.toast.show(
-          label(entry.sent ? 'move.toast' : 'move.toastDry', {
+          label(result.entry.sent ? 'move.toast' : 'move.toastDry', {
             suite: n ? label(n === 1 ? 'move.toast.one' : 'move.toast.many', { n }) : '',
           }),
           { onAction: deps.onUndo },
         );
         deps.afterMove?.({ table: 'Tasks', id: cur.taskId });
+      } finally {
         cur.onClose?.('saved');
-        return;
       }
+      return;
+    }
+    if (result.kind === 'saved') {
+      const entry = result.entry;
+      close(true);
+      deps.onWritten(entry);
       const key = cur.kind === 'chantier' ? 'create.toast.chantier' : 'create.toast.task';
       // Création sans réponse dans le délai mais retrouvée sans ambiguïté dans la Feuille : annulable
       const text = entry.recovered

@@ -179,8 +179,9 @@ function cardEditAttrs(taskId, fields, group, { drag, saving, subtask }) {
 }
 
 /**
- * @param {{model:object, group:string, open:Set<string>|null}} board modèle affiché (avec la carte en cours
- *   d'enregistrement à sa nouvelle place), regroupement, colonnes ouvertes au dépôt (null : pas de glisser)
+ * @param {{model:object, group:string, open:Set<string>|null, anyMove:boolean}} board modèle affiché (avec la carte
+ *   en cours d'enregistrement à sa nouvelle place), regroupement, colonnes ouvertes au dépôt (null : pas de glisser),
+ *   au moins une carte affichée déplaçable (touche M), posé pendant le rendu des cartes
  */
 function cardHtml(ctx, board, taskId, paths, showStatus, entry) {
   const { model } = board;
@@ -189,6 +190,7 @@ function cardHtml(ctx, board, taskId, paths, showStatus, entry) {
   const qs = fields.statut || fields.priorite || fields.chantier;
   const saving = memory.saving?.taskId === taskId;
   const right = fields[MOVE_FIELD[board.group]];
+  if (right) board.anyMove = true; // aide du plateau : M seulement si une carte affichée peut se déplacer
   const drag = Boolean(board.open && right && !saving && hasDropTarget(model, taskId, board.group, board.open));
   // Par chantier, une sous-tâche suit sa tâche : elle ne se soulève pas, l'infobulle dit pourquoi
   const subtask = Boolean(board.group === 'chantier' && board.open && ctx.drop?.chantier && task.parentId);
@@ -311,8 +313,10 @@ export function render(el, ctx) {
     const model = saving ? pendingModel(ctx.model, saving.taskId, saving.changes) : ctx.model;
     const cols = kanbanColumns(model, ctx.view.taskIds, st.group, st.sort);
     shownCols = cols;
-    const dnd = { model, group: st.group, open: ctx.drop ? dropColumns(model, st.group, cols) : null };
+    const dnd = { model, group: st.group, open: ctx.drop ? dropColumns(model, st.group, cols) : null, anyMove: false };
     reveal(cols);
+    // Cartes d'abord : l'aide du plateau ne cite M que si l'une d'elles peut se déplacer
+    const columns = cols.map((c) => columnHtml(ctx, dnd, c, st, paths));
     keepFocus(
       el,
       h`<div class="kanban">
@@ -324,13 +328,13 @@ export function render(el, ctx) {
           ${selectHtml('kanban-sort', 'kanban.sort', SORTS, st.sort, 'kanban.sort')}
         </div>`,
         )}
-        <p id="kanban-help" class="fr-sr-only">${qsOn ? label('kanban.help.edit', { touches: helpKeys() }) : label('kanban.help')}</p>
+        <p id="kanban-help" class="fr-sr-only">${qsOn ? label('kanban.help.edit', { touches: helpKeys(dnd.anyMove) }) : label('kanban.help')}</p>
         <div class="kanban__peeks" hidden>
           ${['left', 'right'].map((side) => h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary kanban__peek kanban__peek--${side}" data-peek="${side}" aria-controls="kanban-board" hidden>${icon(`arrow-${side}-s-line`)}<span class="kanban__peek-text"></span><span class="fr-sr-only kanban__peek-sr"></span></button>`)}
         </div>
         <div class="kanban__viewport">
           <div class="kanban__board" id="kanban-board" data-scroll-key="kanban" role="group" aria-label="${label('kanban.label')}" aria-describedby="kanban-help">
-            ${cols.map((c) => columnHtml(ctx, dnd, c, st, paths))}
+            ${columns}
           </div>
         </div>
       </div>`.toString(),
@@ -341,10 +345,9 @@ export function render(el, ctx) {
     if (memory.gesture) resumeGesture(memory.gesture, cols);
   }
 
-  /** Touches de l'aide après S : P si la priorité est modifiable, M si le regroupement permet de déplacer une carte. */
-  function helpKeys() {
+  /** Touches de l'aide après S : P si la priorité est modifiable, M si une carte affichée peut se déplacer. */
+  function helpKeys(move) {
     const priority = Boolean(ctx.quickStatus.priority);
-    const move = st.group === 'status' || (st.group === 'priority' ? priority : Boolean(ctx.drop?.chantier));
     const m = st.group === 'chantier' ? 'kanban.help.key.moveChantier' : 'kanban.help.key.move';
     return (priority ? label('kanban.help.key.priority') : '') + (move ? label(m) : '');
   }

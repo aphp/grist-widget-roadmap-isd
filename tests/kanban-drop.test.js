@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chantierDropTarget,
+  chantierProjectChoice,
   columnName,
   dropChanges,
   dropColumns,
@@ -115,25 +116,48 @@ test('dropTargets chantier : une sous-tâche est refusée partout (elle suit sa 
   for (const key of ['C5', 'C6', 'C7', 'C8', 'C99', '']) assert.deepEqual(t.get(key), { ok: false, reason: 'subtask' });
 });
 
-test('chantierDropTarget : un projet, projet actuel porté, deux projets sans le projet actuel', () => {
+test('chantierDropTarget : un projet, projet actuel porté, sinon le premier projet du périmètre', () => {
   const m = mkChantiers();
   assert.equal(chantierDropTarget(m, 1, 7), '7:20', 'un seul projet');
   assert.equal(chantierDropTarget(m, 1, 6), '6:10', 'le chantier porte le projet actuel');
   assert.equal(chantierDropTarget(m, 3, 5), '5:10');
-  assert.equal(chantierDropTarget(m, 9, 6), '', 'deux projets : choix dans la fenêtre');
+  assert.equal(chantierDropTarget(m, 9, 6), '6:10', 'deux projets : le premier du périmètre, à confirmer');
+  const outFirst = { ...m, chantiers: new Map(m.chantiers).set(6, { id: 6, title: 'Partagé', projectIds: [40, 20] }) };
+  assert.equal(chantierDropTarget(outFirst, 1, 6), '6:20', 'projet hors périmètre sauté');
   assert.equal(chantierDropTarget(m, 1, 99), '');
   assert.equal(chantierDropTarget(m, 99, 6), '');
 });
 
+test('chantierProjectChoice : plusieurs projets du périmètre possibles, aucun n’est celui de la tâche', () => {
+  const m = mkChantiers();
+  assert.equal(chantierProjectChoice(m, 9, 6), true);
+  assert.equal(chantierProjectChoice(m, 1, 6), false, 'projet actuel porté');
+  assert.equal(chantierProjectChoice(m, 1, 7), false, 'un seul projet');
+  const oneIn = { ...m, chantiers: new Map(m.chantiers).set(6, { id: 6, projectIds: [40, 20] }) };
+  assert.equal(chantierProjectChoice(oneIn, 1, 6), false, 'un seul projet du périmètre');
+  assert.equal(chantierProjectChoice(m, 99, 6), false);
+  assert.equal(chantierProjectChoice(m, 1, 99), false);
+});
+
 test('dropChanges chantier : cible de la fenêtre, rien à écrire directement, refus', () => {
   const m = mkChantiers();
-  assert.deepEqual(dropChanges(m, 1, 'chantier', 'C6', 0), { changes: {}, inherited: false, target: '6:10' });
+  assert.deepEqual(dropChanges(m, 1, 'chantier', 'C6', 0), {
+    changes: {},
+    inherited: false,
+    target: '6:10',
+    ask: false,
+  });
   assert.deepEqual(
     dropChanges(m, 9, 'chantier', 'C6', 0),
-    { changes: {}, inherited: false, target: '' },
-    'deux projets sans le projet actuel : la fenêtre demande le projet',
+    { changes: {}, inherited: false, target: '6:10', ask: true },
+    'deux projets sans le projet actuel : la fenêtre demande de confirmer le projet',
   );
-  assert.deepEqual(dropChanges(m, 4, 'chantier', 'C6', 0), { changes: {}, inherited: false, target: '6:10' });
+  assert.deepEqual(dropChanges(m, 4, 'chantier', 'C6', 0), {
+    changes: {},
+    inherited: false,
+    target: '6:10',
+    ask: false,
+  });
   assert.deepEqual(dropChanges(m, 1, 'chantier', 'C5', 0), { changes: {}, inherited: false });
   assert.deepEqual(dropChanges(m, 2, 'chantier', 'C6', 0), { error: 'subtask' });
   assert.deepEqual(dropChanges(m, 1, 'chantier', '', 0), { error: 'no-chantier' });

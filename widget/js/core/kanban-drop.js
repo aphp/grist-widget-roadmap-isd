@@ -42,15 +42,29 @@ const scopedProject = (model, chantier) => chantier.projectIds?.find((p) => mode
 
 /**
  * Chantier et projet présélectionnés dans la fenêtre « Déplacer » après un dépôt sur un chantier : le projet du
- * chantier s'il n'en a qu'un, ou le projet actuel de la tâche s'il le porte ; sinon vide (la fenêtre demande).
- * @returns {string} valeur targetValue, ou ''
+ * chantier s'il n'en a qu'un, le projet actuel de la tâche s'il le porte, sinon son premier projet du périmètre ISD
+ * (à confirmer dans la fenêtre, voir chantierProjectChoice).
+ * @returns {string} valeur targetValue, ou '' (tâche ou chantier inconnu, chantier sans projet)
  */
 export function chantierDropTarget(model, taskId, chantierId) {
   const task = model.tasks.get(taskId);
-  const projects = model.chantiers.get(chantierId)?.projectIds ?? [];
+  const chantier = model.chantiers.get(chantierId);
+  const projects = chantier?.projectIds ?? [];
   if (!task || !projects.length) return '';
   if (projects.length === 1) return targetValue(chantierId, projects[0]);
-  return projects.includes(task.projectId) ? targetValue(chantierId, task.projectId) : '';
+  if (projects.includes(task.projectId)) return targetValue(chantierId, task.projectId);
+  return targetValue(chantierId, scopedProject(model, chantier));
+}
+
+/**
+ * Vrai si le projet présélectionné après un dépôt est un choix parmi plusieurs : le chantier a plusieurs projets du
+ * périmètre ISD et ne porte pas celui de la tâche (la fenêtre demande de choisir le projet).
+ */
+export function chantierProjectChoice(model, taskId, chantierId) {
+  const task = model.tasks.get(taskId);
+  const projects = model.chantiers.get(chantierId)?.projectIds ?? [];
+  if (!task || projects.includes(task.projectId)) return false;
+  return projects.filter((p) => model.projects.get(p)?.inScope).length > 1;
 }
 
 /** Verdict du dépôt d'une tâche de premier niveau sur une colonne de chantier (mêmes contrôles que movePlan). */
@@ -61,7 +75,7 @@ function chantierVerdict(model, task, key) {
   const chantier = model.chantiers.get(id);
   if (!chantier) return { ok: false, reason: 'chantier' };
   const chosen = parseTarget(chantierDropTarget(model, task.id, id)).projectId;
-  const reason = moveRefusal(model, task.id, id, chosen ?? scopedProject(model, chantier));
+  const reason = moveRefusal(model, task.id, id, chosen);
   return reason && reason !== 'same' ? { ok: false, reason } : { ok: true };
 }
 
@@ -97,7 +111,7 @@ export function dropTargets(model, taskId, groupBy, columns) {
 /**
  * Colonnes à écrire pour un dépôt. `inherited` : la priorité affichée venait du chantier ou du projet. Chantier :
  * rien n'est écrit au dépôt ; `target` (chantierDropTarget) présélectionne la fenêtre « Déplacer » (absent si c'est
- * la colonne de la carte).
+ * la colonne de la carte) ; `ask` : projet à choisir parmi plusieurs (chantierProjectChoice).
  * @param {number} today jour UTC entier (date de clôture posée par le statut « done »)
  * @returns {{changes:object, inherited:boolean, target?:string}|{error:string}} error : raison de refus de
  *   dropTargets, ou 'missing'
@@ -108,10 +122,12 @@ export function dropChanges(model, taskId, groupBy, columnKey, today) {
   const verdict = dropTargets(model, taskId, groupBy, [{ key: columnKey }]).get(columnKey);
   const inherited = isInherited(model, task);
   if (!verdict.ok && verdict.reason !== 'same') return { error: verdict.reason };
-  if (groupBy === 'chantier')
-    return verdict.ok
-      ? { changes: {}, inherited: false, target: chantierDropTarget(model, taskId, chantierOfColumn(columnKey)) }
-      : { changes: {}, inherited: false };
+  if (groupBy === 'chantier') {
+    if (!verdict.ok) return { changes: {}, inherited: false };
+    const id = chantierOfColumn(columnKey);
+    const target = chantierDropTarget(model, taskId, id);
+    return { changes: {}, inherited: false, target, ask: chantierProjectChoice(model, taskId, id) };
+  }
   if (groupBy === 'status')
     return {
       changes: statusChanges({ statut: task.status, dateCloture: task.closed ?? null }, columnKey, today),

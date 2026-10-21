@@ -5783,45 +5783,55 @@ test('kanban chantier : sous-tâche non saisissable, la raison est dite', { skip
   assert.equal(await w(`return W.__writes.length;`), 0);
 });
 
-test('kanban chantier : chantier à deux projets → la fenêtre demande le projet', { skip: SKIP }, async () => {
-  await openKanban('', 'chantier');
-  const t = await parentWithSubtasks();
-  // Le chantier visé porte deux projets du périmètre, dont aucun n'est celui de la tâche
-  const at = await cardPoint(`#kc-${t.id}`);
-  await mouseTo(at, { x: at.x + 30, y: at.y + 30 }, { release: false });
-  await until(`D.querySelector('.kcol--target')`);
-  const goal = await w(`return Number(D.querySelector('.kcol--target').dataset.col.slice('chantier:C'.length));`);
-  await hit('Escape');
-  await mouseUp({ x: at.x + 30, y: at.y + 30 });
-  const two =
-    await w(`const T = await W.grist.docApi.fetchTable('Tasks'); const P = await W.grist.docApi.fetchTable('Projects');
+test(
+  'kanban chantier : chantier à deux projets → premier projet présélectionné, la fenêtre demande de le choisir',
+  { skip: SKIP },
+  async () => {
+    await openKanban('', 'chantier');
+    const t = await parentWithSubtasks();
+    // Le chantier visé porte deux projets du périmètre, dont aucun n'est celui de la tâche
+    const at = await cardPoint(`#kc-${t.id}`);
+    await mouseTo(at, { x: at.x + 30, y: at.y + 30 }, { release: false });
+    await until(`D.querySelector('.kcol--target')`);
+    const goal = await w(`return Number(D.querySelector('.kcol--target').dataset.col.slice('chantier:C'.length));`);
+    await hit('Escape');
+    await mouseUp({ x: at.x + 30, y: at.y + 30 });
+    const two =
+      await w(`const T = await W.grist.docApi.fetchTable('Tasks'); const P = await W.grist.docApi.fetchTable('Projects');
     const mine = T.projet[T.id.indexOf(${t.id})];
     return P.id.filter((p) => p !== mine).slice(0, 2);`);
-  await w(
-    `await W.grist.__simulateChange(['UpdateRecord', 'Chantiers', ${goal}, { Projets: ['L', ${two[0]}, ${two[1]}] }]); return true;`,
-  );
-  await until(`D.querySelector('#kc-${t.id}[data-drag-card]') && !D.querySelector('.kghost')`);
-  await sleep(300);
-  const to =
-    await w(`const c = D.querySelector('.kcol[data-col="chantier:C${goal}"]'); c.scrollIntoView({ inline: 'nearest' });
+    await w(
+      `await W.grist.__simulateChange(['UpdateRecord', 'Chantiers', ${goal}, { Projets: ['L', ${two[0]}, ${two[1]}] }]); return true;`,
+    );
+    await until(`D.querySelector('#kc-${t.id}[data-drag-card]') && !D.querySelector('.kghost')`);
+    await sleep(300);
+    const to =
+      await w(`const c = D.querySelector('.kcol[data-col="chantier:C${goal}"]'); c.scrollIntoView({ inline: 'nearest' });
     const r = c.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
     return { x: f.left + r.left + 40, y: f.top + r.top + 60 };`);
-  const from = await cardPoint(`#kc-${t.id}`);
-  await mouseTo(from, to, { release: false });
-  await until(`D.querySelector('.kcol--over[data-col="chantier:C${goal}"].kcol--target')`);
-  await mouseUp(to);
-  await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
-  assert.equal(await w(`return D.getElementById('cf-cible').value;`), '', 'aucun projet choisi d’avance');
-  assert.equal(await w(`return D.activeElement.id;`), 'cf-cible');
-  const options = await w(
-    `return [...D.querySelectorAll('#cf-cible option')].map((o) => o.value).filter((v) => v.startsWith('${goal}:'));`,
-  );
-  assert.equal(options.length, 2, 'le chantier apparaît sous chacun de ses deux projets');
-  await change('#cf-cible', options[1]);
-  await clickOn('#cf-submit');
-  await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
-  assert.deepEqual((await writes())[0][0], ['UpdateRecord', 'Tasks', t.id, { Chantier: goal, projet: two[1] }]);
-});
+    const from = await cardPoint(`#kc-${t.id}`);
+    await mouseTo(from, to, { release: false });
+    await until(`D.querySelector('.kcol--over[data-col="chantier:C${goal}"].kcol--target')`);
+    await mouseUp(to);
+    await until(`D.querySelector('dialog.cdlg[open] #cf-cible')`);
+    // Premier projet du périmètre présélectionné, à confirmer : consigne lue avec la liste, focus sur elle
+    assert.equal(await w(`return D.getElementById('cf-cible').value;`), `${goal}:${two[0]}`);
+    assert.equal(await w(`return D.activeElement.id;`), 'cf-cible');
+    assert.match(
+      await w(`return D.getElementById('cf-cible-help').textContent;`),
+      /Choisissez le projet de « .+ » : ce chantier en a plusieurs/,
+    );
+    assert.match(await w(`return D.getElementById('cf-cible').getAttribute('aria-describedby');`), /cf-cible-help/);
+    const options = await w(
+      `return [...D.querySelectorAll('#cf-cible option')].map((o) => o.value).filter((v) => v.startsWith('${goal}:'));`,
+    );
+    assert.equal(options.length, 2, 'le chantier apparaît sous chacun de ses deux projets');
+    await change('#cf-cible', options[1]);
+    await clickOn('#cf-submit');
+    await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0][0], ['UpdateRecord', 'Tasks', t.id, { Chantier: goal, projet: two[1] }]);
+  },
+);
 
 test(
   'kanban : touche M (statut → menu de statut ; chantier → fenêtre « Déplacer » sans cible)',

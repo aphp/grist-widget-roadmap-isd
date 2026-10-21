@@ -142,8 +142,8 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   « Statut… », « Priorité… »), touches S (statut) et P (priorité) sur la carte ; annonces dans `#kanban-live`.
 - **Changer de chantier dans le Kanban** (édition ouverte, Kanban regroupé par chantier) : une tâche de premier
   niveau se dépose sur un autre chantier. Rien n'est écrit au dépôt : la fenêtre « Changer de chantier » s'ouvre,
-  chantier présélectionné (son projet s'il n'en a qu'un, ou le projet actuel de la tâche s'il le porte ; sinon la
-  fenêtre demande le projet), avec les sous-tâches qui suivront ; « Déplacer » envoie la tâche et toutes ses
+  chantier présélectionné (son projet s'il n'en a qu'un, ou le projet actuel de la tâche s'il le porte ; sinon son
+  premier projet du périmètre, et la fenêtre demande de choisir le projet), avec les sous-tâches qui suivront ; « Déplacer » envoie la tâche et toutes ses
   sous-tâches dans un seul lot (relues avant l'envoi), « Annuler » du message les ramène. Fermer la fenêtre n'écrit
   rien ; le focus revient à la carte, qui la suit dans sa nouvelle colonne. Colonnes refusées pendant le geste, avec
   leur raison : « (sans chantier) », chantiers hors périmètre ISD, chantier de la carte. Une sous-tâche ne se
