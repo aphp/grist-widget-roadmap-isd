@@ -3,7 +3,8 @@
  * relecture et contrôle de fraîcheur, envoi par le writer, statut rapide calculé sur la ligne relue. Chaque appel reçoit un instantané (identifiant, base, brouillon) : il
  * n'écrit jamais dans une autre ligne que celle de l'instantané, même si le formulaire a changé entre-temps.
  */
-import { mergeCharges, sameCharges } from './charges-edit.js';
+import { mergeCharges, periodFte, readChargesCell, sameCharges } from './charges-edit.js';
+import { chargeRefs, rescaleCharges } from './charges-rescale.js';
 import { detectConflicts, mergeChargesChange, periodConflictCols } from './conflicts.js';
 import { DEFAULT_TIMEOUT_MS, WriteFailed, WriteRefused, withTimeout } from './grist-writer.js';
 import { chantierStatusChanges, reattachRows, taskLinksFromTable } from './chantier-form.js';
@@ -131,9 +132,9 @@ export async function runSave(snap) {
     delete others.charges;
     delete others.tags;
     const cols = detectConflicts(base, fresh, others);
-    // Charges recalculées et date de la période envoyées, période changée ailleurs : conflit sur les dates
+    // Charges envoyées, période changée ailleurs : conflit sur les dates du lot (sans date : sur les charges)
     for (const c of periodConflictCols(base, fresh, changes)) if (!cols.includes(c)) cols.push(c);
-    if (merged.conflict) cols.push('charges');
+    if (merged.conflict && !cols.includes('charges')) cols.push('charges');
     if (cols.length)
       return { kind: 'conflict', cols, fresh, mine: merged.mine === null ? {} : { charges: merged.mine } };
     changes = merged.changes;
@@ -339,6 +340,63 @@ export async function runMove({ writer, taskId, plan, fetchRow, readTable, timeo
     if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
     if (error instanceof WriteFailed && error.kind === 'timeout')
       return unknownOutcome(fetchRow, taskId, ms, plan.changes);
+    return { kind: 'failed', error };
+  }
+}
+
+/**
+ * Dates glissées dans le Gantt (tâche ou chantier) : la ligne est relue (envoi réel) ; si ses dates ne sont plus
+ * celles vues au début du geste, rien n'est envoyé. Seules les dates qui changent partent. Tâche dont la capacité
+ * standard de la période change : l'ETP fait foi, les heures de la cellule RELUE sont recalculées (rescaleCharges ;
+ * entrées au-dessus de la borne laissées telles quelles, keptOver) et partent dans le même lot.
+ * @param {{writer:object, table:'Tasks'|'Chantiers', id:number, cols:[string, string],
+ *   seen:{start:number|null, end:number|null}, next:{start:number|null, end:number|null}, localBase:object|null,
+ *   fetchRow:(id:number)=>Promise<object|null>, maxOf:(teamId:number, fte:number|null)=>number, timeoutMs?:number}} snap
+ *   cols : colonnes de début et de fin ; localBase : ligne des données chargées (mode essai) ; maxOf : heures
+ *   maximales d'une personne sur la période d'arrivée (fte : heures de 1 ETP, periodFte)
+ * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object, keptOver:number[]}|{kind:'changed', fresh:object}
+ *   |{kind:'missing'}|{kind:'reread-failed', error:string}|{kind:'refused', reason:'charges'}
+ *   |{kind:'unknown', stored:object|null|undefined, changes:object}|{kind:'failed', error:Error}>}
+ */
+export async function runDates({ writer, table, id, cols, seen, next, localBase, fetchRow, maxOf, timeoutMs }) {
+  const ms = timeoutMs || DEFAULT_TIMEOUT_MS;
+  const [startCol, endCol] = cols;
+  let row = localBase ?? null;
+  if (writer.mode === 'on') {
+    try {
+      row = await readRow(fetchRow, id, ms);
+    } catch (err) {
+      return { kind: 'reread-failed', error: String(err?.message ?? err) };
+    }
+    if (row && (row[startCol] !== seen.start || row[endCol] !== seen.end)) return { kind: 'changed', fresh: row };
+  }
+  if (!row) return { kind: 'missing' };
+  const changes = {};
+  if (next.start !== row[startCol]) changes[startCol] = next.start;
+  if (next.end !== row[endCol]) changes[endCol] = next.end;
+  if (!Object.keys(changes).length) return { kind: 'nothing' };
+  const before = pick(row, Object.keys(changes));
+  let keptOver = [];
+  const fromFte = periodFte(row[startCol], row[endCol]);
+  const toFte = periodFte(next.start, next.end);
+  if (table === 'Tasks' && fromFte !== toFte && readChargesCell(row.charges).ok) {
+    const res = rescaleCharges(row.charges, chargeRefs(row.charges, fromFte), toFte, {
+      baseRaw: row.charges,
+      maxOf: (teamId) => (maxOf ? maxOf(teamId, toFte) : Infinity),
+    });
+    keptOver = res.over;
+    if (res.raw !== row.charges) {
+      // Heures à recalculer mais charges non modifiables : rien n'est envoyé (l'ETP changerait sans message)
+      if (!writer.can('Tasks', 'charges').ok) return { kind: 'refused', reason: 'charges' };
+      changes.charges = res.raw;
+      before.charges = row.charges;
+    }
+  }
+  try {
+    return { kind: 'saved', entry: await writer.update(table, id, changes, { before, period: next }), keptOver };
+  } catch (error) {
+    if (error instanceof WriteFailed && error.kind === 'missing') return { kind: 'missing' };
+    if (error instanceof WriteFailed && error.kind === 'timeout') return unknownOutcome(fetchRow, id, ms, changes);
     return { kind: 'failed', error };
   }
 }

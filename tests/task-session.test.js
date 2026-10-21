@@ -18,6 +18,7 @@ import {
   batchWithCharges,
   conflictBatch,
   failureKind,
+  runDates,
   runQuickStatus,
   runSave,
 } from '../widget/js/core/task-session.js';
@@ -25,7 +26,7 @@ import { periodConflictCols } from '../widget/js/core/conflicts.js';
 import { resolveEditState, writerMode } from '../widget/js/core/edit-switch.js';
 import { dayOfIso } from '../widget/js/core/dates.js';
 import { fteHours } from '../widget/js/core/capacity.js';
-import { roundHours } from '../widget/js/core/charges-edit.js';
+import { maxHours, roundHours } from '../widget/js/core/charges-edit.js';
 
 const META = Object.fromEntries(Object.entries(EXPECTED_TYPES).map(([k, type]) => [k, { type, isFormula: false }]));
 
@@ -696,7 +697,12 @@ test('R4 : la borne de 1 ETP suit les dates de la ligne relue, pas celles des do
   const base = await fetchRow(1002);
   const draft = { ...draftFrom(base), charges: '[{"teamId":1,"heures":40}]' };
   g.data.Tasks.dateEcheance[i] = g.data.Tasks.dateDebut[i] + 2 * 86400;
-  const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
+  // Période changée ailleurs depuis la saisie : fenêtre de conflit d'abord ; « Garder la mienne » envoie les
+  // charges sur les dates relues, que le writer borne
+  const c = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
+  assert.deepEqual([c.kind, c.cols], ['conflict', ['charges']]);
+  const batch = conflictBatch(base, draft, c.fresh, { charges: 'mine' });
+  const r = await runSave({ taskId: 1002, base: c.fresh, draft, writer, fetchRow, ...batch });
   assert.equal(r.kind, 'failed');
   assert.ok(40 < roundHours(fteHours(1, 14)));
   const start = dayOfIso('2026-10-26');
@@ -711,9 +717,12 @@ test('periodConflictCols : charges et date de la période envoyées, période ch
   assert.deepEqual(periodConflictCols(seen, { dateDebut: 17, dateEcheance: 23 }, ch), ['dateEcheance']);
   // Échéance changée ailleurs aussi : la saisie la remplace, même période
   assert.deepEqual(periodConflictCols(seen, { dateDebut: 10, dateEcheance: 30 }, ch), []);
-  // Sans charges ou sans date dans le lot : rien
+  // Sans charges dans le lot : rien
   assert.deepEqual(periodConflictCols(seen, { dateDebut: 17 }, { dateEcheance: 37 }), []);
-  assert.deepEqual(periodConflictCols(seen, { dateDebut: 17 }, { charges: '[]' }), []);
+  // Charges sans date : conflit sur les charges si la période relue n'a plus la capacité de celle de la saisie
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 17, dateEcheance: 23 }, { charges: '[]' }), ['charges']);
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 10, dateEcheance: 23 }, { charges: '[]' }), []);
+  assert.deepEqual(periodConflictCols(seen, { dateDebut: 10, dateEcheance: null }, { charges: '[]' }), ['charges']);
   // Capacité comparée, pas la durée : début déplacé ailleurs du samedi 4 au lundi 6 septembre 2027 (mêmes jours
   // ouvrés) : pas de conflit ; au mardi 7 : un jour ouvré de moins, conflit
   const sat = { dateDebut: dayOfIso('2027-09-04'), dateEcheance: dayOfIso('2027-09-10') };
@@ -762,4 +771,256 @@ test('ETP gardé : date de début changée ailleurs pendant un allongement, fen�
   assert.equal(cells.dateEcheance, 86400 * day('2026-11-29'));
   // Charges identiques à la ligne relue : retirées du lot
   assert.equal('charges' in batchWithCharges({ changes: { charges: 'x' } }, r.fresh.charges, r.fresh).changes, false);
+});
+
+test('charges seules envoyées, période changée ailleurs depuis la saisie : conflit, rien n’est envoyé (ETP gardé)', async () => {
+  const { g, writer, fetchRow } = setup();
+  const base = await fetchRow(1002);
+  const draft = { ...draftFrom(base), charges: '[{"teamId":1,"heures":20}]' };
+  // Ailleurs : échéance allongée d'une semaine ; 20 h ne vaudraient plus le même ETP
+  g.otherUserSets('Tasks', 1002, { dateEcheance: 86400 * (base.dateEcheance + 7) });
+  const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
+  assert.deepEqual([r.kind, r.cols], ['conflict', ['charges']]);
+  assert.equal(g.batches.length, 0);
+  // Après la fenêtre (dates de la ligne relue retenues), la période bouge encore : nouvelle fenêtre
+  const batch = conflictBatch(base, draft, r.fresh, { charges: 'mine' });
+  g.otherUserSets('Tasks', 1002, { dateEcheance: 86400 * (base.dateEcheance + 14) });
+  const again = await runSave({ taskId: 1002, base: r.fresh, draft, writer, fetchRow, ...batch });
+  assert.deepEqual([again.kind, again.cols], ['conflict', ['charges']]);
+  assert.equal(g.batches.length, 0);
+  // Même capacité qu'à la saisie : envoyé
+  g.otherUserSets('Tasks', 1002, { dateEcheance: 86400 * (base.dateEcheance + 7) });
+  const saved = await runSave({ taskId: 1002, base: r.fresh, draft, writer, fetchRow, ...batch });
+  assert.equal(saved.kind, 'saved');
+  assert.deepEqual(Object.keys(g.batches[0][0][3]), ['charges']);
+});
+
+const D = 86400;
+const day = (iso) => dayOfIso(iso);
+const TASK_COLS = ['dateDebut', 'dateEcheance'];
+const maxOf = (_teamId, fte) => maxHours(fte);
+
+/** Faux Grist avec toutes les colonnes de la liste blanche (tâches et chantiers), pour runDates. */
+function datesSetup(opts = {}) {
+  const tables = feuille().tables;
+  for (const [name, ops] of Object.entries(WRITABLE))
+    for (const c of new Set([...ops.update, ...ops.add])) tables[name][c] ??= tables[name].id.map(() => null);
+  const g = createFakeGrist(tables, opts.grist);
+  const gw = createGateway(g);
+  const writer = createWriter({
+    docApi: g.docApi,
+    mode: opts.mode ?? 'on',
+    columns: META,
+    lookup: lookupOf(g),
+    ...opts.writer,
+  });
+  return { g, gw, writer, fetchRow: (id) => gw.fetchRow('Tasks', id) };
+}
+
+/** Tâche 1002 posée sur une période (jours) avec ses charges et ses assignés. */
+function place(g, period, charges, assignees = ['L', 1]) {
+  g.otherUserSets('Tasks', 1002, { dateDebut: D * period.start, dateEcheance: D * period.end, charges, assignees });
+}
+
+const OCT1 = { start: day('2027-10-04'), end: day('2027-10-10') };
+const OCT2 = { start: day('2027-10-11'), end: day('2027-10-17') };
+
+test('runDates : dates relues différentes de celles vues → changed, aucun envoi', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  place(g, OCT1, '[{"teamId":1,"heures":14.5}]');
+  g.otherUserSets('Tasks', 1002, { dateEcheance: D * day('2027-10-12') });
+  const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, next: OCT2, fetchRow, maxOf };
+  const r = await runDates(snap);
+  assert.equal(r.kind, 'changed');
+  assert.equal(r.fresh.dateEcheance, day('2027-10-12'));
+  g.otherUserSets('Tasks', 1002, { dateEcheance: D * OCT1.end, dateDebut: D * day('2027-10-01') });
+  assert.equal((await runDates(snap)).kind, 'changed');
+  assert.equal(g.batches.length, 0);
+  // Mêmes dates que celles vues : rien à envoyer
+  g.otherUserSets('Tasks', 1002, { dateDebut: D * OCT1.start });
+  assert.equal((await runDates({ ...snap, next: OCT1 })).kind, 'nothing');
+  assert.equal(g.batches.length, 0);
+});
+
+test('runDates : déplacement à capacité égale → charges non envoyées', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  assert.equal(fteHours(OCT1.start, OCT1.end), fteHours(OCT2.start, OCT2.end));
+  place(g, OCT1, '[{"teamId":1,"heures":14.5}]');
+  const r = await runDates({
+    writer,
+    table: 'Tasks',
+    id: 1002,
+    cols: TASK_COLS,
+    seen: OCT1,
+    next: OCT2,
+    fetchRow,
+    maxOf,
+  });
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(r.keptOver, []);
+  assert.deepEqual(g.batches[0][0][3], { dateDebut: D * OCT2.start, dateEcheance: D * OCT2.end });
+  assert.deepEqual(r.entry.before, { dateDebut: OCT1.start, dateEcheance: OCT1.end });
+  // Une seule date change (étirement à la fin dans la même capacité ? non : seule l'échéance diffère)
+  const { g: g2, writer: w2, fetchRow: f2 } = datesSetup();
+  place(g2, OCT1, '[{"teamId":1,"heures":14.5}]');
+  const sunday = { start: OCT1.start, end: day('2027-10-09') };
+  assert.equal(fteHours(sunday.start, sunday.end), fteHours(OCT1.start, OCT1.end));
+  const one = await runDates({
+    writer: w2,
+    table: 'Tasks',
+    id: 1002,
+    cols: TASK_COLS,
+    seen: OCT1,
+    next: sunday,
+    fetchRow: f2,
+    maxOf,
+  });
+  assert.equal(one.kind, 'saved');
+  assert.deepEqual(g2.batches[0][0][3], { dateEcheance: D * sunday.end });
+});
+
+test('runDates : déplacement de juin à juillet 2027 à durée égale → heures recalculées, ETP gardé', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  const june = { start: day('2027-06-07'), end: day('2027-06-20') };
+  const july = { start: day('2027-07-05'), end: day('2027-07-18') };
+  const fJune = fteHours(june.start, june.end);
+  const fJuly = fteHours(july.start, july.end);
+  assert.notEqual(fJune, fJuly);
+  const h0 = roundHours(fJune / 2);
+  place(g, june, `[{"teamId":1,"heures":${h0}}]`);
+  const r = await runDates({
+    writer,
+    table: 'Tasks',
+    id: 1002,
+    cols: TASK_COLS,
+    seen: june,
+    next: july,
+    fetchRow,
+    maxOf,
+  });
+  assert.equal(r.kind, 'saved');
+  const cells = g.batches[0][0][3];
+  const sent = JSON.parse(cells.charges);
+  assert.deepEqual(sent, [{ teamId: 1, heures: roundHours((h0 / fJune) * fJuly) }]);
+  assert.ok(Math.abs(sent[0].heures / fJuly - h0 / fJune) < 0.5 / fJuly);
+  assert.equal(r.entry.before.charges, `[{"teamId":1,"heures":${h0}}]`);
+});
+
+test('runDates : étirement → charges recalculées sur la cellule RELUE (une personne ajoutée ailleurs est recalculée aussi)', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  const long = { start: OCT1.start, end: OCT2.end };
+  // Vue : Alice seule ; ailleurs, Eve ajoutée avant le relâcher
+  place(g, OCT1, '[{"teamId":1,"heures":14.5}]');
+  g.otherUserSets('Tasks', 1002, {
+    charges: '[{"teamId":1,"heures":14.5},{"teamId":5,"heures":7}]',
+    assignees: ['L', 1, 5],
+  });
+  const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, next: long, fetchRow, maxOf };
+  const r = await runDates(snap);
+  assert.equal(r.kind, 'saved');
+  const cells = g.batches[0][0][3];
+  assert.equal(cells.dateEcheance, D * long.end);
+  assert.deepEqual(JSON.parse(cells.charges), [
+    { teamId: 1, heures: 29 },
+    { teamId: 5, heures: 14 },
+  ]);
+  assert.equal(r.entry.before.charges, '[{"teamId":1,"heures":14.5},{"teamId":5,"heures":7}]');
+  // Recalcul au-dessus de la borne d'une personne : son entrée reste telle quelle et est signalée
+  const { g: g2, writer: w2, fetchRow: f2 } = datesSetup();
+  place(g2, OCT1, '[{"teamId":1,"heures":14.5},{"teamId":5,"heures":7}]', ['L', 1, 5]);
+  const capped = (teamId, fte) => (teamId === 5 ? 10 : maxHours(fte));
+  const c = await runDates({ ...snap, writer: w2, fetchRow: f2, maxOf: capped });
+  assert.equal(c.kind, 'saved');
+  assert.deepEqual(c.keptOver, [5]);
+  assert.deepEqual(JSON.parse(g2.batches[0][0][3].charges), [
+    { teamId: 1, heures: 29 },
+    { teamId: 5, heures: 7 },
+  ]);
+  // Cellule illisible : jamais touchée, seules les dates partent
+  const { g: g3, writer: w3, fetchRow: f3 } = datesSetup();
+  place(g3, OCT1, 'oops');
+  const u = await runDates({ ...snap, writer: w3, fetchRow: f3 });
+  assert.equal(u.kind, 'saved');
+  assert.deepEqual(Object.keys(g3.batches[0][0][3]), ['dateEcheance']);
+});
+
+test('runDates : charges non modifiables et recalcul nécessaire → refused', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  place(g, OCT1, '[{"teamId":1,"heures":14.5}]');
+  writer.refuse('Tasks', 'charges');
+  const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, fetchRow, maxOf };
+  const r = await runDates({ ...snap, next: { start: OCT1.start, end: OCT2.end } });
+  assert.deepEqual(r, { kind: 'refused', reason: 'charges' });
+  assert.equal(g.batches.length, 0);
+  // Capacité égale : aucune charge à recalculer, les dates partent
+  assert.equal((await runDates({ ...snap, next: OCT2 })).kind, 'saved');
+  assert.equal(g.batches.length, 1);
+});
+
+test('runDates : ligne disparue → missing ; relecture en échec → reread-failed ; délai → unknown', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  place(g, OCT1, '[{"teamId":1,"heures":14.5}]');
+  const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, next: OCT2, fetchRow, maxOf };
+  assert.equal((await runDates({ ...snap, id: 4242 })).kind, 'missing');
+  const broken = await runDates({ ...snap, fetchRow: async () => assert.fail('x') });
+  assert.equal(broken.kind, 'reread-failed');
+  const slow = await runDates({ ...snap, fetchRow: () => new Promise(() => {}), timeoutMs: 20 });
+  assert.equal(slow.kind, 'reread-failed');
+  assert.match(slow.error, /délai/);
+  // Grist ne répond pas à l'envoi : résultat relu
+  const hang = datesSetup({ grist: { hang: 'before' }, writer: { timeoutMs: 20 } });
+  place(hang.g, OCT1, '[{"teamId":1,"heures":14.5}]');
+  const h = await runDates({ ...snap, writer: hang.writer, fetchRow: hang.fetchRow, timeoutMs: 20 });
+  assert.equal(h.kind, 'unknown');
+  assert.equal(h.stored.dateDebut, OCT1.start);
+  assert.deepEqual(h.changes, { dateDebut: OCT2.start, dateEcheance: OCT2.end });
+  // Ligne disparue pendant l'envoi ; autre échec
+  const gone = datesSetup({ grist: { fail: 'Invalid row id 1002' } });
+  place(gone.g, OCT1, null);
+  assert.equal((await runDates({ ...snap, writer: gone.writer, fetchRow: gone.fetchRow })).kind, 'missing');
+  const other = datesSetup({ grist: { fail: 'Boom' } });
+  place(other.g, OCT1, null);
+  assert.equal((await runDates({ ...snap, writer: other.writer, fetchRow: other.fetchRow })).kind, 'failed');
+});
+
+test('runDates : mode essai → données chargées, entry.sent false', async () => {
+  const { g, writer } = datesSetup({ mode: 'dry-run' });
+  const localBase = {
+    id: 1002,
+    dateDebut: OCT1.start,
+    dateEcheance: OCT1.end,
+    charges: '[{"teamId":1,"heures":14.5}]',
+  };
+  const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, localBase, maxOf };
+  const r = await runDates({
+    ...snap,
+    next: { start: OCT1.start, end: OCT2.end },
+    fetchRow: async () => assert.fail(),
+  });
+  assert.equal(r.kind, 'saved');
+  assert.equal(r.entry.sent, false);
+  assert.equal(r.entry.after.charges, '[{"teamId":1,"heures":29}]');
+  assert.equal(g.batches.length, 0);
+  assert.equal(
+    (await runDates({ ...snap, localBase: null, next: OCT2, fetchRow: async () => assert.fail() })).kind,
+    'missing',
+  );
+});
+
+test('runDates : chantier → Debut et Fin seulement, jamais charges', async () => {
+  const { g, gw, writer } = datesSetup();
+  g.otherUserSets('Chantiers', 200, { Debut: D * OCT1.start, Fin: D * OCT1.end });
+  const r = await runDates({
+    writer,
+    table: 'Chantiers',
+    id: 200,
+    cols: ['Debut', 'Fin'],
+    seen: OCT1,
+    next: { start: OCT1.start, end: OCT2.end },
+    fetchRow: (id) => gw.fetchRow('Chantiers', id),
+    maxOf,
+  });
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(g.batches[0][0], ['UpdateRecord', 'Chantiers', 200, { Fin: D * OCT2.end }]);
+  assert.deepEqual(r.keptOver, []);
 });

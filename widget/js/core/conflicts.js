@@ -9,21 +9,22 @@ const same = (c, a, b) => (c === 'charges' ? sameCharges(a, b) : sameValue(a, b)
 const DATE_COLS = ['dateDebut', 'dateEcheance'];
 
 /**
- * Règle d'envoi des charges recalculées (l'ETP fait foi) : un lot qui porte des charges ET une date de la période
- * est en conflit sur ses dates si la période qu'il donnerait sur la ligne relue n'a pas la même capacité (heures de
- * 1 ETP, periodFte) que celle de la saisie (date de la période changée ailleurs : heures calculées pour une autre
- * capacité). Partagée par la fiche et le glisser.
+ * Règle d'envoi des charges (l'ETP fait foi) : un lot qui porte des charges est en conflit si la période qu'il
+ * donnerait sur la ligne relue n'a pas la même capacité (heures de 1 ETP, periodFte) que celle de la saisie (date
+ * de la période changée ailleurs : heures calculées pour une autre capacité, l'ETP changerait sans message).
+ * Conflit sur les dates du lot ; lot sans date (charges seules) : sur les charges. Partagée par la fiche et le glisser.
  * @param {{dateDebut?:number|null, dateEcheance?:number|null}} seen dates sur lesquelles la saisie a été faite
  * @param {{dateDebut?:number|null, dateEcheance?:number|null}} fresh ligne relue
  * @param {object} changes colonnes à écrire
- * @returns {string[]} colonnes de dates du lot à soumettre à la fenêtre de conflit (vide : rien à signaler)
+ * @returns {string[]} colonnes du lot à soumettre à la fenêtre de conflit (vide : rien à signaler)
  */
 export function periodConflictCols(seen, fresh, changes) {
-  const cols = DATE_COLS.filter((c) => c in changes);
-  if (!('charges' in changes) || !cols.length) return [];
+  if (!('charges' in changes)) return [];
   const at = (row, c) => (c in changes ? changes[c] : row[c]);
   const fte = (row) => periodFte(at(row, 'dateDebut'), at(row, 'dateEcheance'));
-  return fte(seen) === fte(fresh) ? [] : cols;
+  if (fte(seen) === fte(fresh)) return [];
+  const cols = DATE_COLS.filter((c) => c in changes);
+  return cols.length ? cols : ['charges'];
 }
 
 /**
