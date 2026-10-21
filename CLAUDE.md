@@ -44,8 +44,11 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
 - **Charges** : `Tasks.charges` = JSON `[{"teamId": n, "heures": h}]`, total d'heures sur la tâche. 1 ETP = capacité
   standard de la période (`fteHours` de `core/capacity.js` : temps plein, 7 h par jour ouvré hors week-ends et
   fériés, moins 44 jours de congés par an, mai et décembre 80 %, juillet 60 %, août 50 % ; formule du plan de
-  charge sans quotité ni indisponibilité ; période sans jour ouvré = sans dates), au plus 1 ETP par personne, ETP
-  saisi à deux décimales sous 1 (une au-delà), heures à 0,5 h près, réparties sur les jours de la tâche au prorata
+  charge sans quotité ni indisponibilité ; période sans jour ouvré = sans dates), au plus 1 ETP par personne, saisie
+  en ETP (deux décimales sous 1, une au-delà) ou en h/semaine (quotité : 35 h/semaine = 1 ETP, une décimale ;
+  préférence `roadmap-isd.chargesUnit` 'etp' | 'hsem', 'heures' migrée en 'hsem'), heures totales = ETP × capacité
+  standard à 0,5 h près ; sans période exploitable (`periodState` ≠ 'ok') aucune saisie, heures stockées montrées et
+  conservées ; heures réparties sur les jours de la tâche au prorata
   de cette capacité ; l'ETP fait foi quand la capacité de la période change (h = ETP × capacité standard) ; entrées non
   touchées recopiées octet par octet (`core/charges-edit.js`). Seule exception : les personnes estimation
   (`Team.aph` = `ESTIMATION_APH` = `'9999999'`, ex. « Data Engineer », « Data Scientist »… une par profil pour
