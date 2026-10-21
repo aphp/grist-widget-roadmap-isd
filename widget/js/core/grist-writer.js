@@ -588,14 +588,15 @@ export function decodeRow(tableData, table, id) {
 
 /**
  * Cellules annulées ensemble ou pas du tout : les heures des charges d'une tâche suivent sa période (l'ETP fait
- * foi), remettre les unes sans les autres changerait l'ETP.
+ * foi), remettre les unes sans les autres changerait l'ETP ; un chantier déplacé l'est sur ses deux dates.
  */
-const UNDO_GROUPS = Object.freeze({ Tasks: ['dateDebut', 'dateEcheance', 'charges'] });
+const UNDO_GROUPS = Object.freeze({ Tasks: ['dateDebut', 'dateEcheance', 'charges'], Chantiers: ['Debut', 'Fin'] });
 
 /**
  * Plan d'annulation d'une écriture : remet les valeurs d'avant, sauf sur les cellules modifiées depuis par
  * quelqu'un d'autre (valeur relue différente de celle écrite). Les cellules d'un groupe (UNDO_GROUPS : dates et
- * charges d'une tâche) écrites ensemble sont toutes ignorées dès que l'une l'est. Fonction pure.
+ * charges d'une tâche, dates d'un chantier) écrites ensemble sont toutes ignorées dès que l'une l'est.
+ * Fonction pure.
  * @param {{table?:string, before:object, after:object}} entry
  * @param {object|null} fresh valeurs relues de la ligne (null : ligne disparue)
  * @returns {{changes:object, skipped:string[]}}

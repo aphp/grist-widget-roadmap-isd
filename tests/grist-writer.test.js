@@ -281,9 +281,17 @@ test('planUndo : dates et charges d’une tâche annulées ensemble ou pas du to
   // Groupe partiel (seule l'échéance écrite) : même règle sur ce qui a été écrit
   const end = { table: 'Tasks', before: { dateEcheance: 20 }, after: { dateEcheance: 27 } };
   assert.deepEqual(planUndo(end, { dateEcheance: 27, charges: 'x' }), { changes: { dateEcheance: 20 }, skipped: [] });
-  // Chantier : pas de groupe (cellule par cellule)
-  const ch = { table: 'Chantiers', before: { Debut: 1, Fin: 2 }, after: { Debut: 3, Fin: 4 } };
-  assert.deepEqual(planUndo(ch, { Debut: 3, Fin: 9 }), { changes: { Debut: 1 }, skipped: ['Fin'] });
+  // Chantier : Debut et Fin ensemble ou pas du tout, les autres cellules à part
+  const ch = {
+    table: 'Chantiers',
+    before: { Debut: 1, Fin: 2, Statut: 'a' },
+    after: { Debut: 3, Fin: 4, Statut: 'b' },
+  };
+  assert.deepEqual(planUndo(ch, { Debut: 3, Fin: 9, Statut: 'b' }), {
+    changes: { Statut: 'a' },
+    skipped: ['Debut', 'Fin'],
+  });
+  assert.deepEqual(planUndo(ch, { Debut: 3, Fin: 4, Statut: 'b' }).changes, { Debut: 1, Fin: 2, Statut: 'a' });
 });
 
 test('applyToTables corrige une copie des tables brutes, sans toucher à l’original', () => {
