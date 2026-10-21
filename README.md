@@ -112,9 +112,10 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   dates, l'écart, les heures recalculées (l'ETP fait foi), les charges laissées au-dessus de la borne, les enfants
   hors de la nouvelle période (ils ne suivent pas). Tenir la barre près d'un bord fait défiler la frise, puis change
   de période. Échap, un relâcher à la place d'origine ou hors de la ligne n'écrivent rien ; un mouvement de moins de
-  4 px reste un clic (fiche). Au clavier, sur une ligne : D (ou Maj+F10, « Déplacer les dates ») entre dans le mode,
-  ←/→ d'un pas (Maj : un jour), Retour arrière revient aux dates d'origine, Entrée enregistre, Échap annule ; les
-  étapes sont annoncées. Une écriture par geste, relue avant l'envoi (dates changées entre-temps : rien n'est
+  4 px reste un clic (fiche). Au clavier, sur une ligne : D, ou « Déplacer les dates » du menu de ligne (Maj+F10,
+  touche Menu ou clic droit), entre dans le mode ; ←/→ d'un pas compté depuis les dates d'origine (Maj : un jour),
+  Retour arrière revient aux dates d'origine, Entrée enregistre, Échap annule (rappel dans l'infobulle) ; les étapes
+  sont annoncées. Une écriture par geste, relue avant l'envoi (dates changées entre-temps : rien n'est
   envoyé) ; « Annuler » remet dates et charges ensemble. Ne se déplacent pas : projets, catégories, « (sans
   chantier) », barres déduites (période des enfants), lignes sans leurs dates (« Ajouter des dates » ouvre la fiche ;
   un jalon n'a besoin que de son échéance), échéance avant le début, lignes hors périmètre ISD ou en lecture seule ;

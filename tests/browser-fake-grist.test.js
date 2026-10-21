@@ -4654,16 +4654,57 @@ test(
       [before.dateDebut + 7 * SEC, before.dateEcheance + 7 * SEC],
     );
     await until(`D.activeElement?.id === ${JSON.stringify(rowId)}`, 8000);
-    // D, →, Échap : rien
+    // D, →, Tab (reste dans le mode, consigne visible), Échap : rien
     await hit('d');
     await until(`!D.getElementById('gantt-ghost').hidden`);
+    assert.match(await w(`return D.getElementById('gantt-tip').textContent;`), /Échap : annuler/);
     await hit('ArrowRight');
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await sleep(50);
+    assert.equal(await w(`return D.activeElement?.id;`), rowId);
+    assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), false);
     await hit('Escape');
     await until(`D.getElementById('gantt-ghost').hidden`);
     await until(`/annulé/.test(D.getElementById('gantt-live').textContent)`);
+    // D, Entrée aux dates d'origine : « Dates inchangées. », rien d'écrit
+    await hit('d');
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    await hit('Enter');
+    await until(`D.getElementById('gantt-ghost').hidden`);
+    await until(`/Dates inchangées/.test(D.getElementById('gantt-live').textContent)`);
     await sleep(200);
     assert.equal(await w(`return W.__writes.length;`), 1);
     assert.equal(await w(`return D.activeElement?.id;`), rowId);
+  },
+);
+
+test(
+  'gantt : Échap du mode clavier n’atteint pas la page (panneaux, fiche) ; la fiche ouverte garde le focus',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    // Écouteur de la page (comme chrome.js : panneaux, fiche) : il ne doit pas voir l'Échap du mode
+    await w(
+      `W.__escSeen = 0; D.addEventListener('keydown', (e) => { if (e.key === 'Escape') W.__escSeen += 1; }); return true;`,
+    );
+    const rowId = await focusTaskRow(task.id);
+    await hit('d');
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    await hit('Escape');
+    await until(`D.getElementById('gantt-ghost').hidden`);
+    assert.equal(await w(`return W.__escSeen;`), 0);
+    assert.equal(await w(`return D.activeElement?.id;`), rowId);
+    // Fiche ouverte (modale) : le focus ne revient pas dans l'arbre, D n'y entre pas dans le mode
+    await w(`D.getElementById(${JSON.stringify(rowId)}).querySelector('.grow__title').click(); return true;`);
+    await until(`D.getElementById('app-detail').dataset.open === 'true'`);
+    await w(`D.getElementById(${JSON.stringify(rowId)}).focus(); return true;`);
+    await hit('d');
+    await sleep(300);
+    assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), true);
+    assert.equal(await w(`return D.getElementById('app-detail').dataset.open;`), 'true');
+    assert.equal(await w(`return W.__writes.length;`), 0);
   },
 );
 
@@ -4910,6 +4951,8 @@ test(
     await mouseDrag(await dragMark(task.id), 60);
     await until(`/Mode essai/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
     assert.equal(await w(`return W.__writes.length;`), 0);
+    // Journal de la session : le déplacement y est noté
+    assert.match(await w(`return D.getElementById('btn-edit-pill').textContent;`), /Mode essai · 1/);
     // Lecture seule
     await open('');
     await clickOn('#tab-gantt');

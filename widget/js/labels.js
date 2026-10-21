@@ -273,7 +273,7 @@ const FR = Object.freeze({
   'gantt.level.tache': 'Tâches',
   'gantt.level.sous-tache': 'Sous-tâches',
   'gantt.tree.help':
-    'Flèches haut et bas pour changer de ligne, droite pour déplier, gauche pour replier ou remonter, Entrée pour ouvrir la fiche. En édition, D déplace les dates de la ligne et Maj+F10 ouvre son menu.',
+    'Flèches haut et bas pour changer de ligne, droite pour déplier, gauche pour replier ou remonter, Entrée pour ouvrir la fiche. En édition, D déplace les dates de la ligne (flèches, puis Entrée pour enregistrer ou Échap pour annuler) et Maj+F10 ouvre son menu.',
   'gantt.list.label': 'Tâches de la période, par date de début',
   'gantt.list.count': '{n} tâches dans la période',
   'gantt.list.one': '1 tâche dans la période',
@@ -303,6 +303,9 @@ const FR = Object.freeze({
   'gantt.key.delta.minus': 'moins {n} jour(s)',
   'gantt.key.over': 'Attention : {n} charge(s) au-dessus de la borne, laissée(s) telle(s) quelle(s).',
   'gantt.key.limit': 'Limite atteinte : aucune date après le {date}.',
+  'gantt.key.unchanged': 'Dates inchangées.',
+  'gantt.key.hint': 'Entrée : enregistrer · Échap : annuler · Retour arrière : revenir',
+  'gantt.key.no.view': 'Déplacement indisponible : la ligne n’est pas affichée.',
   'gantt.key.cancel': 'Déplacement annulé : dates inchangées.',
   'gantt.key.no.list': 'Déplacement indisponible dans la liste chronologique.',
   'gantt.key.no.kind': 'Un projet ou une catégorie ne se déplace pas : déplacez ses chantiers ou ses tâches.',

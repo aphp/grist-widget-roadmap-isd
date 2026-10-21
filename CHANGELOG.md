@@ -7,9 +7,10 @@
   day with Shift) and never pass 31 December of next year. A ghost and the tooltip show the new dates, the shift, the
   rescaled hours (the ETP holds), charges kept above the bound and children left outside (they do not follow);
   nothing is repainted during the gesture. Holding near an edge scrolls the timeline, then the period. Escape, a drop
-  at the origin or off the row, or a move under 4 px (a click) write nothing. Keyboard: D on a row (or Shift+F10,
-  "Déplacer les dates") enters a date mode, arrows step (Shift: one day), Backspace returns to the original dates,
-  Enter saves, Escape cancels; steps are announced in a persistent live region (`#gantt-live`, grouped at 300 ms).
+  at the origin or off the row, or a move under 4 px (a click) write nothing. Keyboard: D on a row, or "Déplacer les
+  dates" in the row menu (Shift+F10, Menu key or right click), enters a date mode; arrows step from the original
+  dates (Shift: one day), Backspace returns to them, Enter saves, Escape cancels (hint in the tooltip); steps are
+  announced in a persistent live region (`#gantt-live`, grouped at 300 ms, repeats re-read).
   One write per gesture through the editor (`saveDates` → `runDates`): row re-read and conflict check, rights
   re-read (`datesRight`), "Enregistrement…" on the bar until the answer, toast with "Annuler" (dates and charges are
   undone together or not at all) and "Voir les charges" when charges stay above the bound; focus returns to the row.

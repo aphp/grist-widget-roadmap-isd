@@ -57,7 +57,7 @@ import { viewHeading } from '../ui/heading.js';
 import { label, statusLabel } from '../labels.js';
 import { VIZ_PRINT } from '../ui/viz-palette.js';
 import { trackPointer } from '../ui/drag.js';
-import { isStatusPopoverOpen, openStatusPopover } from '../ui/status-popover.js';
+import { closeStatusPopover, isStatusPopoverOpen, openStatusPopover } from '../ui/status-popover.js';
 import { isStatusShortcut } from '../core/quick-status.js';
 
 export const id = 'gantt';
@@ -78,6 +78,8 @@ const TIP_ROOM = 140;
 const DROP_SLACK = ROW_PX / 2;
 /** Délai de regroupement des annonces (ms). */
 const LIVE_DELAY = 300;
+/** Délai entre la région vidée et le même texte reposé (ms). */
+const REPEAT_DELAY = 60;
 /**
  * État conservé entre deux rendus de la vue (rechargement des données) : période affichée, génération, poignée de
  * largeur (drag, applyWidth), glisser d'une barre (gesture, saving) et fonctions du dernier rendu (dragView).
@@ -454,6 +456,8 @@ export function render(el, ctx) {
   let items = [];
   /** Rendu en cours : le focus perdu au remplacement du contenu n'annule pas le mode clavier. */
   let painting = false;
+  /** Menu de ligne ouvert depuis ce rendu (refermé au rendu suivant). */
+  let rowMenuOpen = false;
   let scale = null;
   /** Teintes des chantiers (mode « chantier »), recalculées à chaque rendu, jamais par ligne. */
   let slots = null;
@@ -505,6 +509,11 @@ export function render(el, ctx) {
   }
 
   function paintNow() {
+    // Menu de ligne ouvert : il visait une ligne de l'ancien rendu
+    if (rowMenuOpen) {
+      rowMenuOpen = false;
+      closeStatusPopover(false);
+    }
     const box = el.querySelector('.gantt__scroll');
     const top = box?.scrollTop ?? 0;
     const left = box?.scrollLeft ?? 0;
@@ -1037,7 +1046,8 @@ export function render(el, ctx) {
     const tip = el.querySelector('#gantt-tip');
     if (!tip) return;
     tip.innerHTML = h`<strong class="gtip__title">${g.title}</strong>
-      ${summaryText(summaryOf(g), 'move').map((line) => h`<span class="gtip__line">${line}</span>`)}`.toString();
+      ${summaryText(summaryOf(g), 'move').map((line) => h`<span class="gtip__line">${line}</span>`)}
+      ${g.keyboard ? h`<span class="gtip__line gtip__hint">${label('gantt.key.hint')}</span>` : ''}`.toString();
     tip.hidden = false;
     tip.style.left = `${Math.max(8, Math.min(g.ghostX, g.vw - TIP_MAX - 8))}px`;
     if (g.tipAbove) {
@@ -1127,7 +1137,13 @@ export function render(el, ctx) {
     clearTimeout(memory.liveTimer);
     memory.liveTimer = setTimeout(() => {
       const live = document.getElementById('gantt-live');
-      if (live) live.textContent = text;
+      if (!live) return;
+      // Même texte qu'avant (pas refusé deux fois, même raison) : vidé d'abord pour être relu
+      if (live.textContent !== text) live.textContent = text;
+      else {
+        live.textContent = '';
+        memory.liveTimer = setTimeout(() => (live.textContent = text), REPEAT_DELAY);
+      }
     }, LIVE_DELAY);
   }
   const fullDate = (d) => formatDateFr(d);
@@ -1212,6 +1228,8 @@ export function render(el, ctx) {
   function keyStep(g, next) {
     g.now = next.now;
     g.limit = next.limit;
+    g.steps = next.steps ?? 0;
+    g.days = next.days ?? 0;
     let anchor = st.anchor;
     for (let k = 0; k < 24; k += 1) {
       const sc = timeScale(st.scale, anchor);
@@ -1308,11 +1326,22 @@ export function render(el, ctx) {
         if (why) announce(label(`gantt.key.no.${why.reason}`));
         return;
       }
-      const g = guard(() => prepare(index, { keyboard: true }));
-      if (!g) return;
+      const g = guard(() => prepare(index, { keyboard: true, steps: 0, days: 0, limit: false }));
+      if (!g) {
+        announce(label('gantt.key.no.view'));
+        return;
+      }
       g.now = g.from;
-      g.limit = false;
-      guard(() => refresh(g));
+      const shown = guard(() => {
+        refresh(g);
+        return true;
+      });
+      if (!shown) {
+        g.watch?.abort();
+        dragClear();
+        return;
+      }
+      // Geste en mémoire seulement une fois le fantôme et l'infobulle affichés
       memory.gesture = g;
       tipFor = null;
       const s = summaryOf(g);
@@ -1324,21 +1353,42 @@ export function render(el, ctx) {
         })}`,
       );
     },
+    /** Même chose depuis le menu de ligne, la ligne retrouvée par sa clé dans le dernier rendu. */
+    keyStartKey(key) {
+      const index = rows.findIndex((r) => r.key === key);
+      if (index >= 0) dragView.keyStart(index);
+    },
     /** Touche pendant le mode clavier : vrai si elle lui appartient (rien d'autre ne la traite). */
     key(e) {
       const g = memory.gesture;
       if (!g?.keyboard) return false;
-      if (['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) return true;
+      // Touches de l'arbre et du menu : sans effet dans le mode (Tab : début / échéance au lot B)
+      if (['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'ContextMenu', 'F10'].includes(e.key))
+        return true;
       const r = keyMode(
-        { target: g.target, seen: g.seen, now: g.now, edge: 'move', unit: g.unit, max: maxDay, limit: g.limit },
+        {
+          target: g.target,
+          seen: g.seen,
+          now: g.now,
+          edge: 'move',
+          unit: g.unit,
+          max: maxDay,
+          steps: g.steps,
+          days: g.days,
+          limit: g.limit,
+        },
         e,
       );
       if (r.action === 'none') return ['Tab', ' '].includes(e.key);
       if (r.action === 'cancel') {
         stopGesture();
         announce(label('gantt.key.cancel'));
-      } else if (r.action === 'save') commit(stopGesture());
-      else guard(() => keyStep(g, r.state));
+      } else if (r.action === 'save') {
+        const done = stopGesture();
+        if (done.now.start === done.from.start && done.now.end === done.from.end)
+          announce(label('gantt.key.unchanged'));
+        else commit(done);
+      } else guard(() => keyStep(g, r.state));
       return true;
     },
   };
@@ -1405,7 +1455,8 @@ export function render(el, ctx) {
     const r = rows[i];
     const rowEl = el.querySelector(`[data-row="${i}"]`);
     const anchor = rowEl?.querySelector('[data-drag]');
-    if (!r || !anchor || !ctx.dates || memory.gesture || !ctx.dates.target(r.node)?.ok) return false;
+    if (!r || !anchor || !ctx.dates || memory.gesture || memory.saving || !ctx.dates.target(r.node)?.ok) return false;
+    const { key } = r;
     const title = r.node.title || label('common.untitled');
     openStatusPopover({
       anchor,
@@ -1414,17 +1465,22 @@ export function render(el, ctx) {
       menuLabel: label('gantt.menu', { titre: title }),
       heading: label('gantt.menu.title'),
       items: [
-        { value: 'dates', text: label('gantt.menu.dates'), current: true },
+        { value: 'dates', text: label('gantt.menu.dates') },
         { value: 'open', text: label('gantt.menu.open') },
       ],
+      start: 0,
+      // Ligne retrouvée par sa clé au choix : un rendu a pu avoir lieu entre-temps
       onPick: (v) => {
         if (v === 'open') ctx.openDetail(r.node.ref);
-        else memory.dragView?.keyStart(i);
+        else memory.dragView?.keyStartKey(key);
       },
     });
+    rowMenuOpen = true;
     return true;
   }
   el.oncontextmenu = (e) => {
+    // Mode clavier : ni menu de ligne ni menu du navigateur (Maj+F10, touche Menu)
+    if (memory.gesture?.keyboard) return void e.preventDefault();
     const row = e.target.closest?.('[data-row]');
     if (!row || !ctx.dates || memory.gesture || isStatusPopoverOpen()) {
       if (row && isStatusPopoverOpen()) e.preventDefault(); // « contextmenu » qui suit Maj+F10 : menu déjà ouvert

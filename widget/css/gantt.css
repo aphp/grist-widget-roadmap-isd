@@ -828,6 +828,10 @@
   display: flex;
   align-items: center;
 }
+.gtip__hint {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+}
 .gtip__badges {
   display: flex;
   flex-wrap: wrap;

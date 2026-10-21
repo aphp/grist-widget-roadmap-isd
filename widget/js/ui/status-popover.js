@@ -47,9 +47,10 @@ function place(root, anchor) {
  * @param {{anchor:HTMLElement, returnFocus?:HTMLElement, title:string, items:{value:string, current?:boolean,
  *   text?:string}[], onPick(value:string):void, menuLabel?:string, heading?:string}} opts anchor : contrôle visible
  *   (aria-expanded) ; returnFocus : élément rendu focalisé à la fermeture (la carte au clavier), l'ancre par
- *   défaut ; menuLabel / heading : nom et titre du menu (statut par défaut)
+ *   défaut ; menuLabel / heading : nom et titre du menu (statut par défaut) ; start : entrée focalisée à l'ouverture
+ *   (par défaut le statut courant)
  */
-export function openStatusPopover({ anchor, returnFocus = anchor, title, items, onPick, menuLabel, heading }) {
+export function openStatusPopover({ anchor, returnFocus = anchor, title, items, onPick, menuLabel, heading, start }) {
   const again = current?.anchor === anchor;
   closeStatusPopover(false);
   if (again) {
@@ -113,8 +114,8 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
     { capture: true, signal: off.signal },
   );
   window.addEventListener('resize', () => closeStatusPopover(false), { signal: off.signal });
-  const start = menuStartIndex(items);
-  (start >= 0 ? buttons()[start] : root).focus();
+  const first = start ?? menuStartIndex(items);
+  (first >= 0 ? buttons()[first] : root).focus();
 }
 
 /**
