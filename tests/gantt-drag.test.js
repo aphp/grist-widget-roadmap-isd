@@ -11,8 +11,10 @@ import {
   dragTarget,
   keyMode,
   movedDates,
+  handleSides,
   periodOf,
   reattachDrag,
+  resizedDates,
   shiftDay,
   snapUnit,
   stepsFromPixels,
@@ -479,4 +481,58 @@ test('DRAG_REASONS : chaque raison de refus de dragTarget a son annonce du mode 
   const { hasLabel } = await import('../widget/js/labels.js');
   assert.ok(DRAG_REASONS.includes('order'));
   for (const r of DRAG_REASONS) assert.ok(hasLabel(`gantt.key.no.${r}`), r);
+});
+
+test("resizedDates : seul le bord saisi bouge, pas relatifs à sa date d'origine", () => {
+  const max = d('2027-12-31');
+  const r = resizedDates(d('2026-01-05'), d('2026-01-31'), 'end', 'month', 1, { max });
+  assert.deepEqual(iso2(r), ['2026-01-05', '2026-02-28']);
+  assert.deepEqual(iso2(resizedDates(d('2026-01-05'), d('2026-01-31'), 'end', 'month', 2, { max })), [
+    '2026-01-05',
+    '2026-03-31',
+  ]);
+  assert.deepEqual(iso2(resizedDates(d('2026-01-05'), d('2026-01-31'), 'start', 'week', -2, { max })), [
+    '2025-12-22',
+    '2026-01-31',
+  ]);
+  assert.deepEqual(iso2(resizedDates(d('2026-01-05'), d('2026-01-31'), 'start', 'day', 0, { max })), [
+    '2026-01-05',
+    '2026-01-31',
+  ]);
+});
+
+test("resizedDates : arrêt sur l'autre bord (1 jour au moins), jour 1 et borne max", () => {
+  const max = d('2027-12-31');
+  assert.deepEqual(iso2(resizedDates(d('2026-01-05'), d('2026-01-10'), 'start', 'week', 5, { max })), [
+    '2026-01-10',
+    '2026-01-10',
+  ]);
+  assert.deepEqual(iso2(resizedDates(d('2026-01-05'), d('2026-01-10'), 'end', 'week', -5, { max })), [
+    '2026-01-05',
+    '2026-01-05',
+  ]);
+  assert.deepEqual(iso2(resizedDates(d('2026-01-05'), d('2026-01-10'), 'end', 'month', 40, { max })), [
+    '2026-01-05',
+    '2027-12-31',
+  ]);
+  assert.equal(resizedDates(1, 10, 'start', 'day', -50, { max }).start, 1);
+});
+
+test('handleSides : jalon, barre déduite, moins de 20 px, côté coupé, doigt', () => {
+  const base = {
+    milestone: false,
+    deduced: false,
+    widthPx: 100,
+    clipStart: false,
+    clipEnd: false,
+    touchSelected: true,
+  };
+  assert.deepEqual(handleSides(base), { start: true, end: true });
+  assert.deepEqual(handleSides({ ...base, milestone: true }), { start: false, end: false });
+  assert.deepEqual(handleSides({ ...base, deduced: true }), { start: false, end: false });
+  assert.deepEqual(handleSides({ ...base, widthPx: 19 }), { start: false, end: false });
+  assert.deepEqual(handleSides({ ...base, widthPx: 20 }), { start: true, end: true });
+  assert.deepEqual(handleSides({ ...base, clipStart: true }), { start: false, end: true });
+  assert.deepEqual(handleSides({ ...base, clipEnd: true }), { start: true, end: false });
+  assert.deepEqual(handleSides({ ...base, touchSelected: false }), { start: false, end: false });
 });

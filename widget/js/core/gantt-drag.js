@@ -1,5 +1,5 @@
 /**
- * Gantt : déplacer une barre dans le temps. Fonctions pures, en jours entiers UTC : pas selon l'échelle,
+ * Gantt : déplacer ou étirer une barre dans le temps. Fonctions pures, en jours entiers UTC : pas selon l'échelle,
  * décalage d'un jour, d'une semaine ou d'un mois, conversion d'un déplacement en pixels, bornes, droit de glisser,
  * rattachement du geste après un nouveau rendu.
  */
@@ -296,4 +296,37 @@ export function keyMode(state, e) {
   const now = keyPeriod(state.seen, state.unit, steps, days);
   if (now.start < 1 || now.end > state.max) return { state: { ...state, limit: true }, action: 'announce' };
   return { state: { ...state, now, steps, days, limit: false }, action: 'announce' };
+}
+
+/**
+ * Période dont seul le bord saisi bouge de n pas, comptés depuis la date d'origine de ce bord (Q1). Le bord
+ * s'arrête sur l'autre (durée minimale d'un jour) et sur les bornes : jour 1 et max (voir maxPlanDay).
+ * @param {number} start
+ * @param {number} end
+ * @param {'start'|'end'} edge
+ * @param {Unit} unit
+ * @param {number} n
+ * @param {{max:number}} bounds
+ * @returns {{start:number, end:number}}
+ */
+export function resizedDates(start, end, edge, unit, n, { max }) {
+  if (n === 0) return { start, end };
+  if (edge === 'start') return { start: Math.max(1, Math.min(shiftDay(start, unit, n), end)), end };
+  return { start, end: Math.min(max, Math.max(shiftDay(end, unit, n), start)) };
+}
+
+/** Largeur minimale d'une barre qui porte des poignées, en pixels. */
+const HANDLE_MIN_WIDTH = 20;
+
+/**
+ * Côtés où une barre porte une poignée d'étirement. Aucune pour un jalon, une barre déduite ou de moins de 20 px ;
+ * pas de poignée du côté coupé par la frise ; au doigt, seulement quand la barre est sélectionnée par un appui long
+ * (touchSelected à false : au doigt, non sélectionnée ; à la souris, true ou absent).
+ * @param {{milestone:boolean, deduced:boolean, widthPx:number, clipStart:boolean, clipEnd:boolean,
+ *   touchSelected?:boolean}} bar
+ * @returns {{start:boolean, end:boolean}}
+ */
+export function handleSides({ milestone, deduced, widthPx, clipStart, clipEnd, touchSelected = true }) {
+  if (milestone || deduced || !touchSelected || !(widthPx >= HANDLE_MIN_WIDTH)) return { start: false, end: false };
+  return { start: !clipStart, end: !clipEnd };
 }
