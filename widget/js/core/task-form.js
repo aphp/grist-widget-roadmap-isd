@@ -5,7 +5,15 @@
  * Le brouillon contient les valeurs du modèle des colonnes modifiables : jours (dates), identifiants (Ref),
  * listes d'identifiants (RefList), textes et nombre (progression).
  */
-import { chargeRows, mergeCharges, periodFte, readChargesCell, sameCharges, withPeopleFrom } from './charges-edit.js';
+import {
+  chargeRows,
+  mergeCharges,
+  periodFte,
+  periodState,
+  readChargesCell,
+  sameCharges,
+  withPeopleFrom,
+} from './charges-edit.js';
 import { dateMaxError, overMaxDay } from './dates.js';
 import { chantierInScope } from './chantier-form.js';
 import { safeLink } from './detail-data.js';
@@ -337,6 +345,9 @@ export function validateTask(
   const { rows } = cell.ok ? chargeRows(cell.entries) : { rows: [] };
   if (rows.some((r) => r.heures > 0) && (draft.dateDebut === null || draft.dateEcheance === null))
     warnings.push({ field: 'dateDebut', key: 'form.warn.chargesNoDates' });
+  // Période sans jour ouvré : comme sans dates, l'ETP n'est pas calculable
+  else if (rows.some((r) => r.heures > 0) && periodState(draft.dateDebut, draft.dateEcheance) === 'noWorkday')
+    warnings.push({ field: 'dateDebut', key: 'form.warn.chargesNoWorkdays' });
   const dup = rows.filter((r) => r.count > 1).length;
   if (dup) warnings.push({ field: 'charges', key: 'form.warn.chargesDuplicate', vars: { n: dup } });
   // Dates ajoutées ou modifiées : l'ETP fait foi et les heures sont recalculées (people-block.js) ; les charges qui

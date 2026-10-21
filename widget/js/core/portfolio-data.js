@@ -1,6 +1,6 @@
 /** Portfolio : indicateurs, éléments des frises, échelle en mois, charge et capacité hebdomadaires par profil. Fonctions pures (spec §4.5, §5). */
 import { DAY_MS, MONTHS_FR, weekday } from './dates.js';
-import { fteHours, hoursShare, personWeekCapacity } from './capacity.js';
+import { fteHours, hoursSharer, personWeekCapacity } from './capacity.js';
 import { PROFILE_KEYS, profileKey } from './kanban-data.js';
 import { normalize } from './text.js';
 
@@ -160,7 +160,7 @@ const round = (x) => Math.round(x * 1e6) / 1e6;
  * Charge et capacité hebdomadaires par profil, en heures, sur `weeks` semaines à partir du lundi de `startDay`.
  * Profils : PO, DA, DS, DE et Mgmt (Management de l'équipe ISD), personnes actives (profileKey).
  * Charge : heures de ces personnes réparties sur les jours de chaque tâche au prorata de la capacité standard
- * (hoursShare ; chaque tâche une fois).
+ * (hoursSharer ; chaque tâche une fois).
  * Capacité : toutes les personnes actives du profil (spec §4.5, jour par jour : capacité hebdomadaire ou 35 h,
  * jours fériés, indisponibilités). fte : heures de 1 ETP sur la semaine (fteHours, conversion en ETP).
  * @param {object} model
@@ -182,10 +182,11 @@ export function weeklyLoadByProfile(model, taskIds, startDay, weeks) {
   for (const id of new Set(taskIds)) {
     const t = model.tasks.get(id);
     if (!t || t.start === null || t.end === null || t.end < t.start || t.end < first || t.start > last) continue;
+    const share = hoursSharer(t.start, t.end);
     for (const c of t.charges) {
       const key = profileKey(model.people.get(c.personId), model);
       if (!key) continue;
-      for (const r of rows) r[key] += hoursShare(c.heures, t.start, t.end, r.weekStart, r.weekStart + 6);
+      for (const r of rows) r[key] += share(c.heures, r.weekStart, r.weekStart + 6);
     }
   }
   const team = [...model.people.values()].map((p) => ({ p, key: profileKey(p, model) })).filter((x) => x.key);

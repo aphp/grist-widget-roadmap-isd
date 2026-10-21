@@ -1,6 +1,6 @@
 /**
  * Capacité (jours ouvrés, fériés, congés, ralentissements) et charge (heures réparties sur les jours d'une tâche au
- * prorata de la capacité standard, hoursShare).
+ * prorata de la capacité standard, hoursSharer).
  * Spec §4.5. 1 ETP sur une période = capacité d'une personne standard à temps plein (35 h, sans indisponibilité)
  * sur cette période (fteHours) : même formule que le plan de charge, pour les tâches comme pour les vues.
  */
@@ -75,17 +75,18 @@ export function workdaysInYear(year) {
 }
 
 /**
- * Répartit des heures sur les mois de [start, end] au prorata de la capacité standard de chaque jour (hoursShare) :
+ * Répartit des heures sur les mois de [start, end] au prorata de la capacité standard de chaque jour (hoursSharer) :
  * une tâche à 1 ETP compte 1 ETP chaque mois. Clés : chaque mois touché par la période (0 compris), valeurs
  * arrondies à 1e-6 ; null si dates absentes ou incohérentes.
  */
 export function spreadHours(heures, start, end) {
-  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return null;
+  const share = hoursSharer(start, end);
+  if (!share) return null;
   const out = new Map();
   for (let d = start; d <= end; ) {
     const k = monthKey(d);
     const last = Math.min(monthRange(k).end, end);
-    out.set(k, Math.round(hoursShare(heures, start, end, d, last) * 1e6) / 1e6);
+    out.set(k, Math.round(share(heures, d, last) * 1e6) / 1e6);
     d = last + 1;
   }
   return out;
@@ -166,7 +167,12 @@ const STANDARD = Object.freeze({ capaciteHebdo: HOURS_PER_FTE_WEEK });
 /** Heures d'une personne standard (35 h, sans indisponibilité) un jour donné : 0 le week-end et les jours fériés. */
 export const standardDayHours = (day) => personDayCapacity(STANDARD, day);
 
-const yearOf = (day) => new Date(day * 86400000).getUTCFullYear();
+/** Année UTC d'un jour, sans objet Date (estimation puis correction d'un an au plus). */
+function yearOf(day) {
+  const y = 1970 + Math.floor(day / 365.2425);
+  if (day < DAY(y, 1, 1)) return y - 1;
+  return day >= DAY(y + 1, 1, 1) ? y + 1 : y;
+}
 const cumulCache = new Map();
 /** Sommes cumulées de standardDayHours sur une année : c[i] = heures du 1er janvier au jour i − 1 (en cache). */
 function cumulOf(year) {
@@ -210,21 +216,24 @@ function standardBetween(a, b) {
 }
 
 /**
- * Part des heures d'une tâche [start, end] qui tombe sur [a, b] : au prorata de la capacité standard des jours
- * (standardDayHours), pour qu'une charge de 1 ETP fasse 1 ETP sur chaque mois et chaque semaine. Période sans jour
- * ouvré (fteHours null) : au prorata des jours calendaires, pour que ses heures ne se perdent pas. Coût constant.
- * @param {number} heures
- * @param {number} start
- * @param {number} end
- * @param {number} a
- * @param {number} b
- * @returns {number} 0 hors de la période ou dates incohérentes
+ * Répartition des heures d'une tâche [start, end] : rend share(heures, a, b), part des heures qui tombe sur [a, b],
+ * au prorata de la capacité standard des jours (standardDayHours), pour qu'une charge de 1 ETP fasse 1 ETP sur
+ * chaque mois et chaque semaine. Période sans jour ouvré (fteHours null) : au prorata des jours calendaires, pour
+ * que ses heures ne se perdent pas. Capacité de la tâche calculée une fois ; chaque part, à coût constant.
+ * @param {number|null} start
+ * @param {number|null} end
+ * @returns {((heures:number, a:number, b:number) => number)|null} null si dates absentes ou incohérentes ; la part
+ *   vaut 0 hors de la période
  */
-export function hoursShare(heures, start, end, a, b) {
-  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return 0;
-  const lo = Math.max(a, start);
-  const hi = Math.min(b, end);
-  if (hi < lo) return 0;
-  if (fteHours(start, end) === null) return (heures * (hi - lo + 1)) / (end - start + 1);
-  return (heures * standardBetween(lo, hi)) / standardBetween(start, end);
+export function hoursSharer(start, end) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return null;
+  const total = standardBetween(start, end);
+  const calendar = Math.round(total * 1e6) <= 0;
+  const days = end - start + 1;
+  return (heures, a, b) => {
+    const lo = Math.max(a, start);
+    const hi = Math.min(b, end);
+    if (hi < lo) return 0;
+    return calendar ? (heures * (hi - lo + 1)) / days : (heures * standardBetween(lo, hi)) / total;
+  };
 }

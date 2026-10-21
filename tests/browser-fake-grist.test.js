@@ -555,6 +555,9 @@ test(
     await setDate('dateDebut', '2026-11-21');
     assert.match(await w(`return D.getElementById('tf-charges-nodates').textContent;`), /aucun jour ouvré/);
     assert.equal(await w(`return D.getElementById('tf-ch-${person}').disabled;`), true);
+    // Début après l'échéance : le message parle de l'ordre des dates
+    await setDate('dateDebut', '2026-11-25');
+    assert.match(await w(`return D.getElementById('tf-charges-nodates').textContent;`), /L’échéance précède le début/);
     await setDate('dateDebut', '2026-11-02');
     assert.equal(await w(`return W.__writes.length;`), 0);
     // Quelqu'un d'autre ajoute une charge pendant la saisie (JSON écrit autrement) : elle survit à l'enregistrement
@@ -690,6 +693,43 @@ test(
       );
     };
     await tip('tip-fte-tf');
+    // Événements de focus d'une page au premier plan (Chrome sans tête ne les émet pas sinon)
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    const opacity = (id) => `getComputedStyle(D.getElementById('${id}')).opacity`;
+    // Échap masque l'infobulle sans déplacer le focus ni fermer la fiche ; elle revient avec un nouveau focus
+    await w(
+      `D.activeElement.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return true;`,
+    );
+    await until(`${opacity('tip-fte-tf')} === '0'`);
+    assert.equal(await w(`return D.activeElement.getAttribute('aria-describedby');`), 'tip-fte-tf');
+    assert.ok(await w(`return Boolean(D.getElementById('task-form'));`));
+    await w(`D.getElementById('tf-titre').focus(); return true;`);
+    await w(`D.querySelector('[aria-describedby="tip-fte-tf"]').focus(); return true;`);
+    await until(`${opacity('tip-fte-tf')} === '1'`);
+    await w(`D.getElementById('tf-titre').focus(); return true;`);
+    await until(`${opacity('tip-fte-tf')} === '0'`);
+    // Survolable : le pointeur passe de la pastille à l'infobulle, elle reste affichée ; ailleurs, elle disparaît
+    const centre = (sel) =>
+      w(`D.querySelector('[aria-describedby="tip-fte-tf"]').scrollIntoView({ block: 'center' });
+        const r = D.querySelector('${sel}').getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+        return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    const move = (at) => send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await move(await centre('[aria-describedby="tip-fte-tf"]'));
+    await until(`${opacity('tip-fte-tf')} === '1'`);
+    await move(await centre('#tip-fte-tf'));
+    await sleep(300);
+    assert.equal(await w(`return ${opacity('tip-fte-tf')};`), '1');
+    // Échap au survol : masquée jusqu'à la sortie du pointeur
+    await w(
+      `D.body.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return true;`,
+    );
+    await until(`${opacity('tip-fte-tf')} === '0'`);
+    await move({ x: 2, y: 2 });
+    await move(await centre('[aria-describedby="tip-fte-tf"]'));
+    await until(`${opacity('tip-fte-tf')} === '1'`);
+    await move({ x: 2, y: 2 });
+    await until(`${opacity('tip-fte-tf')} === '0'`);
+    await send('Emulation.setFocusEmulationEnabled', { enabled: false });
     await w(`D.getElementById('btn-form-cancel').click(); return true;`);
     await until(`!D.getElementById('task-form')`);
     await w(`D.getElementById('btn-detail-close').click(); D.getElementById('tab-stats').click(); return true;`);
@@ -697,6 +737,48 @@ test(
     await tip('tip-fte-stats');
     await tip('tip-fte-plan');
     assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
+  '375 px : Statistiques, plan de charge et fiche sans défilement horizontal dû aux pastilles « i »',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    // Conteneurs qui défilent horizontalement, avec les infobulles, puis sans elles : mêmes listes, page sans défilement
+    const scrolling = `[...D.querySelectorAll('*')].filter((e) => e.scrollWidth > e.clientWidth + 1
+      && ['auto', 'scroll'].includes(getComputedStyle(e).overflowX)).map((e) => e.id || e.className).join(' | ')`;
+    const noTipScroll = async (where) => {
+      assert.ok(
+        await w(`return D.documentElement.scrollWidth <= D.documentElement.clientWidth;`),
+        `${where} : défilement de la page`,
+      );
+      const withTips = await w(`return ${scrolling};`);
+      const without =
+        await w(`const s = D.createElement('style'); s.id = 'no-tips'; s.textContent = '.tooltip{display:none!important}';
+        D.head.append(s); const out = ${scrolling}; s.remove(); return out;`);
+      assert.equal(withTips, without, `${where} : défilement dû aux infobulles`);
+    };
+    try {
+      await until(`D.documentElement.clientWidth <= 375`);
+      await w(`D.getElementById('tab-stats').click(); return true;`);
+      await until(`D.getElementById('tip-fte-stats') && D.getElementById('tip-fte-plan')`);
+      await noTipScroll('Statistiques et plan de charge');
+      await w(`D.getElementById('tab-kanban').click(); return true;`);
+      await until(`D.querySelector('.view [data-task]')`);
+      await openForm();
+      await until(`D.getElementById('tip-fte-tf')`);
+      await noTipScroll('fiche');
+      assert.ok(await w(`const b = D.querySelector('.drawer__body'); return b.scrollWidth <= b.clientWidth;`));
+    } finally {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: 1440,
+        height: 1000,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+    }
   },
 );
 

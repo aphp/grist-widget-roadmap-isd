@@ -17,7 +17,7 @@ import {
   SLOWDOWN,
   standardDayHours,
   fteHours,
-  hoursShare,
+  hoursSharer,
 } from '../widget/js/core/capacity.js';
 
 test('Pâques et jours fériés', () => {
@@ -205,9 +205,17 @@ test('répartition : somme égale aux heures, 1 ETP par mois, été compris ; p�
       ['2026-11', 5],
     ],
   );
-  assert.equal(hoursShare(10, d(2026, 11, 7), d(2026, 11, 8), d(2026, 11, 8), d(2026, 11, 30)), 5);
+  assert.equal(hoursSharer(d(2026, 11, 7), d(2026, 11, 8))(10, d(2026, 11, 8), d(2026, 11, 30)), 5);
   // Part hors période, dates incohérentes : 0
-  assert.equal(hoursShare(10, d(2026, 11, 2), d(2026, 11, 6), d(2026, 11, 9), d(2026, 11, 15)), 0);
-  assert.equal(hoursShare(10, null, d(2026, 11, 6), 0, 1e6), 0);
+  assert.equal(hoursSharer(d(2026, 11, 2), d(2026, 11, 6))(10, d(2026, 11, 9), d(2026, 11, 15)), 0);
+  assert.equal(hoursSharer(null, d(2026, 11, 6)), null);
+  assert.equal(hoursSharer(d(2026, 11, 6), d(2026, 11, 5)), null);
+  // Années aux bornes (calcul de l'année sans objet Date) : 31 décembre et 1er janvier, années bissextiles
+  for (const [a, b] of [
+    [d(2027, 12, 31), d(2028, 1, 3)],
+    [d(2028, 12, 31), d(2029, 1, 2)],
+    [d(1999, 12, 30), d(2000, 1, 4)],
+  ])
+    assert.equal(fteHours(a, b), naive(a, b));
   assert.equal(spreadHours(10, 1.5, 3), null);
 });

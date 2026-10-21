@@ -40,6 +40,21 @@ export const roundHours = (h) => Math.round(h / HOURS_STEP) * HOURS_STEP;
  */
 export const periodFte = (start, end) => fteHours(start, end);
 
+/** Jours calendaires de la période (bornes incluses), ou null sans dates exploitables (texte du pied seulement). */
+export const periodDayCount = (start, end) =>
+  Number.isInteger(start) && Number.isInteger(end) && end >= start ? end - start + 1 : null;
+
+/**
+ * Période des charges : 'ok' (heures de 1 ETP connues), 'none' (date absente), 'order' (échéance avant le début),
+ * 'noWorkday' (aucun jour ouvré). Hors 'ok', mêmes règles que sans dates (pas d'ETP, borne de 2 000 h).
+ * @returns {'ok'|'none'|'order'|'noWorkday'}
+ */
+export function periodState(start, end) {
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return 'none';
+  if (end < start) return 'order';
+  return fteHours(start, end) === null ? 'noWorkday' : 'ok';
+}
+
 /**
  * Heures maximales d'une personne : 1 ETP sur la période (fte : heures de 1 ETP, periodFte) ; 2 000 h sans période.
  * La personne estimation (estimation vrai) : ESTIMATION_MAX_ETP sur la période, 2 000 h sans période.
@@ -482,7 +497,7 @@ export function hoursDelta(ref, heures) {
 export function chargesSummary(model, rows, start, end) {
   const hours = Math.round(rows.reduce((s, r) => s + r.heures, 0) * 1e6) / 1e6;
   const fte = periodFte(start, end);
-  const days = Number.isInteger(start) && Number.isInteger(end) && end >= start ? end - start + 1 : null;
+  const days = periodDayCount(start, end);
   const byRole = fte
     ? taskEtpByRole({ start, end, charges: rows.map((r) => ({ personId: r.teamId, heures: r.heures })) }, model)
     : null;

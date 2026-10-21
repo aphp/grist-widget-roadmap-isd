@@ -2,7 +2,7 @@
  * Vue « Mes tâches » : tâches et sous-tâches d'une personne (assignée, responsable ou chargée), non terminées,
  * groupées par échéance sur des semaines du lundi au dimanche. Fonctions pures.
  */
-import { fteHours, hoursShare, hoursToEtp, personWeekCapacity } from './capacity.js';
+import { fteHours, hoursSharer, hoursToEtp, personWeekCapacity } from './capacity.js';
 import { weekStart } from './dates.js';
 
 /** Groupes, dans l'ordre d'affichage. */
@@ -134,7 +134,7 @@ export function visibleCount(total, clicks = 0) {
 
 /**
  * Charge de la personne sur la semaine (lundi à dimanche) qui contient `today` : ses heures de chaque tâche
- * datée, réparties sur les jours de la tâche au prorata de la capacité standard (hoursShare, comme le plan de
+ * datée, réparties sur les jours de la tâche au prorata de la capacité standard (hoursSharer, comme le plan de
  * charge), face à sa capacité de la
  * semaine (fériés, congés et indisponibilités déduits). Les tâches terminées comptent : la charge était prévue.
  * etp et capacityEtp : heures ÷ heures de 1 ETP sur la semaine (fteHours).
@@ -151,7 +151,7 @@ export function weekLoad(model, personId, today) {
     if (t.start === null || t.end === null || t.end < t.start || t.end < start || t.start > end) continue;
     const h = t.charges.filter((c) => c.personId === personId).reduce((s, c) => s + c.heures, 0);
     if (!h) continue;
-    hours += hoursShare(h, t.start, t.end, start, end);
+    hours += hoursSharer(t.start, t.end)(h, start, end);
   }
   const capacity = personWeekCapacity(person, start);
   const fte = fteHours(start, end);

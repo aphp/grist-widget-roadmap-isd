@@ -707,6 +707,7 @@ const FR = Object.freeze({
     '1 ETP = une personne à temps plein sur la période du début à l’échéance (voir la pastille « i ») ; 1 ETP au plus par personne (sauf la personne d’estimation). Les heures sont enregistrées à 0,5 h près. Si les dates changent, l’ETP est conservé et les heures sont recalculées.',
   'form.charges.noDates': 'Indiquez début et échéance pour saisir en ETP',
   'form.charges.noWorkdays': 'La période ne compte aucun jour ouvré : saisissez en heures',
+  'form.charges.dateOrder': 'L’échéance précède le début : corrigez les dates pour saisir en ETP',
   'form.charges.eqHours': '= {h} h',
   'form.charges.eqEtp': '= {valeur} ETP',
   'form.charges.eqNone': 'ETP : —',
@@ -747,6 +748,8 @@ const FR = Object.freeze({
     'Entrée invalide pour {nom}, conservée telle quelle : une saisie pour cette personne la remplacera. ({texte})',
   'form.charges.error.dates': 'Indiquez début et échéance pour saisir en ETP',
   'form.charges.error.noWorkdays': 'La période ne compte aucun jour ouvré : saisissez en heures',
+  'form.charges.error.dateOrder': 'L’échéance précède le début : corrigez les dates pour saisir en ETP',
+  'form.charges.error.maxNoWorkdays': '{h} h maximum par personne : la période ne compte aucun jour ouvré.',
   'form.charges.valueText': '{nom} {h} h',
   'form.charges.valueUnreadable': '(contenu illisible) {texte}',
   'form.error.charges': 'Corrigez la charge signalée.',
@@ -793,6 +796,8 @@ const FR = Object.freeze({
   'form.warn.chargesOverDates':
     'Dates modifiées : {n} charge(s) dépasseraient la borne sur la nouvelle période ; leurs heures sont gardées telles quelles. Vérifiez-les.',
   'form.warn.chargesNoDates': 'Cette tâche porte des charges : sans début ni échéance, l’ETP ne peut pas être calculé.',
+  'form.warn.chargesNoWorkdays':
+    'Cette tâche porte des charges : sa période ne compte aucun jour ouvré, l’ETP ne peut pas être calculé.',
   'form.warn.doneNoClosure': 'Tâche terminée sans date de clôture.',
   'form.warn.reopened': 'Tâche rouverte : la date de clôture est conservée. Vous pouvez la vider ci-dessous.',
   'form.warn.choice':

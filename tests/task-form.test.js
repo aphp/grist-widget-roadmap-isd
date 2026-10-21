@@ -124,6 +124,10 @@ test('avertissements : hors des dates du parent, charges sans dates, done sans c
   const w = validateTask(d, { ...ctx(1002), model: m }).warnings.map((x) => x.key);
   assert.deepEqual(w, ['form.warn.outsideParent']);
   assert.deepEqual(keys({ ...d, dateDebut: null }), ['form.warn.chargesNoDates']);
+  // Un samedi et un dimanche : aucun jour ouvré, l'ETP n'est pas calculable non plus
+  assert.deepEqual(keys({ ...d, dateDebut: dayOfIso('2026-11-07'), dateEcheance: dayOfIso('2026-11-08') }), [
+    'form.warn.chargesNoWorkdays',
+  ]);
   assert.deepEqual(keys({ ...d, statut: 'done', dateCloture: null }), ['form.warn.doneNoClosure']);
   assert.deepEqual(keys({ ...d, dateCloture: 3 }), ['form.warn.reopened']);
   assert.deepEqual(keys({ ...d, statut: 'Inventé' }), ['form.warn.choice']);

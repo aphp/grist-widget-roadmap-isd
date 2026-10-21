@@ -15,6 +15,7 @@ import {
   isEstimationPerson,
   maxHours,
   periodFte,
+  periodState,
   readChargesCell,
 } from '../core/charges-edit.js';
 import { formatDateFr } from '../core/dates.js';
@@ -325,6 +326,13 @@ function personLineHtml(st, model, l, ctx) {
   </li>`;
 }
 
+/** Raison de l'absence de période (periodState) : message de la saisie en ETP, erreur d'une saisie en ETP. */
+const NO_PERIOD_NOTICE = Object.freeze({
+  order: 'form.charges.dateOrder',
+  noWorkday: 'form.charges.noWorkdays',
+});
+const NO_PERIOD_ERROR = Object.freeze({ order: 'dateOrder', noWorkday: 'noWorkdays' });
+
 /** Équivalent de la saisie dans l'autre unité (« = 70 h » en ETP, « = 1,0 ETP » en heures). */
 export function chargeEqText(st, heures, fte) {
   if (st.chargesUnit === 'etp') return fte ? label('form.charges.eqHours', { h: hoursFormat.format(heures) }) : '';
@@ -345,7 +353,13 @@ function rowDelta(st, l, ctx) {
 export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const err = st.chargeErrors.get(l.teamId);
   const errKey =
-    err?.error === 'max' && !ctx.fte ? 'maxNoDates' : err?.error === 'dates' && ctx.dated ? 'noWorkdays' : err?.error;
+    err?.error === 'max' && !ctx.fte
+      ? ctx.period === 'noWorkday'
+        ? 'maxNoWorkdays'
+        : 'maxNoDates'
+      : err?.error === 'dates'
+        ? (NO_PERIOD_ERROR[ctx.period] ?? 'dates')
+        : err?.error;
   // Personne estimation (Team.aph) : borne de ESTIMATION_MAX_ETP au lieu de 1 ETP
   const estimation = isEstimationPerson(model, l.teamId);
   const max = ctx.fte ? maxHours(ctx.fte, estimation) : null;
@@ -393,7 +407,7 @@ export function chargesFootHtml(st, model) {
 
 /**
  * Contexte de rendu des lignes : droits par colonne, lisibilité des charges, période (fte : heures de 1 ETP, null
- * sans période exploitable ; dated : début et échéance saisis, fte null alors faute de jour ouvré).
+ * sans période exploitable ; period : periodState, raison de l'absence de période).
  */
 export function peopleCtx(st) {
   const cell = readChargesCell(st.draft.charges);
@@ -402,7 +416,7 @@ export function peopleCtx(st) {
     canAssign: st.can('assignees').ok && !st.busy,
     canCharges: st.can('charges').ok && !st.busy,
     fte: periodFte(st.draft.dateDebut, st.draft.dateEcheance),
-    dated: st.draft.dateDebut !== null && st.draft.dateEcheance !== null,
+    period: periodState(st.draft.dateDebut, st.draft.dateEcheance),
   };
 }
 
@@ -451,7 +465,7 @@ export function peopleBlockHtml(st, model, opts = {}) {
       <span class="tf-charges__tools">${readable ? unitToggle : ''}${infoTip(`tip-fte-${p}`, label('capacity.fte.about'), label('capacity.fte.help'))}</span>
     </div>
     <p class="fr-hint-text tf-hint">${opts.help ?? `${label('form.people.help')} ${label('form.charges.help')}`}</p>
-    ${readable && st.chargesUnit === 'etp' && !ctx.fte ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label(ctx.dated ? 'form.charges.noWorkdays' : 'form.charges.noDates')}</p>` : ''}
+    ${readable && st.chargesUnit === 'etp' && !ctx.fte ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label(NO_PERIOD_NOTICE[ctx.period] ?? 'form.charges.noDates')}</p>` : ''}
     ${lines.length ? h`<ul class="list tf-charges__rows" aria-labelledby="${p}-people-title">${lines.map((l) => personLineHtml(st, model, l, ctx))}</ul>` : h`<p class="tf-empty">${label('form.people.empty')}</p>`}
     ${invalid.map(
       (i) =>

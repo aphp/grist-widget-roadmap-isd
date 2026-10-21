@@ -18,7 +18,9 @@ import {
   maxHours,
   mergeCharges,
   mergeDuplicates,
+  periodDayCount,
   periodFte,
+  periodState,
   readChargesCell,
   removePerson,
   roundHours,
@@ -164,6 +166,11 @@ test('sans dates ou sans jour ouvré : ETP indisponible, saisie en heures possib
   assert.equal(periodFte(9, 10), null);
   assert.equal(periodFte(9, 11) > 0, true);
   assert.equal(periodFte(10, 23), fteHours(10, 23));
+  assert.deepEqual(
+    [periodState(null, 10), periodState(10, 9), periodState(9, 10), periodState(9, 11)],
+    ['none', 'order', 'noWorkday', 'ok'],
+  );
+  assert.deepEqual([periodDayCount(9, 10), periodDayCount(10, 9), periodDayCount(null, 3)], [2, null, null]);
   assert.deepEqual(hoursFromInput('1', 'etp', null), { error: 'dates' });
   assert.deepEqual(hoursFromInput('12', 'heures', null), { heures: 12 });
   assert.equal(etpOf(10, null), null);
