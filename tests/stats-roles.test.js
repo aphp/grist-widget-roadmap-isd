@@ -52,6 +52,16 @@ test('un mois entier chargé à la capacité standard du mois = 1 ETP', () => {
   assert.equal(r.PO + r.DA + r.DS + r.Mgmt + r.Autre, 0);
 });
 
+test('tâche à 1 ETP de juin à août 2027 : 1,00 ETP chaque mois (heures au prorata de la capacité standard)', () => {
+  const start = dayOfIso('2027-06-01');
+  const end = dayOfIso('2027-08-31');
+  const m = withTasks([
+    { id: 1, start: '2027-06-01', end: '2027-08-31', charges: [{ personId: 1, heures: fteHours(start, end) }] },
+  ]);
+  const rows = roleLoad(m, [1], dayOfIso('2027-05-15'));
+  for (const ym of ['2027-06', '2027-07', '2027-08']) close(Math.round(row(rows, ym).DE * 1e6) / 1e6, 1);
+});
+
 test('tâche à cheval sur deux mois : heures au prorata des jours, ETP sur la capacité de chaque mois', () => {
   // 25 octobre → 7 novembre : 7 jours de chaque côté, 70 h → 35 h par mois
   const m = withTasks([{ id: 1, start: '2026-10-25', end: '2026-11-07', charges: [{ personId: 1, heures: 70 }] }]);
@@ -63,16 +73,17 @@ test('tâche à cheval sur deux mois : heures au prorata des jours, ETP sur la c
 });
 
 test('bornes de la fenêtre : seules les heures des mois affichés comptent', () => {
-  // 1er juin → 31 juillet : 61 jours, 61 h → 30 h en juin (hors fenêtre), 31 h en juillet
+  // 1er juin → 31 juillet 2026 : 61 h réparties au prorata de la capacité standard (juin hors fenêtre)
   const m = withTasks([
     { id: 1, start: '2026-06-01', end: '2026-07-31', charges: [{ personId: 1, heures: 61 }] },
     { id: 2, start: '2027-07-01', end: '2027-07-31', charges: [{ personId: 1, heures: 99 }] },
   ]);
   const rows = roleLoad(m, [1, 2], today);
-  close(row(rows, '2026-07').DE, etp(31, '2026-07'));
+  const july = (61 * monthFte('2026-07')) / fteHours(dayOfIso('2026-06-01'), dayOfIso('2026-07-31'));
+  close(row(rows, '2026-07').DE, etp(july, '2026-07'));
   close(
     rows.reduce((s, r) => s + r.total, 0),
-    etp(31, '2026-07'),
+    etp(july, '2026-07'),
   );
   assert.deepEqual(roleLoad(m, [2], today), []);
 });

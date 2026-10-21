@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildModel } from '../widget/js/core/model.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS } from '../widget/js/core/filters.js';
-import { personMonthCapacity, workdaysInYear } from '../widget/js/core/capacity.js';
-import { monthsFrom } from '../widget/js/core/dates.js';
+import { fteHours, personMonthCapacity, workdaysInYear } from '../widget/js/core/capacity.js';
+import { dayOfIso, monthsFrom } from '../widget/js/core/dates.js';
 import { rateLevel, teamLoad, teamTotals } from '../widget/js/core/team-data.js';
 import { feuille } from './fixtures/feuille.js';
 
@@ -33,16 +33,37 @@ test('équipe ISD active seulement, groupée par profil (PO, DA, DS, DE, Mgmt) p
   );
 });
 
-test('Alice, novembre 2026 : 40 h de la tâche 1002, capacité réduite de 5 jours d’indisponibilité', () => {
+test('Alice, novembre 2026 : 35 h de la tâche 1002, capacité réduite de 5 jours d’indisponibilité', () => {
+  // 1002 : 70 h du 26 octobre au 8 novembre, 5 jours ouvrés de chaque côté → 35 h par mois (capacité standard)
   const c = cell(teamLoad(m, view.taskIds, months), 1, '2026-11');
-  assert.equal(c.load, 40);
+  assert.equal(c.load, 35);
   assert.deepEqual(c.taskIds, [1002]);
-  assert.deepEqual(c.hours, { 1002: 40 });
+  assert.deepEqual(c.hours, { 1002: 35 });
   assert.ok(near(c.capacity, 7 * 15 * avail));
   assert.ok(near(c.capacity, personMonthCapacity(m.people.get(1), '2026-11')));
-  assert.ok(near(c.rate, 40 / c.capacity));
+  assert.ok(near(c.rate, 35 / c.capacity));
   const oct = cell(teamLoad(m, view.taskIds, months), 1, '2026-10');
-  assert.equal(oct.load, 30);
+  assert.equal(oct.load, 35);
+});
+
+test('personne à 35 h sans indisponibilité chargée à 1 ETP : 100 % chaque mois, été compris', () => {
+  const mm = buildModel(feuille());
+  const start = dayOfIso('2027-06-01');
+  const end = dayOfIso('2027-08-31');
+  // Bob PO (35 h par défaut, indisponible seulement en mars 2026)
+  Object.assign(mm.tasks.get(2010), { start, end, charges: [{ personId: 2, heures: fteHours(start, end) }] });
+  const rows = teamLoad(mm, [2010], monthsFrom('2027-06', 3));
+  for (const ym of ['2027-06', '2027-07', '2027-08']) {
+    const c = cell(rows, 2, ym);
+    assert.ok(Math.abs(c.rate - 1) < 1e-6, `${ym} : ${c.rate}`);
+  }
+  const dec = fteHours(dayOfIso('2026-12-01'), dayOfIso('2026-12-31'));
+  Object.assign(mm.tasks.get(2010), {
+    start: dayOfIso('2026-12-01'),
+    end: dayOfIso('2026-12-31'),
+    charges: [{ personId: 2, heures: dec }],
+  });
+  assert.ok(Math.abs(cell(teamLoad(mm, [2010], months), 2, '2026-12').rate - 1) < 1e-6);
 });
 
 test('Eve, novembre : 14 h ; la charge du teamId 99 inconnu et la tâche sans dates sont ignorées', () => {
@@ -72,7 +93,7 @@ test('tâches d’une case triées par heures décroissantes', () => {
   const mm = buildModel(raw);
   const c = cell(teamLoad(mm, [1002, 2010], months), 1, '2026-11');
   assert.deepEqual(c.taskIds, [1002, 2010]);
-  assert.equal(c.load, 45);
+  assert.equal(c.load, 40);
 });
 
 test('seuils : < 85 % ok, 85 à 100 % tension, > 100 % dépassement (sur le % arrondi affiché)', () => {
@@ -113,7 +134,7 @@ test('total par profil : sommes de capacité et de charge, taux recalculé', () 
     ],
   );
   const de = totals.find((t) => t.role === 'DE').months.find((x) => x.ym === '2026-11');
-  assert.equal(de.load, 40);
-  assert.ok(near(de.rate, 40 / de.capacity));
+  assert.equal(de.load, 35);
+  assert.ok(near(de.rate, 35 / de.capacity));
   assert.equal(de.level, rateLevel(de.rate, de.load));
 });

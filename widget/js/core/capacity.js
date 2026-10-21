@@ -1,5 +1,6 @@
 /**
- * Capacité (jours ouvrés, fériés, congés, ralentissements) et charge (heures réparties sur les jours calendaires).
+ * Capacité (jours ouvrés, fériés, congés, ralentissements) et charge (heures réparties sur les jours d'une tâche au
+ * prorata de la capacité standard, hoursShare).
  * Spec §4.5. 1 ETP sur une période = capacité d'une personne standard à temps plein (35 h, sans indisponibilité)
  * sur cette période (fteHours) : même formule que le plan de charge, pour les tâches comme pour les vues.
  */
@@ -73,16 +74,20 @@ export function workdaysInYear(year) {
   return yearCache.get(year);
 }
 
-/** Répartit uniformément des heures sur les jours calendaires [start, end] ; null si dates absentes ou incohérentes. */
+/**
+ * Répartit des heures sur les mois de [start, end] au prorata de la capacité standard de chaque jour (hoursShare) :
+ * une tâche à 1 ETP compte 1 ETP chaque mois. Clés : chaque mois touché par la période (0 compris), valeurs
+ * arrondies à 1e-6 ; null si dates absentes ou incohérentes.
+ */
 export function spreadHours(heures, start, end) {
-  if (start === null || end === null || start === undefined || end === undefined || end < start) return null;
-  const perDay = heures / (end - start + 1);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return null;
   const out = new Map();
-  for (let d = start; d <= end; d++) {
+  for (let d = start; d <= end; ) {
     const k = monthKey(d);
-    out.set(k, (out.get(k) ?? 0) + perDay);
+    const last = Math.min(monthRange(k).end, end);
+    out.set(k, Math.round(hoursShare(heures, start, end, d, last) * 1e6) / 1e6);
+    d = last + 1;
   }
-  for (const [k, v] of out) out.set(k, Math.round(v * 1e6) / 1e6);
   return out;
 }
 
@@ -192,10 +197,34 @@ const yearTotal = (year) => cumulOf(year).at(-1);
  */
 export function fteHours(start, end) {
   if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return null;
-  const y0 = yearOf(start);
-  const y1 = yearOf(end);
-  let sum = sinceNewYear(end, true) - sinceNewYear(start);
-  for (let y = y0; y < y1; y++) sum += yearTotal(y);
-  const h = Math.round(sum * 1e6) / 1e6;
+  const h = Math.round(standardBetween(start, end) * 1e6) / 1e6;
   return h > 0 ? h : null;
+}
+
+/** Heures standard sur [a, b], sans arrondi (0 si b < a). */
+function standardBetween(a, b) {
+  if (b < a) return 0;
+  let sum = sinceNewYear(b, true) - sinceNewYear(a);
+  for (let y = yearOf(a); y < yearOf(b); y++) sum += yearTotal(y);
+  return sum;
+}
+
+/**
+ * Part des heures d'une tâche [start, end] qui tombe sur [a, b] : au prorata de la capacité standard des jours
+ * (standardDayHours), pour qu'une charge de 1 ETP fasse 1 ETP sur chaque mois et chaque semaine. Période sans jour
+ * ouvré (fteHours null) : au prorata des jours calendaires, pour que ses heures ne se perdent pas. Coût constant.
+ * @param {number} heures
+ * @param {number} start
+ * @param {number} end
+ * @param {number} a
+ * @param {number} b
+ * @returns {number} 0 hors de la période ou dates incohérentes
+ */
+export function hoursShare(heures, start, end, a, b) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return 0;
+  const lo = Math.max(a, start);
+  const hi = Math.min(b, end);
+  if (hi < lo) return 0;
+  if (fteHours(start, end) === null) return (heures * (hi - lo + 1)) / (end - start + 1);
+  return (heures * standardBetween(lo, hi)) / standardBetween(start, end);
 }

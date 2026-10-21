@@ -399,7 +399,7 @@ const FR = Object.freeze({
   'plan.label': 'Plan de charge de l’équipe',
   'plan.caption': 'Plan de charge des personnes ISD, de {debut} à {fin} : capacité, charge et taux par mois',
   'plan.scope':
-    'Charge des {taches} retenues par les filtres, chacune comptée une fois, répartie sur ses jours. Capacité : quotité de la Feuille (35 h par semaine par défaut), moins congés, jours fériés, ralentissements (mai, juillet, août, décembre) et indisponibilités.',
+    'Charge des {taches} retenues par les filtres, chacune comptée une fois, répartie sur ses jours ouvrés, au prorata de la capacité standard. Capacité : quotité de la Feuille (35 h par semaine par défaut), moins congés, jours fériés, ralentissements (mai, juillet, août, décembre) et indisponibilités.',
   'plan.noCharges':
     'Aucune charge n’est renseignée sur les tâches retenues : tous les taux sont à 0 %. La charge vient de la colonne charges des tâches dans la Feuille.',
   'plan.person': 'Personne',
@@ -554,7 +554,7 @@ const FR = Object.freeze({
   'detail.unset': 'Non renseignés : {champs}',
   'detail.hours': '{h} h',
   'detail.etp': '{valeur} ETP',
-  'detail.etp.noDates': 'ETP non calculable : la tâche n’a pas de dates valides.',
+  'detail.etp.noDates': 'ETP non calculable : la tâche n’a pas de dates valides ou aucun jour ouvré.',
   'detail.etp.byRole': 'Par profil : {detail}',
   'detail.charges.person': 'Personne',
   'detail.charges.hours': 'Heures',
@@ -1131,7 +1131,7 @@ const FR = Object.freeze({
   'stats.chart.delays': 'Délais de clôture',
   'stats.chart.roles': 'Charge par profil (ETP par mois)',
   'stats.roles.sub':
-    'ETP moyen du mois (1 ETP = une personne à temps plein sur le mois), d’après les charges des tâches filtrées réparties sur leurs dates, de {debut} à {fin} : 3 mois passés et 8 à venir, comme un plan de charge. Le filtre Personne retient des tâches et compte toutes leurs charges : ce n’est pas la charge propre de la personne (voir le plan de charge).',
+    'ETP moyen du mois (1 ETP = une personne à temps plein sur le mois), d’après les charges des tâches filtrées réparties sur leurs jours ouvrés, au prorata de la capacité standard, de {debut} à {fin} : 3 mois passés et 8 à venir, comme un plan de charge. Le filtre Personne retient des tâches et compte toutes leurs charges : ce n’est pas la charge propre de la personne (voir le plan de charge).',
   'stats.roles.other': 'Autre : personnes hors équipe ISD ou sans profil.',
   'stats.roles.noOther': 'Aucune charge « Autre » (hors équipe ISD) sur la période.',
   'stats.roles.axisMonth': 'Mois',

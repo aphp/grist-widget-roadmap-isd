@@ -207,3 +207,12 @@ test('préférences du Portfolio : sous-onglet, début et durée validés', () =
   const bad2 = load('{"portfolioStart":"demain","portfolioMonths":"12"}');
   assert.deepEqual([bad2.portfolioStart, bad2.portfolioMonths], [null, 12]);
 });
+
+test('charge hebdomadaire : une tâche à 1 ETP compte 1 ETP chaque semaine (prorata de la capacité standard)', () => {
+  const mm = buildModel(feuille());
+  const start = d('2027-07-05');
+  const end = d('2027-08-01');
+  Object.assign(mm.tasks.get(1002), { start, end, charges: [{ personId: 1, heures: fteHours(start, end) }] });
+  const rows = weeklyLoadByProfile(mm, [1002], start, 4);
+  for (const r of rows) near(hoursToEtp(r.DE, r.fte), 1, isoOfDay(r.weekStart));
+});

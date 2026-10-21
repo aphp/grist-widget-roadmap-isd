@@ -17,6 +17,7 @@ import {
   SLOWDOWN,
   standardDayHours,
   fteHours,
+  hoursShare,
 } from '../widget/js/core/capacity.js';
 
 test('Pâques et jours fériés', () => {
@@ -36,10 +37,11 @@ test('jours ouvrés', () => {
   assert.equal(workdaysInYear(2027), 254); // 261 jours de semaine − 7 fériés en semaine
 });
 
-test('répartition des heures sur les jours calendaires ; conversion ETP ↔ heures par les heures de 1 ETP', () => {
-  const m = spreadHours(70, dayOfIso('2026-10-26'), dayOfIso('2026-11-08')); // 14 jours : 6 en oct., 8 en nov.
-  assert.equal(m.get('2026-10'), 30);
-  assert.equal(m.get('2026-11'), 40);
+test('répartition au prorata de la capacité standard ; conversion ETP ↔ heures par les heures de 1 ETP', () => {
+  // 26 octobre → 8 novembre 2026 : 5 jours ouvrés de chaque côté (le 1er novembre est un dimanche)
+  const m = spreadHours(70, dayOfIso('2026-10-26'), dayOfIso('2026-11-08'));
+  assert.equal(m.get('2026-10'), 35);
+  assert.equal(m.get('2026-11'), 35);
   assert.equal(hoursToEtp(70, 70), 1);
   assert.equal(hoursToEtp(35, 140), 0.25);
   assert.equal(hoursToEtp(35, null), 0);
@@ -78,8 +80,8 @@ test('charge par personne et par mois (tâches sans dates ignorées)', () => {
     { start: null, end: null, charges: [{ personId: 1, heures: 1000 }] },
   ];
   const load = loadByPersonMonth(tasks);
-  assert.equal(load.get(1).get('2026-11'), 40);
-  assert.equal(load.get(2).get('2026-10'), 6);
+  assert.equal(load.get(1).get('2026-11'), 35);
+  assert.equal(load.get(2).get('2026-10'), 7);
   assert.equal(
     [...load.get(1).values()].reduce((a, b) => a + b, 0),
     70,
@@ -172,4 +174,40 @@ test('ETP ↔ heures : aller-retour sans perte', () => {
   const f = fteHours(d(2026, 6, 1), d(2026, 7, 31));
   assert.equal(hoursToEtp(etpToHours(0.25, f), f), 0.25);
   assert.equal(etpToHours(1, f), f);
+});
+
+test('répartition : somme égale aux heures, 1 ETP par mois, été compris ; période sans jour ouvré au calendrier', () => {
+  const start = d(2027, 6, 1);
+  const end = d(2027, 8, 31);
+  const m = spreadHours(fteHours(start, end), start, end);
+  assert.deepEqual([...m.keys()], ['2027-06', '2027-07', '2027-08']);
+  for (const [ym, h] of m) {
+    const [y, mo] = ym.split('-').map(Number);
+    assert.ok(Math.abs(h - fteHours(d(y, mo, 1), Math.min(d(y, mo + 1, 1) - 1, end))) < 1e-5, ym);
+  }
+  // Somme des parts = heures, sur une période à cheval sur deux années
+  const s = spreadHours(100, d(2026, 12, 20), d(2027, 2, 10));
+  assert.ok(Math.abs([...s.values()].reduce((a, b) => a + b, 0) - 100) < 1e-5);
+  // Mois touché sans jour ouvré dans la période : clé présente, 0 h
+  const w = spreadHours(10, d(2026, 10, 31), d(2026, 11, 3)); // samedi 31 octobre → mardi 3 novembre
+  assert.deepEqual(
+    [...w.entries()],
+    [
+      ['2026-10', 0],
+      ['2026-11', 10],
+    ],
+  );
+  // Période sans jour ouvré (samedi 31 octobre → dimanche 1er novembre) : au prorata des jours calendaires
+  assert.deepEqual(
+    [...spreadHours(10, d(2026, 10, 31), d(2026, 11, 1)).entries()],
+    [
+      ['2026-10', 5],
+      ['2026-11', 5],
+    ],
+  );
+  assert.equal(hoursShare(10, d(2026, 11, 7), d(2026, 11, 8), d(2026, 11, 8), d(2026, 11, 30)), 5);
+  // Part hors période, dates incohérentes : 0
+  assert.equal(hoursShare(10, d(2026, 11, 2), d(2026, 11, 6), d(2026, 11, 9), d(2026, 11, 15)), 0);
+  assert.equal(hoursShare(10, null, d(2026, 11, 6), 0, 1e6), 0);
+  assert.equal(spreadHours(10, 1.5, 3), null);
 });

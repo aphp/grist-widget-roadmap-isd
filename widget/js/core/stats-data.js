@@ -178,7 +178,7 @@ export const ROLE_WINDOW = Object.freeze({ before: 3, after: 8 });
 
 /**
  * Charge par profil et par mois, en ETP moyen du mois : les heures de chaque charge (Tasks.charges) sont
- * réparties uniformément sur les jours calendaires de la tâche (spreadHours), cumulées par profil
+ * réparties sur les jours de la tâche au prorata de la capacité standard (spreadHours), cumulées par profil
  * (etpRoleKey : PO, DA, DS, DE, Mgmt = Management de l'équipe ISD, Autre), puis converties avec
  * 1 ETP = capacité standard du mois (fteHours). Tâches sans dates valides ignorées ; vide sans
  * aucune charge dans la fenêtre.
