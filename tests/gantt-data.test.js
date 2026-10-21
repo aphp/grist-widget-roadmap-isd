@@ -4,6 +4,7 @@ import { buildModel } from '../widget/js/core/model.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS, loadPrefs } from '../widget/js/core/filters.js';
 import { dayOfIso, isoOfDay } from '../widget/js/core/dates.js';
 import {
+  sortTreeByDate,
   CHANTIER_SLOTS,
   COLOR_BY,
   chantierSlots,
@@ -427,4 +428,74 @@ test('fadedOnWhite : couleur posée sur blanc à l’opacité donnée (PDF)', ()
   assert.equal(fadedOnWhite('#000000', 0.5), '#808080');
   assert.equal(fadedOnWhite('#2a78d6', 1), '#2a78d6');
   assert.equal(fadedOnWhite('#2a78d6', 0), '#ffffff');
+});
+
+test('sortTreeByDate : début, fin, titre, sans barre en dernier, tous niveaux, sans muter', () => {
+  const t = (key, title, start, end, children = [], span = null) => ({
+    key,
+    kind: 'tache',
+    title,
+    start,
+    end,
+    span,
+    children,
+  });
+  const tree = [
+    {
+      key: 'C2',
+      kind: 'categorie',
+      title: 'A',
+      start: null,
+      end: null,
+      span: null,
+      children: [
+        t('p-none', 'Zéro', null, null),
+        t('p-late', 'Tard', 50, 60, [t('s2', 'B', 55, 56), t('s1', 'A', 52, 53)]),
+      ],
+    },
+    {
+      key: 'C1',
+      kind: 'categorie',
+      title: 'B',
+      start: null,
+      end: null,
+      span: { start: 1, end: 5 },
+      children: [
+        t('x', 'Même début, fin tardive', 10, 30),
+        t('y', 'Même début, fin tôt', 10, 20),
+        t('w2', 'b2', 10, 20),
+        t('w10', 'b10', 10, 20),
+        t('w1', 'b2', 10, 20), // titre identique : clé
+        t('d', 'Déduite', null, null, [], { start: 2, end: 3 }),
+        t('u2', 'Sans date B', null, null),
+        t('u1', 'Sans date A', null, null),
+      ],
+    },
+  ];
+  const before = JSON.stringify(tree);
+  const ids = tree[1].children.slice();
+  const out = sortTreeByDate(tree);
+  assert.equal(JSON.stringify(tree), before);
+  assert.deepEqual(tree[1].children, ids);
+  assert.notEqual(out[1].children, tree[1].children);
+  // Catégories : C1 (début 1) avant C2 (nœud sans dates mais enfants sans span : pas de barre) -> dernier
+  assert.deepEqual(
+    out.map((n) => n.key),
+    ['C1', 'C2'],
+  );
+  assert.deepEqual(
+    out[0].children.map((n) => n.key),
+    ['d', 'w1', 'w2', 'w10', 'y', 'x', 'u1', 'u2'],
+  );
+  assert.deepEqual(
+    out[1].children.map((n) => n.key),
+    ['p-late', 'p-none'],
+  );
+  assert.deepEqual(
+    out[1].children[0].children.map((n) => n.key),
+    ['s1', 's2'],
+  );
+  assert.equal(out[0].children[0].title, 'Déduite');
+  assert.equal(out[1].title, 'A');
+  assert.deepEqual(sortTreeByDate([]), []);
 });
