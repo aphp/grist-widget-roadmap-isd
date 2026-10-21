@@ -14,7 +14,7 @@ import {
   inputValue,
   isEstimationPerson,
   maxHours,
-  periodDays,
+  periodFte,
   readChargesCell,
 } from '../core/charges-edit.js';
 import { formatDateFr } from '../core/dates.js';
@@ -27,7 +27,7 @@ import { peopleLines } from '../core/task-people.js';
 import { MAX_YEAR, MIN_YEAR, inputFromDay } from '../core/write-encode.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import { isIsdTeamMember, pickerGroups } from '../core/team-directory.js';
-import { h } from '../ui/kit.js';
+import { h, infoTip } from '../ui/kit.js';
 import { addSubtaskButton, refList, roleBadge, section, statusMenu } from './detail.js';
 import { estimationBadge } from './team.js';
 import { tagsFieldHtml } from './tags-field.js';
@@ -286,12 +286,12 @@ function personLineHtml(st, model, l, ctx) {
   const p = model.people.get(id);
   const name = chargeName(model, id);
   const etpMode = st.chargesUnit === 'etp';
-  const blocked = !ctx.readable || !ctx.canCharges || l.count > 1 || !l.known || (etpMode && !ctx.days);
+  const blocked = !ctx.readable || !ctx.canCharges || l.count > 1 || !l.known || (etpMode && !ctx.fte);
   const value = !l.charged
     ? ''
     : etpMode
-      ? ctx.days
-        ? etpText(inputValue(l.heures, 'etp', ctx.days), false)
+      ? ctx.fte
+        ? etpText(inputValue(l.heures, 'etp', ctx.fte), false)
         : ''
       : hoursFormat.format(l.heures);
   const typed = st.chargeInputs.get(id);
@@ -316,7 +316,7 @@ function personLineHtml(st, model, l, ctx) {
       <label class="fr-sr-only" for="${px}-ch-${id}">${label('form.people.inputLabel', { nom: name, unite: unit })}</label>
       <input type="text" inputmode="decimal" id="${px}-ch-${id}" class="fr-input tf-num tf-charge__input" value="${typed ?? value}" placeholder="—" data-charge-input="${id}" autocomplete="off" aria-describedby="${px}-ch-${id}-msg ${px}-charges-msgs" ${raw(blocked ? 'disabled' : '')} ${raw(err || st.overCap?.has(id) ? 'aria-invalid="true"' : '')}>
       <span class="tf-charge__unit">${unit}</span>
-      <span class="tf-charge__eq" id="${px}-ch-${id}-eq">${l.charged ? chargeEqText(st, l.heures, ctx.days) : ''}</span>
+      <span class="tf-charge__eq" id="${px}-ch-${id}-eq">${l.charged ? chargeEqText(st, l.heures, ctx.fte) : ''}</span>
     </span>`
         : h`<span></span>`
     }
@@ -326,9 +326,9 @@ function personLineHtml(st, model, l, ctx) {
 }
 
 /** Équivalent de la saisie dans l'autre unité (« = 70 h » en ETP, « = 1,0 ETP » en heures). */
-export function chargeEqText(st, heures, days) {
-  if (st.chargesUnit === 'etp') return days ? label('form.charges.eqHours', { h: hoursFormat.format(heures) }) : '';
-  return days ? label('form.charges.eqEtp', { valeur: etpText(etpOf(heures, days)) }) : label('form.charges.eqNone');
+export function chargeEqText(st, heures, fte) {
+  if (st.chargesUnit === 'etp') return fte ? label('form.charges.eqHours', { h: hoursFormat.format(heures) }) : '';
+  return fte ? label('form.charges.eqEtp', { valeur: etpText(etpOf(heures, fte)) }) : label('form.charges.eqNone');
 }
 
 /**
@@ -338,17 +338,18 @@ export function chargeEqText(st, heures, days) {
  */
 function rowDelta(st, l, ctx) {
   const ref = l.heures === null ? null : st.chargeRefs?.get(l.teamId);
-  return ref && ref.days !== ctx.days ? hoursDelta(ref, l.heures) : null;
+  return ref && ref.fte !== ctx.fte ? hoursDelta(ref, l.heures) : null;
 }
 
 /** Messages d'une ligne : saisie invalide, plafond, doublon à fusionner, personne absente, écart d'heures. */
 export function chargeRowMsgs(st, model, l, ctx, delta = rowDelta(st, l, ctx)) {
   const err = st.chargeErrors.get(l.teamId);
-  const errKey = err?.error === 'max' && !ctx.days ? 'maxNoDates' : err?.error;
+  const errKey =
+    err?.error === 'max' && !ctx.fte ? 'maxNoDates' : err?.error === 'dates' && ctx.dated ? 'noWorkdays' : err?.error;
   // Personne estimation (Team.aph) : borne de ESTIMATION_MAX_ETP au lieu de 1 ETP
   const estimation = isEstimationPerson(model, l.teamId);
-  const max = ctx.days ? maxHours(ctx.days, estimation) : null;
-  const over = ctx.days && l.heures !== null && l.heures > max && !err;
+  const max = ctx.fte ? maxHours(ctx.fte, estimation) : null;
+  const over = ctx.fte && l.heures !== null && l.heures > max && !err;
   const etp = ESTIMATION_MAX_ETP;
   return h`${err ? h`<p class="fr-error-text tf-error">${label(`form.charges.error.${errKey}`, { h: hoursFormat.format(err.max ?? 0), etp })}</p>` : ''}${
     over
@@ -390,14 +391,18 @@ export function chargesFootHtml(st, model) {
   }${parts.length ? h` (${parts.join(' · ')})` : ''} · ${period}`;
 }
 
-/** Contexte de rendu des lignes : droits par colonne, lisibilité des charges, période. */
+/**
+ * Contexte de rendu des lignes : droits par colonne, lisibilité des charges, période (fte : heures de 1 ETP, null
+ * sans période exploitable ; dated : début et échéance saisis, fte null alors faute de jour ouvré).
+ */
 export function peopleCtx(st) {
   const cell = readChargesCell(st.draft.charges);
   return {
     readable: cell.ok,
     canAssign: st.can('assignees').ok && !st.busy,
     canCharges: st.can('charges').ok && !st.busy,
-    days: periodDays(st.draft.dateDebut, st.draft.dateEcheance),
+    fte: periodFte(st.draft.dateDebut, st.draft.dateEcheance),
+    dated: st.draft.dateDebut !== null && st.draft.dateEcheance !== null,
   };
 }
 
@@ -443,10 +448,10 @@ export function peopleBlockHtml(st, model, opts = {}) {
   return h`<section class="tf-field tf-charges tf-people ${raw(err ? 'fr-input-group--error' : '')}" id="${p}-people" data-field="charges" aria-labelledby="${p}-people-title">
     <div class="tf-charges__head">
       <h3 class="dt-section__title tf-charges__title" id="${p}-people-title" tabindex="-1">${label('form.field.people')}</h3>
-      ${readable ? unitToggle : ''}
+      <span class="tf-charges__tools">${readable ? unitToggle : ''}${infoTip(`tip-fte-${p}`, label('capacity.fte.about'), label('capacity.fte.help'))}</span>
     </div>
     <p class="fr-hint-text tf-hint">${opts.help ?? `${label('form.people.help')} ${label('form.charges.help')}`}</p>
-    ${readable && st.chargesUnit === 'etp' && !ctx.days ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label('form.charges.noDates')}</p>` : ''}
+    ${readable && st.chargesUnit === 'etp' && !ctx.fte ? h`<p class="tf-charges__nodates" id="${p}-charges-nodates">${label(ctx.dated ? 'form.charges.noWorkdays' : 'form.charges.noDates')}</p>` : ''}
     ${lines.length ? h`<ul class="list tf-charges__rows" aria-labelledby="${p}-people-title">${lines.map((l) => personLineHtml(st, model, l, ctx))}</ul>` : h`<p class="tf-empty">${label('form.people.empty')}</p>`}
     ${invalid.map(
       (i) =>

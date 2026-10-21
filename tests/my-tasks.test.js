@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildModel } from '../widget/js/core/model.js';
 import { dayInZone, dayOfIso, formatDayShort, isoOfDay, weekStart } from '../widget/js/core/dates.js';
-import { personWeekCapacity } from '../widget/js/core/capacity.js';
+import { fteHours, personWeekCapacity } from '../widget/js/core/capacity.js';
 import {
   groupByPeriod,
   myTasks,
@@ -74,7 +74,7 @@ test('mes tâches : assignée, chargée ; terminées écartées ; chantier, proj
       lateDays: 0,
       roles: ['assignee', 'charge'],
       hours: 70,
-      etp: 1,
+      etp: Math.round((70 / fteHours(d('2026-10-26'), d('2026-11-08'))) * 100) / 100, // 1,21 ETP standard
       chantier: 'Produit de Données Patient',
       projet: 'Données Socle Commun EDS',
       parent: 'Ajout table FHIR Adresse',
@@ -174,13 +174,15 @@ test('« Afficher plus » : une tranche de plus par appui, jamais au-delà du to
 });
 
 test('charge de la semaine : heures réparties sur les jours de la tâche, face à la capacité', () => {
-  // Semaine du 26 octobre : 7 des 14 jours de « réalisation » (70 h) → 35 h, soit 1 ETP
+  // Semaine du 26 octobre : 7 des 14 jours de « réalisation » (70 h) → 35 h, face à 1 ETP standard de la semaine
   const w = weekLoad(m, 1, d('2026-10-28'));
+  const fte = fteHours(d('2026-10-26'), d('2026-11-01'));
   assert.equal(isoOfDay(w.start), '2026-10-26');
   assert.equal(w.hours, 35);
-  assert.equal(w.etp, 1);
+  assert.equal(w.etp, 35 / fte);
   assert.equal(w.capacity, personWeekCapacity(m.people.get(1), d('2026-10-26')));
-  assert.ok(w.capacityEtp > 0.7 && w.capacityEtp < 1);
+  // Alice (35 h, disponible cette semaine) est une personne standard : 1 ETP de capacité
+  assert.ok(Math.abs(w.capacityEtp - 1) < 1e-6, String(w.capacityEtp));
   // Semaine du 2 novembre : absente toute la semaine → capacité nulle
   assert.equal(weekLoad(m, 1, d('2026-11-04')).capacity, 0);
   // Semaine sans charge (avant la tâche) ; tâche sans dates (Eve, 2001) ignorée

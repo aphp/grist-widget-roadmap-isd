@@ -8,11 +8,11 @@
  * heures arrondies à 0,5 h). Une cellule qu'on ne pourrait pas relire sans perte (nombre hors limites, grand
  * entier, clé en double) n'est pas modifiable dans le widget, comme une cellule illisible.
  *
- * Conversion (1 ETP = 35 h par semaine pour tous, jours calendaires de dateDebut à dateEcheance) :
- * h = ETP × 35 × jours / 7 ; ETP = h × 7 / (35 × jours). Dates changées : l'ETP fait foi, les heures sont
- * recalculées (charges-rescale.js) ; dates inchangées, les entrées sont recopiées octet par octet.
+ * Conversion : 1 ETP = capacité d'une personne standard sur la période de dateDebut à dateEcheance (periodFte,
+ * capacity.js:fteHours) ; h = ETP × heures de 1 ETP. Période changée (capacité différente) : l'ETP fait foi, les
+ * heures sont recalculées (charges-rescale.js) ; à capacité égale, les entrées sont recopiées octet par octet.
  */
-import { etpToHours, hoursToEtp } from './capacity.js';
+import { etpToHours, fteHours, hoursToEtp } from './capacity.js';
 import { taskEtpByRole } from './kanban-data.js';
 import { EncodeError, parseNumberFr } from './write-encode.js';
 import { ESTIMATION_MAX_ETP } from './estimation.js';
@@ -21,7 +21,7 @@ import { ESTIMATION_MAX_ETP } from './estimation.js';
 export const HOURS_STEP = 0.5;
 /** Plus petite charge non nulle acceptée en saisie (en dessous, l'arrondi donnerait 0 h sans le dire). */
 export const MIN_HOURS = 0.25;
-/** Au plus 1 ETP par personne sur une tâche (décision utilisateur) : 35 h × jours / 7 sur la période. */
+/** Au plus 1 ETP par personne sur une tâche (décision utilisateur) : la capacité standard de la période. */
 export const MAX_ETP = 1;
 /** Sans période connue, borne de bon sens : 2 000 h par personne et par tâche. */
 export const MAX_HOURS = 2000;
@@ -31,18 +31,21 @@ export { ESTIMATION_APH, ESTIMATION_MAX_ETP, isEstimationAph, isEstimationPerson
 /** Heures arrondies à 0,5 h près. */
 export const roundHours = (h) => Math.round(h / HOURS_STEP) * HOURS_STEP;
 
-/** Nombre de jours calendaires de la période, ou null sans dates exploitables. */
-export function periodDays(start, end) {
-  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return null;
-  return end - start + 1;
-}
+/**
+ * Heures de 1 ETP sur la période de la tâche (capacity.js:fteHours), ou null sans dates exploitables ou sans aucun
+ * jour ouvré (mêmes règles que sans dates).
+ * @param {number|null} start
+ * @param {number|null} end
+ * @returns {number|null}
+ */
+export const periodFte = (start, end) => fteHours(start, end);
 
 /**
- * Heures maximales d'une personne : 1 ETP sur la période (5 h par jour calendaire) ; 2 000 h sans dates. La
- * personne estimation (estimation vrai) : ESTIMATION_MAX_ETP sur la période, 2 000 h sans dates.
+ * Heures maximales d'une personne : 1 ETP sur la période (fte : heures de 1 ETP, periodFte) ; 2 000 h sans période.
+ * La personne estimation (estimation vrai) : ESTIMATION_MAX_ETP sur la période, 2 000 h sans période.
  */
-export function maxHours(days, estimation = false) {
-  return days ? roundHours(etpToHours(estimation ? ESTIMATION_MAX_ETP : MAX_ETP, days)) : MAX_HOURS;
+export function maxHours(fte, estimation = false) {
+  return fte ? roundHours(etpToHours(estimation ? ESTIMATION_MAX_ETP : MAX_ETP, fte)) : MAX_HOURS;
 }
 
 /** teamId d'une entrée (entier > 0, ou chaîne de chiffres), sinon null. Même règle que charges.js. */
@@ -368,11 +371,11 @@ export function mergeCharges(baseRaw, mineRaw, theirsRaw) {
  * @param {string} value cellule à écrire
  * @param {string|null|undefined} before cellule d'avant (relue)
  * @param {(id:number) => boolean} teamExists
- * @param {number|null} [days] jours calendaires de la période de la tâche (après la modification)
+ * @param {number|null} [fte] heures de 1 ETP sur la période de la tâche après la modification (periodFte)
  * @param {(id:number) => boolean} [isEstimation] la personne est-elle la personne estimation (Team.aph) ?
  * @returns {string|null} raison du refus, ou null
  */
-export function chargesWriteProblem(value, before, teamExists, days = null, isEstimation = null) {
+export function chargesWriteProblem(value, before, teamExists, fte = null, isEstimation = null) {
   if (typeof value !== 'string') return 'texte JSON attendu';
   let data;
   try {
@@ -399,7 +402,7 @@ export function chargesWriteProblem(value, before, teamExists, days = null, isEs
       return 'heures : nombre fini positif ou nul attendu';
     if (roundHours(e.heures) !== e.heures) return 'heures : pas de 0,5 h attendu';
     const estimation = typeof isEstimation === 'function' && isEstimation(e.teamId) === true;
-    const max = maxHours(days, estimation);
+    const max = maxHours(fte, estimation);
     if (e.heures > max)
       return `heures : au plus ${max} h (${estimation ? ESTIMATION_MAX_ETP : MAX_ETP} ETP sur la période)`;
   }
@@ -419,16 +422,16 @@ export function roundEtp(etp) {
 }
 
 /** Valeur affichée dans la case de saisie (heures à une décimale ; ETP selon etpDecimals). */
-export function inputValue(heures, unit, days) {
+export function inputValue(heures, unit, fte) {
   if (unit === 'heures') return Math.round(heures * 10) / 10;
-  return days ? roundEtp(hoursToEtp(heures, days)) : null;
+  return fte ? roundEtp(hoursToEtp(heures, fte)) : null;
 }
 
 /**
  * Saisie d'une ligne → heures à stocker (arrondies à 0,5 h).
  * @param {string} text valeur saisie (« 1,5 »)
  * @param {'etp'|'heures'} unit
- * @param {number|null} days jours calendaires de la période
+ * @param {number|null} fte heures de 1 ETP sur la période (periodFte)
  * @param {number|null} [current] heures actuelles de la ligne : une saisie égale à la valeur affichée les
  *   conserve telles quelles (pas d'arrondi ni de dérive)
  * @param {{estimation?:boolean}} [opts] estimation : personne estimation (borne ESTIMATION_MAX_ETP, erreur
@@ -436,7 +439,7 @@ export function inputValue(heures, unit, days) {
  * @returns {{heures:number}|{error:'nombre'|'negatif'|'dates'|'vide'|'decimale'|'petit'|'max'|'maxEstimation',
  *   max?:number}}
  */
-export function hoursFromInput(text, unit, days, current = null, { estimation = false } = {}) {
+export function hoursFromInput(text, unit, fte, current = null, { estimation = false } = {}) {
   let n;
   try {
     n = parseNumberFr(text);
@@ -446,19 +449,19 @@ export function hoursFromInput(text, unit, days, current = null, { estimation = 
   }
   if (n === null) return { error: 'vide' };
   if (n < 0) return { error: 'negatif' };
-  if (unit !== 'heures' && !days) return { error: 'dates' };
-  if (current !== null && n === inputValue(current, unit, days)) return { heures: current };
+  if (unit !== 'heures' && !fte) return { error: 'dates' };
+  if (current !== null && n === inputValue(current, unit, fte)) return { heures: current };
   const k = n < 1 ? 100 : 10;
   if (unit !== 'heures' && Math.abs(n * k - Math.round(n * k)) > 1e-9) return { error: 'decimale' };
-  const exact = unit === 'heures' ? n : etpToHours(n, days);
+  const exact = unit === 'heures' ? n : etpToHours(n, fte);
   if (n > 0 && exact < MIN_HOURS) return { error: 'petit' };
-  const max = maxHours(days, estimation);
-  if (exact > max + 1e-9) return { error: estimation && days ? 'maxEstimation' : 'max', max };
+  const max = maxHours(fte, estimation);
+  if (exact > max + 1e-9) return { error: estimation && fte ? 'maxEstimation' : 'max', max };
   return { heures: roundHours(exact) };
 }
 
 /** ETP équivalent (null sans période). */
-export const etpOf = (heures, days) => (days ? hoursToEtp(heures, days) : null);
+export const etpOf = (heures, fte) => (fte ? hoursToEtp(heures, fte) : null);
 
 /**
  * Écart d'heures d'une ligne quand les dates changent (l'ETP fait foi : charges-rescale.js recalcule les heures).
@@ -471,15 +474,17 @@ export function hoursDelta(ref, heures) {
 }
 
 /**
- * Pied de la section : total en heures, ETP total et par profil (même calcul que taskEtpByRole), période.
+ * Pied de la section : total en heures, ETP total et par profil (même calcul que taskEtpByRole), période (fte :
+ * heures de 1 ETP, null sans période ; days : jours calendaires affichés, null sans dates).
  * @param {{rows:{teamId:number, heures:number}[]}} rows résultat de chargeRows
- * @returns {{hours:number, days:number|null, byRole:object|null}}
+ * @returns {{hours:number, fte:number|null, days:number|null, byRole:object|null}}
  */
 export function chargesSummary(model, rows, start, end) {
   const hours = Math.round(rows.reduce((s, r) => s + r.heures, 0) * 1e6) / 1e6;
-  const days = periodDays(start, end);
-  const byRole = days
+  const fte = periodFte(start, end);
+  const days = Number.isInteger(start) && Number.isInteger(end) && end >= start ? end - start + 1 : null;
+  const byRole = fte
     ? taskEtpByRole({ start, end, charges: rows.map((r) => ({ personId: r.teamId, heures: r.heures })) }, model)
     : null;
-  return { hours, days, byRole };
+  return { hours, fte, days, byRole };
 }

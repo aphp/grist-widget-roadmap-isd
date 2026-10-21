@@ -11,13 +11,21 @@ import {
   taskPaths,
 } from '../widget/js/core/kanban-data.js';
 import { feuille } from './fixtures/feuille.js';
+import { fteHours } from '../widget/js/core/capacity.js';
+import { dayOfIso } from '../widget/js/core/dates.js';
 
 const m = buildModel(feuille());
 const view = applyFilters(m, DEFAULT_FILTERS, DEFAULT_PREFS);
 const ids = (col) => col.tasks;
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
+// 1 ETP = capacité standard de la période : 1002 du 26 octobre au 8 novembre 2026 (10 jours ouvrés), 2010 du 2 au 6
+const F1002 = fteHours(dayOfIso('2026-10-26'), dayOfIso('2026-11-08'));
+const F2010 = fteHours(dayOfIso('2026-11-02'), dayOfIso('2026-11-06'));
 
-test('ETP : 70 h sur 14 jours = 1,0 ; null sans dates', () => {
-  assert.equal(taskEtp(m.tasks.get(1002)), 1);
+test('ETP : 70 h ÷ capacité standard de la période (≈ 1,2) ; null sans dates', () => {
+  assert.equal(taskEtp(m.tasks.get(1002)), 70 / F1002);
+  // Période sans jour ouvré (un samedi et un dimanche) : comme sans dates
+  assert.equal(taskEtp({ ...m.tasks.get(1002), start: dayOfIso('2026-11-07'), end: dayOfIso('2026-11-08') }), null);
   assert.equal(taskEtp(m.tasks.get(2001)), null);
   assert.equal(taskEtp(m.tasks.get(1000)), null);
   assert.equal(taskEtp(m.tasks.get(1001)), 0);
@@ -97,11 +105,11 @@ test('priorité : celle de la tâche, sinon du chantier, sinon du projet ; colon
   );
 });
 
-test('ETP par rôle : 1002 → DE 1,0 ; 2010 → DA 0,56 (charge de personne inconnue ignorée)', () => {
+test('ETP par rôle : 1002 → DE 1,2 ; 2010 → DA 0,48 (charge de personne inconnue ignorée)', () => {
   const a = taskEtpByRole(m.tasks.get(1002), m);
-  assert.deepEqual(a, { total: 1, PO: 0, DA: 0, DS: 0, DE: 1, Mgmt: 0, Autre: 0 });
+  assert.deepEqual(a, { total: 70 / F1002, PO: 0, DA: 0, DS: 0, DE: 70 / F1002, Mgmt: 0, Autre: 0 });
   const b = taskEtpByRole(m.tasks.get(2010), m);
-  assert.ok(Math.abs(b.DA - 14 / ((35 * 5) / 7)) < 1e-9);
+  near(b.DA, 14 / F2010);
   assert.equal(b.total, b.DA);
   assert.equal(b.DE, 0);
 });
@@ -116,12 +124,13 @@ test('ETP par rôle : personne hors ISD ou sans rôle → « Autre » ; null san
     ],
   };
   const r = taskEtpByRole(task, m);
-  assert.equal(r.DE, 35 / ((35 * 14) / 7));
+  assert.equal(r.DE, 35 / F1002);
   assert.equal(r.Autre, 2 * r.DE); // Dora (sans rôle) et Carl (DS inactif, donc hors ISD)
   assert.equal(r.DS, 0);
   assert.equal(r.total, 3 * r.DE);
   assert.equal(taskEtpByRole(m.tasks.get(2001), m), null);
   assert.equal(taskEtpByRole(m.tasks.get(3000), m), null);
+  assert.equal(taskEtpByRole({ ...task, start: dayOfIso('2026-11-07'), end: dayOfIso('2026-11-08') }, m), null);
   assert.equal(taskEtpByRole(m.tasks.get(1001), m).total, 0);
 });
 
@@ -157,7 +166,7 @@ test('ETP par rôle : Management de l’ISD → « Mgmt » ; Management d’un a
   };
   assert.equal(m.people.get(6).roleText, 'Management');
   const r = taskEtpByRole(task, m);
-  const unit = 35 / ((35 * 14) / 7);
+  const unit = 35 / F1002;
   assert.equal(r.Mgmt, unit);
   assert.equal(r.Autre, 2 * unit);
   assert.equal(r.DE, unit);
@@ -182,5 +191,5 @@ test('ventilation affichée : parts qui s’afficheraient « 0,0 » masquées, o
   ]);
   assert.deepEqual(etpRoleParts({ total: 0.02, PO: 0.02, DA: 0, DS: 0, DE: 0, Mgmt: 0, Autre: 0 }), []);
   assert.deepEqual(etpRoleParts(null), []);
-  assert.deepEqual(etpRoleParts(taskEtpByRole(m.tasks.get(1002), m)), [{ key: 'DE', text: '1,0' }]);
+  assert.deepEqual(etpRoleParts(taskEtpByRole(m.tasks.get(1002), m)), [{ key: 'DE', text: '1,2' }]);
 });

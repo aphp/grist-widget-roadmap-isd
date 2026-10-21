@@ -14,7 +14,8 @@ import { chantierInScope } from '../widget/js/core/chantier-form.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS } from '../widget/js/core/filters.js';
 import { tableRows } from '../widget/js/core/table-data.js';
 import { EXPECTED_TYPES, WRITABLE, WriteRefused, createWriter } from '../widget/js/core/grist-writer.js';
-import { etpToHours } from '../widget/js/core/capacity.js';
+import { etpToHours, fteHours } from '../widget/js/core/capacity.js';
+import { roundHours } from '../widget/js/core/charges-edit.js';
 import { personChip, personGroups } from '../widget/js/views/task-form.js';
 import { contributeursControl, responsableControl } from '../widget/js/views/chantier-form.js';
 import { person, roleBadge } from '../widget/js/views/detail.js';
@@ -195,8 +196,8 @@ const reason = async (p) => {
   return null;
 };
 
-/** 0,5 ETP sur 5 jours calendaires (12,5 h). */
-const HALF = etpToHours(0.5, 5);
+/** 0,5 ETP du vendredi 4 au mardi 8 octobre 2024 (3 jours ouvrés, capacité standard), à 0,5 h près. */
+const HALF = roundHours(etpToHours(0.5, fteHours(20000, 20004)));
 
 test('writer : Management ISD assigné, chargé, Responsable et contributeur, accepté', async () => {
   const { g, writer } = setup();
@@ -221,7 +222,7 @@ test('writer : Management ISD assigné, chargé, Responsable et contributeur, ac
       Responsable: 6,
       dateDebut: 20000 * 86400,
       dateEcheance: 20004 * 86400,
-      charges: '[{"teamId":6,"heures":12.5}]',
+      charges: `[{"teamId":6,"heures":${HALF}}]`,
     },
   ]);
   assert.deepEqual(g.batches[1][0][3], { Responsable: 6, Contributeurs: ['L', 6] });

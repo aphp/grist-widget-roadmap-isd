@@ -31,6 +31,15 @@
   line-height: var(--line-height-tight);
   color: var(--color-title);
 }
+.stats__card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+.stats__card-head > .stats__card-title {
+  margin: 0;
+}
 .stats__sub,
 .stats__empty {
   margin: calc(-1 * var(--space-2)) 0 var(--space-3);

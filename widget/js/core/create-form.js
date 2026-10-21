@@ -11,7 +11,7 @@ import {
   validateChantier,
 } from './chantier-form.js';
 import { dateMaxError, overMaxDay } from './dates.js';
-import { chargeRows, isEstimationPerson, maxHours, periodDays, readChargesCell } from './charges-edit.js';
+import { chargeRows, isEstimationPerson, maxHours, periodFte, readChargesCell } from './charges-edit.js';
 import { TITLE_MAX, chantierOf } from './task-form.js';
 
 /** Champs de la fenêtre « Nouvelle tâche » : obligatoires d'abord, puis « Plus d'options ». */
@@ -225,9 +225,9 @@ export function newChargesError(draft, model) {
 function overCapRows(draft, model) {
   const cell = readChargesCell(draft.charges);
   if (!cell.ok) return [];
-  const days = periodDays(draft.dateDebut, draft.dateEcheance);
+  const fte = periodFte(draft.dateDebut, draft.dateEcheance);
   return chargeRows(cell.entries)
-    .rows.map((r) => ({ teamId: r.teamId, heures: r.heures, max: maxHours(days, isEstimationPerson(model, r.teamId)) }))
+    .rows.map((r) => ({ teamId: r.teamId, heures: r.heures, max: maxHours(fte, isEstimationPerson(model, r.teamId)) }))
     .filter((r) => r.heures > r.max)
     .map(({ teamId, max }) => ({ teamId, max }));
 }

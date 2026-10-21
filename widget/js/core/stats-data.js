@@ -1,6 +1,6 @@
 /** Statistiques : qualité des données et agrégations sur les tâches visibles. Fonctions pures (spec §4.4). */
 import { monthKey, monthRange, monthsFrom } from './dates.js';
-import { hoursToEtp, spreadHours } from './capacity.js';
+import { fteHours, hoursToEtp, spreadHours } from './capacity.js';
 import { ETP_SPLIT, etpRoleKey, priorityText, taskPeople, taskPriority } from './kanban-data.js';
 import { breadcrumb, detailLevel } from './detail-data.js';
 import { label, statusLabel } from '../labels.js';
@@ -180,7 +180,7 @@ export const ROLE_WINDOW = Object.freeze({ before: 3, after: 8 });
  * Charge par profil et par mois, en ETP moyen du mois : les heures de chaque charge (Tasks.charges) sont
  * réparties uniformément sur les jours calendaires de la tâche (spreadHours), cumulées par profil
  * (etpRoleKey : PO, DA, DS, DE, Mgmt = Management de l'équipe ISD, Autre), puis converties avec
- * 1 ETP = 35 h par semaine calendaire du mois (hoursToEtp). Tâches sans dates valides ignorées ; vide sans
+ * 1 ETP = capacité standard du mois (fteHours). Tâches sans dates valides ignorées ; vide sans
  * aucune charge dans la fenêtre.
  * @param {number} today jour courant
  * @returns {{month:string, total:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, Autre:number}[]}
@@ -204,10 +204,11 @@ export function roleLoad(model, taskIds, today, { before, after } = ROLE_WINDOW)
   }
   if (!any) return [];
   return window.map((month) => {
-    const { n } = monthRange(month);
+    const { start, end } = monthRange(month);
+    const fte = fteHours(start, end);
     const row = { month, total: 0 };
     for (const k of ETP_SPLIT) {
-      row[k] = hoursToEtp(hours.get(month)[k], n);
+      row[k] = hoursToEtp(hours.get(month)[k], fte);
       row.total += row[k];
     }
     return row;

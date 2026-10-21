@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildModel } from '../widget/js/core/model.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS, loadPrefs } from '../widget/js/core/filters.js';
 import { dayOfIso, isoOfDay } from '../widget/js/core/dates.js';
-import { hoursToEtp, workdaysInYear } from '../widget/js/core/capacity.js';
+import { fteHours, hoursToEtp, workdaysInYear } from '../widget/js/core/capacity.js';
 import {
   PORTFOLIO_MONTHS,
   PORTFOLIO_TABS,
@@ -103,14 +103,19 @@ test('début par défaut : premier jour du mois courant ; nombre de semaines de 
   assert.equal(weekCount(d('2026-11-04'), 6), 27);
 });
 
-test('charge hebdomadaire : la tâche 1002 donne 35 h la semaine du 2 novembre 2026, soit 1,0 ETP DE', () => {
+test('charge hebdomadaire : la tâche 1002 donne 35 h la semaine du 2 novembre 2026, soit 1,2 ETP DE', () => {
   const w = weeklyLoadByProfile(m, view.taskIds, d('2026-10-26'), 3);
   assert.deepEqual(
     w.map((x) => isoOfDay(x.weekStart)),
     ['2026-10-26', '2026-11-02', '2026-11-09'],
   );
   near(w[1].DE, 35);
-  assert.equal(hoursToEtp(w[1].DE, 7), 1);
+  // 1 ETP de la semaine = capacité standard (5 jours ouvrés)
+  assert.equal(w[1].fte, fteHours(d('2026-11-02'), d('2026-11-08')));
+  near(w[1].fte, 35 * avail);
+  near(hoursToEtp(w[1].DE, w[1].fte), 1 / avail);
+  // Semaine du 11 novembre (férié) : 4 jours ouvrés
+  near(w[2].fte, 28 * avail);
   near(w[0].DE, 35);
   assert.equal(w[2].DE, 0);
   near(w[1].DA, 14); // tâche 2010 (Eve DA), la charge de la personne inconnue 99 est ignorée
@@ -164,6 +169,7 @@ test('synthèse de la période : pic, semaines en dépassement / tension, moyenn
   assert.deepEqual([t.DE.peak.rate, isoOfDay(t.DE.peak.weekStart), t.DE.peak.level], [null, '2026-11-02', 'over']);
   near(t.DE.avgLoaded.load, 35);
   near(t.DE.avgLoaded.capacity, (35 * avail) / 2);
+  near(t.DE.avgLoaded.fte, 35 * avail); // semaines du 26 octobre et du 2 novembre, 5 jours ouvrés chacune
   // DA : 14 h pour 23,1 h la semaine du 2 novembre → 61 %, normal
   assert.deepEqual([t.DA.loadedWeeks, t.DA.overWeeks, t.DA.tensionWeeks, t.DA.level], [1, 0, 0, 'ok']);
   assert.equal(isoOfDay(t.DA.peak.weekStart), '2026-11-02');

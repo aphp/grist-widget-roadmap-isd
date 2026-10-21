@@ -322,53 +322,53 @@ test('estimation : plusieurs titulaires actifs de l’APH, tous exemptés (saisi
 });
 
 test('estimation : saisie au-delà de 1 ETP acceptée jusqu’à 50 ETP sur la période ; les autres restent à 1 ETP', () => {
-  // 14 jours : 1 ETP = 70 h ; 50 ETP = 3 500 h
+  // Période où 1 ETP = 70 h (fte, periodFte) ; 50 ETP = 3 500 h
   assert.equal(ESTIMATION_MAX_ETP, 50);
-  assert.equal(maxHours(14), 70);
-  assert.equal(maxHours(14, true), 3500);
+  assert.equal(maxHours(70), 70);
+  assert.equal(maxHours(70, true), 3500);
   assert.equal(maxHours(null, true), MAX_HOURS);
   const est = { estimation: true };
-  assert.deepEqual(hoursFromInput('3', 'etp', 14, null, est), { heures: 210 });
-  assert.deepEqual(hoursFromInput('3', 'etp', 14), { error: 'max', max: 70 });
-  assert.deepEqual(hoursFromInput('50', 'etp', 14, null, est), { heures: 3500 });
-  assert.deepEqual(hoursFromInput('50,1', 'etp', 14, null, est), { error: 'maxEstimation', max: 3500 });
-  assert.deepEqual(hoursFromInput('3501', 'heures', 14, null, est), { error: 'maxEstimation', max: 3500 });
+  assert.deepEqual(hoursFromInput('3', 'etp', 70, null, est), { heures: 210 });
+  assert.deepEqual(hoursFromInput('3', 'etp', 70), { error: 'max', max: 70 });
+  assert.deepEqual(hoursFromInput('50', 'etp', 70, null, est), { heures: 3500 });
+  assert.deepEqual(hoursFromInput('50,1', 'etp', 70, null, est), { error: 'maxEstimation', max: 3500 });
+  assert.deepEqual(hoursFromInput('3501', 'heures', 70, null, est), { error: 'maxEstimation', max: 3500 });
   // Sans dates : 2 000 h pour tous, estimation comprise
   assert.deepEqual(hoursFromInput('2000', 'heures', null, null, est), { heures: 2000 });
   assert.deepEqual(hoursFromInput('2001', 'heures', null, null, est), { error: 'max', max: 2000 });
   // Bloc « Personnes » (lineInput)
   const draft = { assignees: [1, 2], charges: '' };
-  assert.deepEqual(lineInput(draft, 1, '3', 'etp', 14, est), {
+  assert.deepEqual(lineInput(draft, 1, '3', 'etp', 70, est), {
     charges: '[{"teamId":1,"heures":210}]',
     heures: 210,
     etp: 3,
   });
-  assert.deepEqual(lineInput(draft, 2, '3', 'etp', 14), { error: { error: 'max', max: 70 } });
+  assert.deepEqual(lineInput(draft, 2, '3', 'etp', 70), { error: { error: 'max', max: 70 } });
 });
 
 test('estimation : contrôle du writer (chargesWriteProblem), exemption seulement pour la personne désignée', () => {
   const team = () => true;
   const est = (id) => id === 1;
   const v = '[{"teamId":1,"heures":210},{"teamId":2,"heures":70}]';
-  assert.equal(chargesWriteProblem(v, '', team, 14, est), null);
-  assert.equal(chargesWriteProblem(v, '', team, 14), 'heures : au plus 70 h (1 ETP sur la période)');
+  assert.equal(chargesWriteProblem(v, '', team, 70, est), null);
+  assert.equal(chargesWriteProblem(v, '', team, 70), 'heures : au plus 70 h (1 ETP sur la période)');
   assert.equal(
-    chargesWriteProblem('[{"teamId":2,"heures":210}]', '', team, 14, est),
+    chargesWriteProblem('[{"teamId":2,"heures":210}]', '', team, 70, est),
     'heures : au plus 70 h (1 ETP sur la période)',
   );
   assert.equal(
-    chargesWriteProblem('[{"teamId":1,"heures":3500.5}]', '', team, 14, est),
+    chargesWriteProblem('[{"teamId":1,"heures":3500.5}]', '', team, 70, est),
     'heures : au plus 3500 h (50 ETP sur la période)',
   );
   // Un prédicat qui ne répond pas exactement vrai n'exempte personne
   assert.match(
-    chargesWriteProblem(v, '', team, 14, () => 'oui'),
+    chargesWriteProblem(v, '', team, 70, () => 'oui'),
     /1 ETP/,
   );
 });
 
 test('estimation : le writer accepte 3 ETP pour la personne estimation, refuse 3 ETP pour une autre', async () => {
-  // Période relue de la tâche : 14 jours (1 ETP = 70 h)
+  // Période relue de la tâche : 11 au 24 avril 1970 (1 ETP ≈ 57,8 h, fteHours)
   const { g, writer } = setup();
   const period = { start: 100, end: 113 };
   const before = { charges: '[{"teamId":1,"heures":70}]' };

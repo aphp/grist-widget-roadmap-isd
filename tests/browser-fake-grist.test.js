@@ -15,6 +15,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
+import { fteHours } from '../widget/js/core/capacity.js';
 
 const CHROME = ['google-chrome', 'chromium', 'chromium-browser'].find(
   (c) => spawnSync('which', [c], { stdio: 'ignore' }).status === 0,
@@ -31,6 +32,14 @@ let PORT;
 let CDP;
 let BASE;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Heures de 1 ETP du début à l'échéance (dates ISO) : capacité standard, comme le widget (capacity.js:fteHours).
+ * Du 2 au 15 novembre 2026 : 52 h ; au 8 : 28,9 h ; au 21 : 80,9 h ; au 29 : 109,8 h.
+ */
+const fteOf = (start, end) =>
+  fteHours(Date.parse(`${start}T00:00:00Z`) / 864e5, Date.parse(`${end}T00:00:00Z`) / 864e5);
+/** Heures de `etp` ETP sur la période, à 0,5 h près. */
+const etpHours = (etp, start, end) => Math.round(etp * fteOf(start, end) * 2) / 2;
 let server;
 let chrome;
 let profile;
@@ -513,31 +522,38 @@ test(
     await type(`tf-ch-${person}`, '1,5');
     assert.match(
       await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`),
-      /1 ETP maximum par personne \(soit 70 h sur la période\)/,
+      /1 ETP maximum par personne \(soit 52 h sur la période\)/,
     );
     assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
     await type(`tf-ch-${person}`, '1');
     assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
-    assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 70 h');
-    assert.match(await w(`return D.getElementById('tf-charges-foot').textContent;`), /Total 70 h · 1,0 ETP/);
-    // Passage en heures : 70 h = 1,0 ETP ; l'unité est mémorisée
+    // 1 ETP du 2 au 15 novembre = capacité standard de la période (9 jours ouvrés, 11 novembre férié)
+    assert.equal(etpHours(1, '2026-11-02', '2026-11-15'), 52);
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 52 h');
+    assert.match(await w(`return D.getElementById('tf-charges-foot').textContent;`), /Total 52 h · 1,0 ETP/);
+    // Passage en heures : 52 h = 1,0 ETP ; l'unité est mémorisée
     await w(`const r = D.getElementById('tf-charges-unit-heures'); r.checked = true;
       r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
-    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '70');
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '52');
     assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 1,0 ETP');
     assert.equal(await w(`return localStorage.getItem('roadmap-isd.chargesUnit');`), 'heures');
-    // Dates changées : l'ETP fait foi (1 ETP sur 20 jours = 100 h), écart d'heures signalé
+    // Dates changées : l'ETP fait foi (1 ETP du 2 au 21 novembre = 81 h), écart d'heures signalé
     await setDate('dateEcheance', '2026-11-21');
-    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '100');
+    assert.equal(etpHours(1, '2026-11-02', '2026-11-21'), 81);
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '81');
     assert.match(
       await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`),
-      /Dates modifiées : 70 h → 100 h \(ETP conservé\)/,
+      /Dates modifiées : 52 h → 81 h \(ETP conservé\)/,
     );
     // Sans début : la saisie en ETP est désactivée, en heures elle reste possible
     await w(`const r = D.getElementById('tf-charges-unit-etp'); r.checked = true;
       r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
     await setDate('dateDebut', '');
     assert.match(await w(`return D.getElementById('tf-charges-nodates').textContent;`), /Indiquez début et échéance/);
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').disabled;`), true);
+    // Le samedi 21 seul : aucun jour ouvré, traité comme sans dates (message propre)
+    await setDate('dateDebut', '2026-11-21');
+    assert.match(await w(`return D.getElementById('tf-charges-nodates').textContent;`), /aucun jour ouvré/);
     assert.equal(await w(`return D.getElementById('tf-ch-${person}').disabled;`), true);
     await setDate('dateDebut', '2026-11-02');
     assert.equal(await w(`return W.__writes.length;`), 0);
@@ -556,7 +572,7 @@ test(
     await until(`W.__writes.length === 2`);
     const cells = await w(`return W.__writes[1].args[0][0][3];`);
     assert.equal(await w(`return W.__writes[1].args[0][0][2];`), id);
-    assert.equal(cells.charges, `[${[...theirs, JSON.stringify({ teamId: person, heures: 100 })].join(',')}]`);
+    assert.equal(cells.charges, `[${[...theirs, JSON.stringify({ teamId: person, heures: 81 })].join(',')}]`);
     assert.ok(cells.assignees.includes(person));
     assert.equal(cells.dateDebut, Date.UTC(2026, 10, 2) / 1000);
     assert.equal(cells.dateEcheance, Date.UTC(2026, 10, 21) / 1000);
@@ -564,8 +580,8 @@ test(
 );
 
 /**
- * Fiche d'une tâche de 14 jours (2 au 15 novembre 2026) chargée de 70 h pour une personne ISD (1 ETP), posée
- * ailleurs avant l'ouverture ; écritures remises à zéro. Rend { id, person }.
+ * Fiche d'une tâche de 14 jours (2 au 15 novembre 2026) chargée de 52 h pour une personne ISD (1 ETP standard),
+ * posée ailleurs avant l'ouverture ; écritures remises à zéro. Rend { id, person }.
  */
 async function openCharged14() {
   await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
@@ -576,7 +592,7 @@ async function openCharged14() {
   await w(`D.getElementById('btn-form-cancel').click(); return true;`);
   await until(`!D.getElementById('task-form')`);
   const day = (y, m, d) => Date.UTC(y, m - 1, d) / 1000;
-  const charges = JSON.stringify([{ teamId: person, heures: 70 }]);
+  const charges = JSON.stringify([{ teamId: person, heures: etpHours(1, '2026-11-02', '2026-11-15') }]);
   await w(`await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { assignees: ['L', ${person}], charges: ${JSON.stringify(charges)}, type: 'tache', dateDebut: ${day(2026, 11, 2)}, dateEcheance: ${day(2026, 11, 15)} }]]);
     W.__writes.length = 0; return true;`);
   // La tâche seule (recherche sur son titre), modèle relu (dates nouvelles sur la carte) avant d'ouvrir la fiche
@@ -595,14 +611,15 @@ const setFormDate = (f, iso) =>
 
 test('fiche : dates allongées, ETP gardé, heures recalculées et envoyées', { skip: SKIP }, async () => {
   const { id, person } = await openCharged14();
-  assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 70 h');
-  // Échéance + 14 jours : 1 ETP sur 28 jours = 140 h, écart affiché avant l'envoi
+  assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 52 h');
+  // Échéance + 14 jours : 1 ETP du 2 au 29 novembre = 110 h, écart affiché avant l'envoi
+  assert.equal(etpHours(1, '2026-11-02', '2026-11-29'), 110);
   await setFormDate('dateEcheance', '2026-11-29');
-  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 140 h'`);
+  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 110 h'`);
   assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '1,0');
   assert.match(
     await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`),
-    /Dates modifiées : 70 h → 140 h \(ETP conservé\)/,
+    /Dates modifiées : 52 h → 110 h \(ETP conservé\)/,
   );
   assert.equal(await w(`return W.__writes.length;`), 0);
   await w(`D.getElementById('btn-form-save').click(); return true;`);
@@ -613,15 +630,35 @@ test('fiche : dates allongées, ETP gardé, heures recalculées et envoyées', {
   assert.deepEqual([kind, table, rowId], ['UpdateRecord', 'Tasks', id]);
   assert.deepEqual(Object.keys(cells).sort(), ['charges', 'dateEcheance']);
   assert.equal(cells.dateEcheance, Date.UTC(2026, 10, 29) / 1000);
-  assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 140 }]));
+  assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 110 }]));
+});
+
+test('fiche : décalage à durée égale de juin à juillet, ETP gardé, heures recalculées', { skip: SKIP }, async () => {
+  const { id, person } = await openCharged14();
+  // Deux semaines de juin 2027 puis les deux mêmes jours de semaine en juillet : même durée, capacité plus faible
+  await setFormDate('dateDebut', '2027-06-07');
+  await setFormDate('dateEcheance', '2027-06-20');
+  const june = etpHours(1, '2027-06-07', '2027-06-20');
+  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= ${june} h'`);
+  await setFormDate('dateDebut', '2027-07-05');
+  await setFormDate('dateEcheance', '2027-07-18');
+  const july = etpHours(1, '2027-07-05', '2027-07-18');
+  assert.ok(july < june);
+  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= ${String(july).replace('.', ',')} h'`);
+  assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '1,0');
+  await w(`D.getElementById('btn-form-save').click(); return true;`);
+  await until(`W.__writes.length === 1`);
+  const [, , rowId, cells] = (await writes())[0][0];
+  assert.equal(rowId, id);
+  assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: july }]));
 });
 
 test('fiche : dates remises à l’identique, charges non envoyées', { skip: SKIP }, async () => {
   const { id, person } = await openCharged14();
   await setFormDate('dateEcheance', '2026-11-29');
-  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 140 h'`);
+  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 110 h'`);
   await setFormDate('dateEcheance', '2026-11-15');
-  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 70 h'`);
+  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 52 h'`);
   assert.doesNotMatch(await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`), /Dates modifiées/);
   // Une autre modification pour avoir quelque chose à enregistrer : seule elle part
   await type('tf-titre', 'Titre après dates rétablies');
@@ -632,16 +669,47 @@ test('fiche : dates remises à l’identique, charges non envoyées', { skip: SK
   assert.deepEqual(Object.keys(cells), ['titre']);
 });
 
+test(
+  'pastilles « i » de l’ETP : fiche, statistiques et plan de charge (nom, description, visibles au focus, dans la fenêtre)',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
+    await openForm();
+    const tip = async (id) => {
+      assert.equal(await w(`return D.querySelectorAll('#${id}').length;`), 1);
+      const btn = `D.querySelector('[aria-describedby="${id}"]')`;
+      assert.equal(await w(`return ${btn}.getAttribute('aria-label');`), 'À propos de l’ETP');
+      assert.match(await w(`return D.getElementById('${id}').textContent;`), /7 h par jour ouvré.*mai \(80 %\)/);
+      await w(`${btn}.scrollIntoView({ block: 'center' }); ${btn}.focus(); return true;`);
+      await until(`getComputedStyle(D.getElementById('${id}')).opacity === '1'`);
+      assert.equal(
+        await w(
+          `const r = D.getElementById('${id}').getBoundingClientRect(); return r.left >= 0 && r.right <= D.documentElement.clientWidth;`,
+        ),
+        true,
+      );
+    };
+    await tip('tip-fte-tf');
+    await w(`D.getElementById('btn-form-cancel').click(); return true;`);
+    await until(`!D.getElementById('task-form')`);
+    await w(`D.getElementById('btn-detail-close').click(); D.getElementById('tab-stats').click(); return true;`);
+    await until(`D.getElementById('tip-fte-stats') && D.getElementById('tip-fte-plan')`);
+    await tip('tip-fte-stats');
+    await tip('tip-fte-plan');
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
 /**
- * Fiche de openCharged14 ; ailleurs, la charge de la personne passe à 50 h (sauf remote: false), puis une sous-tâche
+ * Fiche de openCharged14 ; ailleurs, la charge de la personne passe à 36 h (sauf remote: false), puis une sous-tâche
  * créée depuis la fiche fait relire la ligne (refreshFromModel). before : étape faite dans la fiche avant la
  * relecture. Rend { id, person } ; une écriture (la sous-tâche) dans __writes.
  */
-async function openRebased50({
+async function openRebased36({
   before = null,
   remote = true,
-  expect = '= 50 h',
-  entries = (person) => [{ teamId: person, heures: 50 }],
+  expect = '= 36 h',
+  entries = (person) => [{ teamId: person, heures: 36 }],
   card = '0,7 ETP',
 } = {}) {
   const { id, person } = await openCharged14();
@@ -667,22 +735,25 @@ async function openRebased50({
   return { id, person, other };
 }
 
-/** Échéance + 14 jours dans la fiche (70 h → 140 h pour la personne non saisie). */
+/** Échéance + 14 jours dans la fiche (52 h → 110 h pour la personne non saisie). */
 async function lengthen(person) {
   await setFormDate('dateEcheance', '2026-11-29');
-  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 140 h'`);
+  await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 110 h'`);
 }
+/** Heures relues sur le 2 au 15 novembre, recalculées sur le 2 au 29 (ETP gardé). */
+const toNov29 = (h) => Math.round((h / fteOf('2026-11-02', '2026-11-15')) * fteOf('2026-11-02', '2026-11-29') * 2) / 2;
 
 test(
   'fiche : dates allongées, puis charges relues avec une personne ajoutée ailleurs : elle est gardée (rien perdu)',
   { skip: SKIP },
   async () => {
-    // Ailleurs : la personne passe à 50 h et une autre est ajoutée (7 h) ; ici les dates avaient été allongées
-    const { id, person, other } = await openRebased50({
+    // Ailleurs : la personne passe à 36 h et une autre est ajoutée (7 h) ; ici les dates avaient été allongées
+    assert.deepEqual([toNov29(36), toNov29(7)], [76, 15]);
+    const { id, person, other } = await openRebased36({
       before: lengthen,
-      expect: '= 100 h',
+      expect: '= 76 h',
       entries: (p, o) => [
-        { teamId: p, heures: 50 },
+        { teamId: p, heures: 36 },
         { teamId: o, heures: 7 },
       ],
       card: '0,8 ETP',
@@ -691,12 +762,12 @@ test(
     await until(`W.__writes.length === 2`);
     const [, , rowId, cells] = (await writes())[1][0];
     assert.equal(rowId, id);
-    // 0,1 ETP de l'autre personne, ajoutée ailleurs, gardé et recalculé sur 28 jours (14 h)
+    // ETP de l'autre personne, ajoutée ailleurs, gardé et recalculé sur la période allongée (7 h → 15 h)
     assert.equal(
       cells.charges,
       JSON.stringify([
-        { teamId: person, heures: 100 },
-        { teamId: other, heures: 14 },
+        { teamId: person, heures: 76 },
+        { teamId: other, heures: 15 },
       ]),
     );
   },
@@ -708,14 +779,14 @@ test(
   async () => {
     const typeHalf = async (person) => {
       await type(`tf-ch-${person}`, '0,5');
-      await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 35 h'`);
+      await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 26 h'`);
     };
-    const { person } = await openRebased50({ before: typeHalf, expect: '= 35 h' });
+    const { person } = await openRebased36({ before: typeHalf, expect: '= 26 h' });
     await w(`D.getElementById('btn-form-save').click(); return true;`);
     await until(`D.querySelector('.tf-conflict')`);
     assert.equal(await w(`return W.__writes.length;`), 1);
     assert.ok(await w(`return Boolean(D.getElementById('tf-cf-charges-mine'));`));
-    assert.match(await w(`return D.querySelector('.tf-conflict').textContent;`), /50/);
+    assert.match(await w(`return D.querySelector('.tf-conflict').textContent;`), /36/);
     assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '0,5');
   },
 );
@@ -724,7 +795,7 @@ test('fiche : valeur affichée ressaisie, puis charges relues : la ligne suit la
   const retype = async (person) => {
     await type(`tf-ch-${person}`, '1,0');
   };
-  await openRebased50({ before: retype, expect: '= 50 h' });
+  await openRebased36({ before: retype, expect: '= 36 h' });
 });
 
 /**
@@ -752,12 +823,19 @@ test(
   'fiche : ETP saisi, dates raccourcies, échéance changée ailleurs, « la leur » : heures recalculées sur les dates envoyées',
   { skip: SKIP },
   async () => {
-    // 0,8 ETP saisi (56 h sur 14 jours), 7 jours ici (28 h) ; « la leur » : 28 jours, 0,8 ETP = 112 h (pas 28 h)
+    // 0,8 ETP saisi (41,5 h du 2 au 15), 23 h jusqu'au 8 ici ; « la leur » : jusqu'au 29, 0,8 ETP = 88 h (pas 23 h)
+    assert.deepEqual(
+      [etpHours(0.8, '2026-11-02', '2026-11-15'), etpHours(0.8, '2026-11-02', '2026-11-08')],
+      [41.5, 23],
+    );
     const { id, person } = await shortenAgainstTheirs('0,8');
     await until(`W.__writes.length === 1`);
     const [, , rowId, cells] = (await writes())[0][0];
     assert.equal(rowId, id);
-    assert.deepEqual(cells, { charges: JSON.stringify([{ teamId: person, heures: 112 }]) });
+    assert.deepEqual(cells, {
+      charges: JSON.stringify([{ teamId: person, heures: etpHours(0.8, '2026-11-02', '2026-11-29') }]),
+    });
+    assert.equal(etpHours(0.8, '2026-11-02', '2026-11-29'), 88);
   },
 );
 
@@ -765,7 +843,7 @@ test(
   'fiche : charge non saisie, dates raccourcies, « la leur » pour l’échéance : la Feuille reste telle quelle',
   { skip: SKIP },
   async () => {
-    // La ligne suit la Feuille (70 h sur 28 jours) : jamais les 35 h calculées pour 7 jours
+    // La ligne suit la Feuille (52 h jusqu'au 29) : jamais les 29 h calculées jusqu'au 8
     await shortenAgainstTheirs();
     await until(`!D.getElementById('task-form')`);
     assert.equal(await w(`return W.__writes.length;`), 0);
@@ -776,26 +854,26 @@ test(
   'fiche : dates allongées, puis charges relues : la personne non saisie repart des nouvelles heures',
   { skip: SKIP },
   async () => {
-    // 50 h sur 14 jours relues après l'allongement à 28 jours : 100 h (et non les 140 h d'avant, sans conflit)
-    const { id, person } = await openRebased50({ before: lengthen, expect: '= 100 h' });
+    // 36 h du 2 au 15 relues après l'allongement au 29 : 76 h (et non les 110 h d'avant, sans conflit)
+    const { id, person } = await openRebased36({ before: lengthen, expect: '= 76 h' });
     await w(`D.getElementById('btn-form-save').click(); return true;`);
     await until(`W.__writes.length === 2`);
     const [, , rowId, cells] = (await writes())[1][0];
     assert.equal(rowId, id);
-    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 100 }]));
+    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 76 }]));
     assert.equal(cells.dateEcheance, Date.UTC(2026, 10, 29) / 1000);
   },
 );
 
 test(
-  'fiche : dates allongées, puis relecture sans changement des charges : 140 h gardées',
+  'fiche : dates allongées, puis relecture sans changement des charges : 110 h gardées',
   { skip: SKIP },
   async () => {
-    const { person } = await openRebased50({ before: lengthen, remote: false, expect: '= 140 h' });
+    const { person } = await openRebased36({ before: lengthen, remote: false, expect: '= 110 h' });
     await w(`D.getElementById('btn-form-save').click(); return true;`);
     await until(`W.__writes.length === 2`);
     const [, , , cells] = (await writes())[1][0];
-    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 140 }]));
+    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 110 }]));
   },
 );
 
@@ -803,9 +881,9 @@ test(
   'fiche : charges relues, puis date de clôture seule : aucun recalcul, charges non envoyées',
   { skip: SKIP },
   async () => {
-    const { id, person } = await openRebased50();
+    const { id, person } = await openRebased36();
     await setFormDate('dateCloture', '2026-11-20');
-    assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 50 h');
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`), '= 36 h');
     await w(`D.getElementById('btn-form-save').click(); return true;`);
     await until(`W.__writes.length === 2`);
     const [, , rowId, cells] = (await writes())[1][0];
@@ -818,16 +896,16 @@ test(
   'fiche : charges relues, puis dates allongées : recalcul depuis les nouvelles heures',
   { skip: SKIP },
   async () => {
-    const { id, person } = await openRebased50();
-    // 50 h sur 14 jours, échéance + 14 jours : 100 h (et non 140 h depuis les 70 h d'avant)
+    const { id, person } = await openRebased36();
+    // 36 h du 2 au 15, échéance + 14 jours : 76 h (et non 110 h depuis les 52 h d'avant)
     await setFormDate('dateEcheance', '2026-11-29');
-    await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 100 h'`);
-    assert.match(await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`), /50 h → 100 h/);
+    await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim() === '= 76 h'`);
+    assert.match(await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`), /36 h → 76 h/);
     await w(`D.getElementById('btn-form-save').click(); return true;`);
     await until(`W.__writes.length === 2`);
     const [, , rowId, cells] = (await writes())[1][0];
     assert.equal(rowId, id);
-    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 100 }]));
+    assert.equal(cells.charges, JSON.stringify([{ teamId: person, heures: 76 }]));
   },
 );
 
@@ -878,13 +956,13 @@ test(
     );
     assert.equal(await w(`return D.getElementById('tf-ch-${a}').value;`), '');
     assert.ok(await w(`return Boolean(D.getElementById('tf-person-${b}-flag'));`));
-    // Ajouter c : assignée, le champ de charge prend le focus ; 0,5 ETP sur 14 jours = 35 h
+    // Ajouter c : assignée, le champ de charge prend le focus ; 0,5 ETP du 2 au 15 novembre = 26 h
     await change('#tf-assignees', String(c));
     await until(`D.getElementById('tf-ch-${c}')`);
     assert.equal(await w(`return D.activeElement.id;`), `tf-ch-${c}`);
     await type(`tf-ch-${c}`, '0,5');
-    assert.equal(await w(`return D.getElementById('tf-ch-${c}-eq').textContent.trim();`), '= 35 h');
-    assert.match(await w(`return D.getElementById('tf-charges-foot').textContent;`), /Total 42 h · 0,6 ETP/);
+    assert.equal(await w(`return D.getElementById('tf-ch-${c}-eq').textContent.trim();`), '= 26 h');
+    assert.match(await w(`return D.getElementById('tf-charges-foot').textContent;`), /Total 33 h · 0,6 ETP/);
     // Assigner b (charge non assignée) : la mention disparaît
     await clickOn(`#tf-person-${b}-assign`);
     await until(`!D.getElementById('tf-person-${b}-flag')`);
@@ -901,7 +979,7 @@ test(
     assert.deepEqual(batch[0].slice(0, 3), ['UpdateRecord', 'Tasks', id]);
     assert.deepEqual(batch[0][3], {
       assignees: ['L', c, b],
-      charges: `[${charges.slice(1, -1)},${JSON.stringify({ teamId: c, heures: 35 })}]`,
+      charges: `[${charges.slice(1, -1)},${JSON.stringify({ teamId: c, heures: 26 })}]`,
     });
     // Tableau : liste unique avec profil écrit et ETP par personne
     await until(`!D.getElementById('task-form')`);
@@ -935,7 +1013,7 @@ test(
     assert.equal(await w(`return D.querySelectorAll('#tf-assignees option[value="${m}"]').length;`), 1);
     await w(`D.getElementById('btn-form-cancel').click(); return true;`);
     await until(`!D.getElementById('task-form')`);
-    // Tâche sans personne, 14 jours (0,5 ETP = 35 h)
+    // Tâche sans personne, du 2 au 15 novembre (0,5 ETP = 26 h)
     const day = (y, mo, d) => Date.UTC(y, mo - 1, d) / 1000;
     await w(`await W.grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', ${id}, { assignees: ['L'], charges: '[]', type: 'tache', dateDebut: ${day(2026, 11, 2)}, dateEcheance: ${day(2026, 11, 15)} }]]);
       W.__writes.length = 0; return true;`);
@@ -955,13 +1033,13 @@ test(
     assert.match(who, /Mgmt/);
     assert.doesNotMatch(who, /hors ISD/);
     await type(`tf-ch-${m}`, '0,5');
-    assert.equal(await w(`return D.getElementById('tf-ch-${m}-eq').textContent.trim();`), '= 35 h');
+    assert.equal(await w(`return D.getElementById('tf-ch-${m}-eq').textContent.trim();`), '= 26 h');
     assert.equal(await w(`return W.__writes.length;`), 0);
     await w(`D.getElementById('btn-form-save').click(); return true;`);
     await until(`W.__writes.length === 1`);
     const batch = await w(`return W.__writes[0].args[0];`);
     assert.deepEqual(batch, [
-      ['UpdateRecord', 'Tasks', id, { assignees: ['L', m], charges: JSON.stringify([{ teamId: m, heures: 35 }]) }],
+      ['UpdateRecord', 'Tasks', id, { assignees: ['L', m], charges: JSON.stringify([{ teamId: m, heures: 26 }]) }],
     ]);
     // Fiche en lecture : rôle « Mgmt », pas « hors ISD »
     await until(`!D.getElementById('task-form') && D.querySelector('.dt-people-list [data-person="${m}"]')`);
@@ -2563,7 +2641,7 @@ for (const [variant, opt] of [
         w(
           `const t = D.getElementById('tf-${f}'); t.value = '${iso}'; t.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
         );
-      // 14 jours : 1 ETP = 70 h, 3 ETP = 210 h
+      // Du 2 au 15 novembre : 1 ETP = 52 h, 3 ETP = 156 h
       await setDate('dateDebut', '2026-11-02');
       await setDate('dateEcheance', '2026-11-15');
       const pick = (who) =>
@@ -2575,7 +2653,7 @@ for (const [variant, opt] of [
       assert.ok(await w(`return Boolean(D.querySelector('[data-charge="${est}"] .est-badge'));`));
       await type(`tf-ch-${est}`, '3');
       assert.equal(await w(`return D.getElementById('tf-ch-${est}-msg').textContent.trim();`), '');
-      assert.equal(await w(`return D.getElementById('tf-ch-${est}-eq').textContent.trim();`), '= 210 h');
+      assert.equal(await w(`return D.getElementById('tf-ch-${est}-eq').textContent.trim();`), '= 156 h');
       assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), false);
       // Au-delà de 50 ETP : refusé même pour elle
       await type(`tf-ch-${est}`, '51');
@@ -2594,7 +2672,7 @@ for (const [variant, opt] of [
       await type(`tf-ch-${other}`, '3');
       assert.match(
         await w(`return D.getElementById('tf-ch-${other}-msg').textContent;`),
-        /1 ETP maximum par personne \(soit 70 h sur la période\)/,
+        /1 ETP maximum par personne \(soit 52 h sur la période\)/,
       );
       assert.equal(await w(`return D.getElementById('btn-form-save').disabled;`), true);
       await type(`tf-ch-${other}`, '1');
@@ -2604,9 +2682,9 @@ for (const [variant, opt] of [
       const [[[name, table, rowId, cells]]] = await writes();
       assert.deepEqual([name, table, rowId], ['UpdateRecord', 'Tasks', id]);
       assert.deepEqual(JSON.parse(cells.charges), [
-        { teamId: est, heures: 210 },
-        { teamId: est2, heures: 210 },
-        { teamId: other, heures: 70 },
+        { teamId: est, heures: 156 },
+        { teamId: est2, heures: 156 },
+        { teamId: other, heures: 52 },
       ]);
     },
   );
@@ -2871,29 +2949,36 @@ test(
     assert.ok(groups.includes('ISD — Management'), groups.join(', '));
     await typeIn('#cf-titre', 'Tâche avec personnes');
     await change('#cf-cible', await firstOption('#cf-cible'));
-    // 14 jours : 0,5 ETP = 35 h
+    // Du 2 au 15 novembre : 0,5 ETP = 26 h
     await change('#cf-dateDebut', '2026-11-02');
     await change('#cf-dateEcheance', '2026-11-15');
     await until(`!D.getElementById('cf-ch-5').disabled && !D.getElementById('cf-charges-nodates')`);
     await typeIn('#cf-ch-5', '0,5');
-    assert.equal(await w(`return D.getElementById('cf-ch-5-eq').textContent;`), '= 35 h');
+    assert.equal(await w(`return D.getElementById('cf-ch-5-eq').textContent;`), '= 26 h');
     // Deuxième personne, en heures
     const b = await otherPerson(5);
     await change('#cf-assignees', String(b));
     await until(`D.getElementById('cf-ch-${b}')`);
     assert.equal(await w(`return D.activeElement.id;`), `cf-ch-${b}`);
     await pickRadio('#cf-charges-unit-heures');
-    await until(`D.getElementById('cf-ch-5').value === '35'`);
+    await until(`D.getElementById('cf-ch-5').value === '26'`);
     await typeIn(`#cf-ch-${b}`, '12');
-    assert.equal(await w(`return D.getElementById('cf-ch-${b}-eq').textContent;`), '= 0,17 ETP');
-    assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 47 h/);
-    // Dates changées dans la fenêtre : l'ETP fait foi, les heures suivent (7 jours : 0,5 ETP = 17,5 h ; 12 h → 6 h)
+    assert.equal(await w(`return D.getElementById('cf-ch-${b}-eq').textContent;`), '= 0,23 ETP');
+    assert.match(await w(`return D.getElementById('cf-charges-foot').textContent;`), /Total 38 h/);
+    // Dates changées dans la fenêtre : l'ETP fait foi, les heures suivent (jusqu'au 8 : 0,5 ETP = 14,5 h ; 12 h → 6,5 h)
+    assert.deepEqual(
+      [
+        etpHours(0.5, '2026-11-02', '2026-11-08'),
+        etpHours(12 / fteOf('2026-11-02', '2026-11-15'), '2026-11-02', '2026-11-08'),
+      ],
+      [14.5, 6.5],
+    );
     await change('#cf-dateEcheance', '2026-11-08');
-    await until(`D.getElementById('cf-ch-5').value === '17,5' && D.getElementById('cf-ch-${b}').value === '6'`);
+    await until(`D.getElementById('cf-ch-5').value === '14,5' && D.getElementById('cf-ch-${b}').value === '6,5'`);
     assert.equal(await w(`return D.getElementById('cf-ch-5-eq').textContent;`), '= 0,5 ETP');
     // Retour à la période de saisie : heures saisies retrouvées
     await change('#cf-dateEcheance', '2026-11-15');
-    await until(`D.getElementById('cf-ch-5').value === '35' && D.getElementById('cf-ch-${b}').value === '12'`);
+    await until(`D.getElementById('cf-ch-5').value === '26' && D.getElementById('cf-ch-${b}').value === '12'`);
     assert.equal(await w(`return W.__writes.length;`), 0);
     await clickOn('#cf-create');
     await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
@@ -2908,7 +2993,7 @@ test(
     assert.equal(
       cells.charges,
       JSON.stringify([
-        { teamId: 5, heures: 35 },
+        { teamId: 5, heures: 26 },
         { teamId: b, heures: 12 },
       ]),
     );
@@ -2922,22 +3007,28 @@ test('nouvelle tâche : ETP saisi puis dates changées, heures recalculées', { 
   await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
   await typeIn('#cf-titre', 'Tâche à ETP gardé');
   await change('#cf-cible', await firstOption('#cf-cible'));
-  // 0,5 ETP sur 14 jours (35 h), puis 28 jours : 70 h
+  // 0,5 ETP du 2 au 15 novembre (26 h), puis jusqu'au 29 : 55 h
+  assert.equal(etpHours(0.5, '2026-11-02', '2026-11-29'), 55);
   await change('#cf-dateDebut', '2026-11-02');
   await change('#cf-dateEcheance', '2026-11-15');
   await until(`!D.getElementById('cf-ch-5').disabled`);
   await typeIn('#cf-ch-5', '0,5');
-  assert.equal(await w(`return D.getElementById('cf-ch-5-eq').textContent;`), '= 35 h');
+  assert.equal(await w(`return D.getElementById('cf-ch-5-eq').textContent;`), '= 26 h');
+  // Pastille « i » de la fenêtre de création : identifiant propre, reliée au bouton
+  assert.equal(
+    await w(`return D.querySelector('#cf-people .info-tip__btn').getAttribute('aria-describedby');`),
+    'tip-fte-cf',
+  );
   await change('#cf-dateEcheance', '2026-11-29');
-  await until(`D.getElementById('cf-ch-5-eq').textContent === '= 70 h'`);
+  await until(`D.getElementById('cf-ch-5-eq').textContent === '= 55 h'`);
   assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '0,5');
-  assert.match(await w(`return D.getElementById('cf-ch-5-msg').textContent;`), /35 h → 70 h \(ETP conservé\)/);
+  assert.match(await w(`return D.getElementById('cf-ch-5-msg').textContent;`), /26 h → 55 h \(ETP conservé\)/);
   await clickOn('#cf-create');
   await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 1`);
   const [kind, , , cells] = (await writes())[0][0];
   assert.equal(kind, 'AddRecord');
   assert.equal(cells.dateEcheance, cfDay(2026, 11, 29));
-  assert.equal(cells.charges, JSON.stringify([{ teamId: 5, heures: 70 }]));
+  assert.equal(cells.charges, JSON.stringify([{ teamId: 5, heures: 55 }]));
 });
 
 test(
@@ -2965,30 +3056,30 @@ test(
     );
     await sleep(300);
     assert.equal(await w(`return W.__writes.length;`), 0);
-    // 1 ETP accepté, puis dates raccourcies : l'ETP fait foi (35 h sur 7 jours), création possible
+    // 1 ETP accepté, puis dates raccourcies : l'ETP fait foi (29 h jusqu'au 8), création possible
     await typeIn('#cf-ch-5', '1');
     await until(`!D.getElementById('cf-create').disabled`);
     await change('#cf-dateEcheance', '2026-11-08');
-    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 35 h'`);
+    await until(`D.getElementById('cf-ch-5-eq').textContent === '= 29 h'`);
     assert.equal(await w(`return D.getElementById('cf-create').disabled;`), false);
     // Heures saisies sans dates (aucun ETP de référence), puis dates : heures gardées, au-dessus de la borne, bloqué
-    // (date vidée : la ligne revient aux heures de sa référence, 70 h ; 60 h saisies ensuite)
+    // (date vidée : la ligne revient aux heures de sa référence, 52 h ; 45 h saisies ensuite)
     await change('#cf-dateDebut', '');
     await change('#cf-dateEcheance', '');
     await pickRadio('#cf-charges-unit-heures');
-    await until(`D.getElementById('cf-ch-5').value === '70' && !D.getElementById('cf-ch-5').disabled`);
-    await typeIn('#cf-ch-5', '60');
+    await until(`D.getElementById('cf-ch-5').value === '52' && !D.getElementById('cf-ch-5').disabled`);
+    await typeIn('#cf-ch-5', '45');
     await change('#cf-dateDebut', '2026-11-02');
     await change('#cf-dateEcheance', '2026-11-08');
     await until(`D.getElementById('cf-create').disabled`);
-    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '60');
+    assert.equal(await w(`return D.getElementById('cf-ch-5').value;`), '45');
     assert.match(await w(`return D.getElementById('cf-charges-msgs').textContent;`), /dépasse la borne/);
     assert.equal(await w(`return W.__writes.length;`), 0);
     await change('#cf-dateEcheance', '2026-11-15');
     await until(`!D.getElementById('cf-create').disabled`);
     await clickOn('#cf-create-open');
     await until(`D.getElementById('task-form') && W.__writes.length === 1`);
-    assert.equal((await writes())[0][0][3].charges, JSON.stringify([{ teamId: 5, heures: 60 }]));
+    assert.equal((await writes())[0][0][3].charges, JSON.stringify([{ teamId: 5, heures: 45 }]));
     // La fiche complète montre la même personne et sa charge
     await until(`D.getElementById('tf-ch-5')`);
   },
@@ -3027,7 +3118,7 @@ test(
   async () => {
     await openView(EDIT, 'kanban', 5);
     await w(`try { localStorage.setItem('roadmap-isd.chargesUnit', 'heures'); } catch {} return true;`);
-    // Tâche parente datée (14 jours : 70 h = 1 ETP), créée puis ouverte
+    // Tâche parente datée (du 2 au 15 novembre : 52 h = 1 ETP), créée puis ouverte
     await clickOn('#btn-new-task');
     await until(`D.querySelector('dialog.cdlg[open] #cf-people')`);
     await typeIn('#cf-titre', 'Parente datée');
@@ -3075,8 +3166,8 @@ test(
     );
     await clickOn('#cf-probe-replace');
     await until(`D.activeElement.id === 'cf-assignees' && D.getElementById('cf-ch-5').value === ''`);
-    // Charge saisie en heures sans échéance (aucun ETP de référence), puis échéance à 7 jours : les 60 h sont
-    // gardées, au-dessus de la borne de 35 h
+    // Charge saisie en heures sans échéance (aucun ETP de référence), puis échéance au 8 : les 60 h sont
+    // gardées, au-dessus de la borne de 29 h
     await change('#cf-dateEcheance', '');
     await typeIn('#cf-ch-5', '60');
     await w(`D.getElementById('cf-charges-msgs').__live = 1; D.getElementById('cf-pending').__live = 1; return true;`);
@@ -3099,20 +3190,20 @@ test(
     await until(`D.activeElement.id === 'cf-ch-5'`);
     assert.equal(await w(`return W.__writes.length;`), 1);
     // En saisissant une valeur dans la borne, la bordure d'erreur et l'état invalide suivent aussitôt
-    await typeIn('#cf-ch-5', '30');
+    await typeIn('#cf-ch-5', '25');
     assert.equal(await w(`return D.getElementById('cf-people').classList.contains('fr-input-group--error');`), false);
     assert.equal(await w(`return D.getElementById('cf-ch-5').hasAttribute('aria-invalid');`), false);
     await typeIn('#cf-ch-5', '60');
     assert.equal(await w(`return D.getElementById('cf-people').classList.contains('fr-input-group--error');`), true);
     assert.equal(await w(`return D.getElementById('cf-ch-5').getAttribute('aria-invalid');`), 'true');
-    await typeIn('#cf-ch-5', '30');
+    await typeIn('#cf-ch-5', '25');
     await until(`!D.getElementById('cf-create').disabled`);
     await clickOn('#cf-create');
     await until(`!D.querySelector('dialog.cdlg') && W.__writes.length === 2`);
     const cells = (await writes())[1][0][3];
     assert.equal(cells.parentTask, parentId);
     assert.deepEqual(cells.assignees, ['L', 5]);
-    assert.equal(cells.charges, JSON.stringify([{ teamId: 5, heures: 30 }]));
+    assert.equal(cells.charges, JSON.stringify([{ teamId: 5, heures: 25 }]));
     assert.equal(cells.dateEcheance, cfDay(2026, 11, 8));
   },
 );

@@ -19,7 +19,7 @@
  * - Contrôle des colonnes au chargement : une colonne absente, devenue formule ou de type inattendu est retirée
  *   de la liste blanche pour la session. Une colonne refusée par une règle d'accès l'est aussi, au premier refus.
  */
-import { chargesWriteProblem, periodDays } from './charges-edit.js';
+import { chargesWriteProblem, periodFte } from './charges-edit.js';
 import { overMaxDay } from './dates.js';
 import { aphText, estimationIdsOfTable, isEstimationAph } from './estimation.js';
 import { readTagsCell, tagsWriteProblem } from './tags-edit.js';
@@ -345,8 +345,8 @@ function encodeCol(table, col, value, columns = null) {
  * @param {Record<string,*>} changes valeurs du modèle, colonne → valeur
  * @param {Map<string,string>} [disabled] colonnes retirées pour la session
  * @param {{before?:object, refExists?:(table:string, id:number) => boolean, restoring?:string[],
- *          days?:number|null, isEstimation?:(teamId:number) => boolean}} [ctx] days : jours de la période de la
- *   tâche après modification (borne 1 ETP) ; isEstimation : personne estimation (Team.aph), exemptée de cette borne
+ *          fte?:number|null, isEstimation?:(teamId:number) => boolean}} [ctx] fte : heures de 1 ETP sur la période
+ *   de la tâche après modification (periodFte, borne 1 ETP) ; isEstimation : personne estimation (Team.aph), exemptée de cette borne
  *   before : valeurs d'avant (les entrées de charges conservées telles quelles ne sont pas recontrôlées) ;
  *   refExists : existence d'une ligne (teamId des charges dans Team) ; restoring : colonnes remises à leur
  *   valeur d'avant par « Annuler » (contenu d'origine, éventuellement illisible : pas de contrôle) ; current : ligne
@@ -370,7 +370,7 @@ export function buildUpdate(table, id, changes, disabled = new Map(), ctx = {}) 
         changes[col],
         ctx.before?.[col],
         (n) => Boolean(ctx.refExists?.('Team', n)),
-        ctx.days ?? null,
+        ctx.fte ?? null,
         ctx.isEstimation ?? null,
       );
       if (problem) throw new WriteRefused('charges', problem);
@@ -406,8 +406,8 @@ const isBlank = (v) =>
  */
 export function newChargesProblem(fields, teamExists, isEstimation = null) {
   const value = fields.charges;
-  const days = periodDays(fields.dateDebut ?? null, fields.dateEcheance ?? null);
-  const problem = chargesWriteProblem(value, null, teamExists, days, isEstimation);
+  const fte = periodFte(fields.dateDebut ?? null, fields.dateEcheance ?? null);
+  const problem = chargesWriteProblem(value, null, teamExists, fte, isEstimation);
   if (problem) return problem;
   const assigned = new Set(Array.isArray(fields.assignees) ? fields.assignees : []);
   // Des charges sans personne assignée (y compris « [] ») ne se créent pas : la colonne est alors omise
@@ -1284,7 +1284,7 @@ export function createWriter({
       throw new WriteRefused('aph-estimation');
     // Dates relues juste avant l'envoi si l'appelant les fournit, sinon celles des données chargées
     const period = 'charges' in ch ? (opts.period ?? periodOf?.(table, id) ?? {}) : {};
-    const days = periodDays(
+    const fte = periodFte(
       'dateDebut' in ch ? ch.dateDebut : period.start,
       'dateEcheance' in ch ? ch.dateEcheance : period.end,
     );
@@ -1311,7 +1311,7 @@ export function createWriter({
       before: opts.before,
       refExists: exists,
       restoring,
-      days,
+      fte,
       isEstimation,
       replaceTags: opts.replaceTags,
       columns: meta,

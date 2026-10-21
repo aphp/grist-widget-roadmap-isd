@@ -8,7 +8,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { feuille } from './fixtures/feuille.js';
 import { createFakeGrist, lookupOf } from './fixtures/fake-grist.js';
-import { ESTIMATION_APH } from '../widget/js/core/charges-edit.js';
+import { ESTIMATION_APH, roundHours } from '../widget/js/core/charges-edit.js';
+import { fteHours } from '../widget/js/core/capacity.js';
 import {
   droppedPeople,
   newChargesError,
@@ -71,7 +72,10 @@ const syncReason = (fn) => {
   return null;
 };
 
-// 14 jours (100 à 113) : 1 ETP = 70 h ; 50 ETP = 3 500 h
+// Du 11 au 24 avril 1970 (jours 100 à 113) : 1 ETP = capacité standard de la période (fteHours ≈ 57,8 h), borne
+// de 1 ETP arrondie à 0,5 h (58 h) ; 50 ETP pour la personne estimation
+const MAX = roundHours(fteHours(100, 113));
+const MAX_EST = roundHours(50 * fteHours(100, 113));
 const BASE = { titre: 'Nouvelle', Chantier: 100, projet: 10, statut: 'todo', type: 'tache' };
 const DATED = { ...BASE, dateDebut: 100, dateEcheance: 113 };
 const team = (t, id) => t === 'Team' && [1, 2, 3, 5].includes(id);
@@ -80,19 +84,21 @@ const ch = (...entries) => JSON.stringify(entries.map(([teamId, heures]) => ({ t
 
 test('buildAdd : charges contrôlées comme en mise à jour, sur la période des dates du même AddRecord', () => {
   const ctx = { refExists: team, isEstimation: est };
-  const v = ch([1, 35], [2, 70]);
+  const v = ch([1, 35], [2, MAX]);
   assert.deepEqual(buildAdd('Tasks', { ...DATED, assignees: [1, 2], charges: v }, new Map(), ctx)[3].charges, v);
-  // Borne de 1 ETP sur la période : 70 h pour 14 jours
+  // Borne = 1 ETP standard sur la période (fteHours arrondi à 0,5 h) : acceptée, 0,5 h de plus refusée
+  assert.equal(MAX, 58);
   const add = (fields) => syncReason(() => buildAdd('Tasks', fields, new Map(), ctx));
-  assert.equal(add({ ...DATED, assignees: [2], charges: ch([2, 70.5]) }), 'charges');
+  assert.equal(add({ ...DATED, assignees: [2], charges: ch([2, MAX]) }), null);
+  assert.equal(add({ ...DATED, assignees: [2], charges: ch([2, MAX + 0.5]) }), 'charges');
   // Sans dates : 2 000 h au plus pour tous
   assert.equal(add({ ...BASE, assignees: [2], charges: ch([2, 2000]) }), null);
   assert.equal(add({ ...BASE, assignees: [2], charges: ch([2, 2000.5]) }), 'charges');
   // Une seule date : pas de période, borne sans dates
   assert.equal(add({ ...BASE, dateDebut: 100, assignees: [2], charges: ch([2, 500]) }), null);
   // Personne estimation : 50 ETP sur la période, jamais plus
-  assert.equal(add({ ...DATED, assignees: [1], charges: ch([1, 3500]) }), null);
-  assert.equal(add({ ...DATED, assignees: [1], charges: ch([1, 3500.5]) }), 'charges');
+  assert.equal(add({ ...DATED, assignees: [1], charges: ch([1, MAX_EST]) }), null);
+  assert.equal(add({ ...DATED, assignees: [1], charges: ch([1, MAX_EST + 0.5]) }), 'charges');
   // Sans prédicat d'estimation ni d'existence : aucune exemption, personne n'existe
   assert.equal(
     syncReason(() =>
@@ -121,7 +127,7 @@ test('newChargesProblem : entrées invalides, personne inconnue, doublon, charge
   assert.equal(p({ assignees: [99], charges: ch([99, 7]) }), 'personne inconnue : 99');
   assert.equal(p({ assignees: [2], charges: ch([2, -1]) }), 'heures : nombre fini positif ou nul attendu');
   assert.equal(p({ assignees: [2], charges: ch([2, 7.25]) }), 'heures : pas de 0,5 h attendu');
-  assert.equal(p({ assignees: [2], charges: ch([2, 71]) }), 'heures : au plus 70 h (1 ETP sur la période)');
+  assert.equal(p({ assignees: [2], charges: ch([2, MAX + 1]) }), `heures : au plus ${MAX} h (1 ETP sur la période)`);
   assert.equal(p({ assignees: [2], charges: ch([2, 7], [2, 7]) }), 'personne en double : 2');
   assert.equal(p({ assignees: [2], charges: ch([2, 7], [5, 7]) }), 'personne chargée non assignée : 5');
   assert.equal(p({ charges: ch([2, 7]) }), 'personne chargée non assignée : 2');
@@ -180,10 +186,12 @@ test('fenêtre de création : charge facultative, borne sur la période saisie, 
   assert.equal(newChargesError(dated, model), null);
   assert.equal(newTaskFields(dated).charges, ch([2, 35], [5, 7]));
   // Dates raccourcies après la saisie : la charge dépasse 1 ETP, création bloquée
-  assert.deepEqual(newChargesError({ ...dated, dateEcheance: 101 }, model), {
+  assert.deepEqual(newChargesError({ ...dated, dateEcheance: 102 }, model), {
     key: 'create.error.chargesOver',
-    vars: { h: 10 },
+    vars: { h: roundHours(fteHours(100, 102)) },
   });
+  // Raccourcies à un week-end (aucun jour ouvré) : sans période, borne de 2 000 h
+  assert.equal(newChargesError({ ...dated, dateEcheance: 101 }, model), null);
   // Personne estimation : 50 ETP
   assert.equal(newChargesError({ ...dated, assignees: [1], charges: ch([1, 210]) }, model), null);
   // Incohérences : charge sans assignation, doublon, inconnu, cellule illisible

@@ -9,7 +9,7 @@ import {
   isEstimationPerson,
   maxHours,
   mergeDuplicates,
-  periodDays,
+  periodFte,
   readChargesCell,
 } from '../core/charges-edit.js';
 import { chargeRefs, followBaseRefs, refFromInput, rescaleCharges } from '../core/charges-rescale.js';
@@ -35,17 +35,17 @@ export function storedUnit(storage) {
  * État propre au bloc, à fusionner dans celui du formulaire hôte. chargeRefs : ETP de référence de chaque personne
  * (l'ETP fait foi quand les dates changent), pris sur la ligne à l'ouverture de la fiche (base), puis à chaque
  * saisie ; chargesTyped : personnes dont la charge a été saisie (ou retirée) ici, leur référence ne suit plus la
- * base ; chargesDays : période du dernier recalcul ; chargesKeptOver : personnes laissées au-dessus de la borne au
- * dernier changement de période.
+ * base ; chargesFte : heures de 1 ETP sur la période du dernier recalcul ; chargesKeptOver : personnes laissées
+ * au-dessus de la borne au dernier changement de période.
  * @param {Storage} [storage]
  * @param {{charges?:string|null, dateDebut:number|null, dateEcheance:number|null}|null} [base] ligne de la tâche
  */
 export const peopleState = (storage, base = null) => ({
   chargeErrors: new Map(),
   chargeInputs: new Map(),
-  chargeRefs: base ? chargeRefs(base.charges ?? null, periodDays(base.dateDebut, base.dateEcheance)) : new Map(),
+  chargeRefs: base ? chargeRefs(base.charges ?? null, periodFte(base.dateDebut, base.dateEcheance)) : new Map(),
   chargesTyped: new Set(),
-  chargesDays: base ? periodDays(base.dateDebut, base.dateEcheance) : null,
+  chargesFte: base ? periodFte(base.dateDebut, base.dateEcheance) : null,
   chargesKeptOver: new Set(),
   chargesNotRescaled: false,
   chargesUnit: storedUnit(storage),
@@ -69,16 +69,16 @@ export function followBase(s, model, { rescale = true } = {}) {
     s.chargeRefs,
     s.chargesTyped,
     baseRaw,
-    periodDays(s.base.dateDebut, s.base.dateEcheance),
+    periodFte(s.base.dateDebut, s.base.dateEcheance),
   );
-  const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+  const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
   const untyped = new Map([...s.chargeRefs].filter(([teamId]) => !s.chargesTyped.has(teamId)));
-  const maxOf = (teamId) => maxHours(days, isEstimationPerson(model, teamId));
+  const maxOf = (teamId) => maxHours(fte, isEstimationPerson(model, teamId));
   const r = rescale
-    ? rescaleCharges(s.draft.charges, untyped, days, { baseRaw, maxOf })
+    ? rescaleCharges(s.draft.charges, untyped, fte, { baseRaw, maxOf })
     : { raw: s.draft.charges, over: [] };
   s.draft = r.raw === s.draft.charges ? s.draft : { ...s.draft, charges: r.raw };
-  s.chargesDays = days;
+  s.chargesFte = fte;
   s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
 }
 
@@ -90,11 +90,11 @@ export function followBase(s, model, { rescale = true } = {}) {
  */
 export function rescaleAll(s, model) {
   if (!s?.chargeRefs || !('charges' in s.draft)) return;
-  const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
-  const maxOf = (teamId) => maxHours(days, isEstimationPerson(model, teamId));
-  const r = rescaleCharges(s.draft.charges, s.chargeRefs, days, { baseRaw: s.base?.charges ?? null, maxOf });
+  const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
+  const maxOf = (teamId) => maxHours(fte, isEstimationPerson(model, teamId));
+  const r = rescaleCharges(s.draft.charges, s.chargeRefs, fte, { baseRaw: s.base?.charges ?? null, maxOf });
   if (r.raw !== s.draft.charges) s.draft = { ...s.draft, charges: r.raw };
-  s.chargesDays = days;
+  s.chargesFte = fte;
   s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
 }
 
@@ -162,7 +162,7 @@ export function createPeopleBlock(deps) {
   }
 
   /** Ligne réaffichée seule (équivalent, messages), sans redessiner les champs. */
-  function lineRefresh(teamId, days) {
+  function lineRefresh(teamId, fte) {
     const s = st();
     const cell = readChargesCell(s.draft.charges);
     const row = cell.ok ? chargeRows(cell.entries).rows.find((x) => x.teamId === teamId) : null;
@@ -175,7 +175,7 @@ export function createPeopleBlock(deps) {
       known: model().people.has(teamId),
     };
     const eq = el(`ch-${teamId}-eq`);
-    if (eq) eq.textContent = row && !s.chargeErrors.has(teamId) ? chargeEqText(s, row.heures, days) : '';
+    if (eq) eq.textContent = row && !s.chargeErrors.has(teamId) ? chargeEqText(s, row.heures, fte) : '';
     const msg = el(`ch-${teamId}-msg`);
     if (msg) msg.innerHTML = chargeRowMsgs(s, model(), line, peopleCtx(s)).toString();
   }
@@ -184,10 +184,10 @@ export function createPeopleBlock(deps) {
   function chargeInput(t) {
     const s = st();
     const teamId = Number(t.dataset.chargeInput);
-    const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
+    const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
     // Personne estimation (Team.aph) : pas de borne de 1 ETP, seulement la borne de bon sens
     const estimation = isEstimationPerson(model(), teamId);
-    const r = lineInput(s.draft, teamId, t.value, s.chargesUnit, days, { estimation });
+    const r = lineInput(s.draft, teamId, t.value, s.chargesUnit, fte, { estimation });
     if (r.error) {
       s.chargeErrors.set(teamId, r.error);
       s.chargeInputs.set(teamId, t.value);
@@ -201,13 +201,13 @@ export function createPeopleBlock(deps) {
       // recalculées) ; valeur affichée ressaisie : rien n'est « saisi », la ligne suit encore la Feuille
       if (changed) {
         if (r.heures === null) s.chargeRefs.delete(teamId);
-        else s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, days }));
+        else s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, fte }));
         s.chargesTyped.add(teamId);
         s.chargesKeptOver.delete(teamId);
       }
       t.removeAttribute('aria-invalid');
     }
-    lineRefresh(teamId, days);
+    lineRefresh(teamId, fte);
     deps.refresh();
   }
 
@@ -273,7 +273,7 @@ export function createPeopleBlock(deps) {
       const teamId = Number(t.dataset.chargeMerge);
       if (!deps.applyDraft({ ...s.draft, charges: mergeDuplicates(s.draft.charges, teamId) }, title)) return true;
       // Entrée fusionnée : référence prise sur la période du brouillon
-      const ref = chargeRefs(s.draft.charges, periodDays(s.draft.dateDebut, s.draft.dateEcheance)).get(teamId);
+      const ref = chargeRefs(s.draft.charges, periodFte(s.draft.dateDebut, s.draft.dateEcheance)).get(teamId);
       if (ref) s.chargeRefs.set(teamId, ref);
       else s.chargeRefs.delete(teamId);
       s.chargesTyped.add(teamId);
@@ -294,9 +294,9 @@ export function createPeopleBlock(deps) {
   }
 
   /**
-   * Dates du brouillon changées (champ de date, case « Jalon ») : si la période diffère de celle du dernier recalcul
-   * (chargesDays ; une date de clôture n'y touche pas), l'ETP de référence de chaque ligne est gardé et ses heures
-   * recalculées (rescaleCharges). Une ligne qui dépasserait la borne est laissée telle quelle et signalée
+   * Dates du brouillon changées (champ de date, case « Jalon ») : si la capacité de la période (heures de 1 ETP)
+   * diffère de celle du dernier recalcul (chargesFte ; une date de clôture n'y touche pas), l'ETP de référence de
+   * chaque ligne est gardé et ses heures recalculées (rescaleCharges). Une ligne qui dépasserait la borne est laissée telle quelle et signalée
    * (chargesKeptOver), comme une ligne non recalculée au-dessus de la borne. Retour aux dates d'origine : texte
    * d'origine des entrées remis. Date vidée (période inconnue) : chaque ligne revient aux heures de sa référence.
    * Refus des droits : charges inchangées et signalées (chargesNotRescaled : leur ETP change avec la période).
@@ -304,21 +304,21 @@ export function createPeopleBlock(deps) {
    */
   function onDatesChanged({ render: redraw = true } = {}) {
     const s = st();
-    const days = periodDays(s.draft.dateDebut, s.draft.dateEcheance);
-    if (days === s.chargesDays) {
+    const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
+    if (fte === s.chargesFte) {
       s.chargesNotRescaled = false;
       if (redraw) render();
       return;
     }
-    const maxOf = (teamId) => maxHours(days, isEstimationPerson(model(), teamId));
-    const r = rescaleCharges(s.draft.charges, s.chargeRefs, days, { baseRaw: s.base?.charges ?? null, maxOf });
+    const maxOf = (teamId) => maxHours(fte, isEstimationPerson(model(), teamId));
+    const r = rescaleCharges(s.draft.charges, s.chargeRefs, fte, { baseRaw: s.base?.charges ?? null, maxOf });
     if (r.raw !== s.draft.charges) {
       // Posé avant : un refus redessine le formulaire (applyDraft), qui doit alors le dire
       s.chargesNotRescaled = true;
       if (!deps.applyDraft({ ...s.draft, charges: r.raw })) return;
     }
     s.chargesNotRescaled = false;
-    s.chargesDays = days;
+    s.chargesFte = fte;
     s.chargesKeptOver = keptOverOf(s.draft.charges, r.over, maxOf);
     if (redraw) render();
   }

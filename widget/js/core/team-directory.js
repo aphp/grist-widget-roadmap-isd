@@ -2,7 +2,7 @@
  * Onglet Équipe (lecture seule) : rôles, équipes (Domaine) et utilisateurs de la table Team, fiche personne.
  * Fonctions pures.
  */
-import { hoursToEtp } from './capacity.js';
+import { fteHours, hoursToEtp } from './capacity.js';
 import { isEstimationPerson } from './estimation.js';
 import { ISD_ROLES, inIsdTeam, isdDomainOf } from './model.js';
 import { normalize } from './text.js';
@@ -217,7 +217,6 @@ export function groupUsersByRole(model, opts = {}) {
   return none.length ? [...groups, section(NO_ROLE, none)] : groups;
 }
 
-const taskDays = (t) => (t.start !== null && t.end !== null && t.end >= t.start ? t.end - t.start + 1 : 0);
 const current = (start, end, today) => end === null || end >= today || start === null;
 
 /**
@@ -243,7 +242,7 @@ export function personItems(model, personId, today) {
     const hours = t.charges.filter((c) => c.personId === personId).reduce((s, c) => s + c.heures, 0);
     if (hours > 0) roles.push('charge');
     if (!roles.length) continue;
-    const days = taskDays(t);
+    const fte = fteHours(t.start, t.end);
     tasks.push({
       id: t.id,
       title: t.title,
@@ -253,7 +252,7 @@ export function personItems(model, personId, today) {
       chantierId: t.chantierId,
       roles,
       hours,
-      etp: hours > 0 && days ? hoursToEtp(hours, days) : null,
+      etp: hours > 0 && fte ? hoursToEtp(hours, fte) : null,
     });
   }
   const byDate = (a, b) =>

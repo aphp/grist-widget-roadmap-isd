@@ -43,10 +43,11 @@ test('données réelles : la tâche chargée a ses pastilles, le tri reste sur l
   const m = buildModel(feuille());
   const rows = tableRows(m, applyFilters(m, { ...DEFAULT_FILTERS }, { ...DEFAULT_PREFS }));
   const charged = rows.find((r) => r.taskId === 1002);
-  assert.deepEqual(etpParts(charged), { parts: [{ role: 'DE', text: '1,0' }], total: '1,0' });
+  // 70 h sur la capacité standard du 26 octobre au 8 novembre 2026 (57,8 h) : 1,2 ETP
+  assert.deepEqual(etpParts(charged), { parts: [{ role: 'DE', text: '1,2' }], total: '1,2' });
   const sorted = sortRows(rows, 'etp', 'desc').filter((r) => r.etp !== null);
   assert.ok(sorted.every((r, i) => i === 0 || sorted[i - 1].etp >= r.etp));
   const [head, ...lines] = toCsv([charged], ['tache', 'etp']).slice(1).split('\r\n');
   assert.equal(head, 'Tâche;Équipe (ETP)');
-  assert.ok(lines[0].endsWith(';1,0'));
+  assert.ok(lines[0].endsWith(';1,2'));
 });

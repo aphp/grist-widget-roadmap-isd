@@ -47,7 +47,7 @@ test('Mes tâches : un groupe par échéance non vide (h3), listes, lignes-bouto
   assert.match(out, /<button type="button" class="mt__row" data-task="2010">/);
   assert.match(out, /Chantier partagé · ChatDPI/);
   assert.match(out, /2 nov\. → 6 nov\./);
-  assert.match(out, /0,6 ETP/);
+  assert.match(out, /0,5 ETP/); // 14 h ÷ 1 ETP standard du 2 au 6 novembre (28,9 h)
   assert.match(out, /Assigné, Chargé/);
   assert.match(out, /Sans chantier · ChatDPI/);
   assert.match(out, /7 h, sans dates/);

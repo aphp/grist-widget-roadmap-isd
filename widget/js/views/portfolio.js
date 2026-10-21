@@ -40,7 +40,8 @@ const memory = { query: { projets: '', chantiers: '', taches: '' }, generation: 
 const etpFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const intFormat = new Intl.NumberFormat('fr-FR');
 const pct = (x) => `${Math.round(x * 1000) / 1000}%`;
-const etpOfWeek = (hours) => etpFormat.format(hoursToEtp(hours, 7));
+/** ETP d'heures sur une semaine dont 1 ETP vaut `fte` heures (ligne de weeklyLoadByProfile). */
+const etpOfWeek = (hours, fte) => etpFormat.format(hoursToEtp(hours, fte));
 
 function datesText(bar) {
   if (!bar) return label('portfolio.noDates');
@@ -161,10 +162,10 @@ function rateText(r) {
   return r.rate === null ? '' : label('portfolio.load.rate', { n: Math.round(r.rate * 100) });
 }
 
-function cellHtml(load, capacity, extra = '') {
+function cellHtml(load, capacity, fte, extra = '') {
   const r = loadRate(load, capacity);
-  const charge = etpOfWeek(load);
-  const capacite = etpOfWeek(capacity);
+  const charge = etpOfWeek(load, fte);
+  const capacite = etpOfWeek(capacity, fte);
   if (r.level === 'none')
     return h`<td class="pf-load__cell pf-load__cell--none${extra}"><span aria-hidden="true">—</span><span class="fr-sr-only">${label('portfolio.load.level.none')}</span></td>`;
   return h`<td class="pf-load__cell pf-load__cell--${r.level}${extra}">
@@ -195,8 +196,8 @@ function loadRowHtml(row, max, today) {
     <td class="pf-load__chart" aria-hidden="true">
       <span class="pf-stack">${seg}${capacity > 0 ? h`<span class="pf-cap" style="left:${pct((capacity / max) * 100)}"></span>` : ''}</span>
     </td>
-    ${PROFILE_KEYS.map((k) => raw(cellHtml(row[k], row.capacity[k], ' pf-load__prof')))}
-    ${raw(cellHtml(load, capacity))}
+    ${PROFILE_KEYS.map((k) => raw(cellHtml(row[k], row.capacity[k], row.fte, ' pf-load__prof')))}
+    ${raw(cellHtml(load, capacity, row.fte))}
   </tr>`.toString();
 }
 
@@ -236,7 +237,7 @@ function summaryHtml(ctx, rows) {
             ? h`<p class="pf-sum__value">${s.level === 'over' ? icon('warning-fill', 'pf-load__warn') : ''}${label('portfolio.sum.peak', { valeur: peakValue })}</p>
               <p class="pf-sum__rate">${label(`portfolio.load.level.${s.level}`)} ${peakWeek}</p>
               <p class="pf-sum__line">${label('portfolio.sum.over', { semaines: weeksText(s.overWeeks), total: s.loadedWeeks })}${s.tensionWeeks ? `, ${label('portfolio.sum.tension', { n: s.tensionWeeks })}` : ''}</p>
-              <p class="pf-sum__line">${label('portfolio.sum.avg', { charge: etpOfWeek(s.avgLoaded.load), capacite: etpOfWeek(s.avgLoaded.capacity) })}</p>`
+              <p class="pf-sum__line">${label('portfolio.sum.avg', { charge: etpOfWeek(s.avgLoaded.load, s.avgLoaded.fte), capacite: etpOfWeek(s.avgLoaded.capacity, s.avgLoaded.fte) })}</p>`
             : h`<p class="pf-sum__value">${label('portfolio.sum.none')}</p>`
         }
         <p class="pf-sum__hint">${nb === 0 ? label('portfolio.load.summary.people.none') : nb === 1 ? label('portfolio.load.summary.people.one') : label('portfolio.load.summary.people', { n: nb })}</p>

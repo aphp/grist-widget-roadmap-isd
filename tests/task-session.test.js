@@ -24,6 +24,8 @@ import {
 import { periodConflictCols } from '../widget/js/core/conflicts.js';
 import { resolveEditState, writerMode } from '../widget/js/core/edit-switch.js';
 import { dayOfIso } from '../widget/js/core/dates.js';
+import { fteHours } from '../widget/js/core/capacity.js';
+import { roundHours } from '../widget/js/core/charges-edit.js';
 
 const META = Object.fromEntries(Object.entries(EXPECTED_TYPES).map(([k, type]) => [k, { type, isFormula: false }]));
 
@@ -606,10 +608,12 @@ test('M3 : le writer refuse plus de 1 ETP par personne sur la période (entrée 
     mode: 'on',
     columns: Object.fromEntries(Object.entries(EXPECTED_TYPES).map(([k, type]) => [k, { type, isFormula: false }])),
     refExists: () => true,
-    periodOf: () => ({ start: 100, end: 113 }), // 14 jours : 70 h au plus
+    periodOf: () => ({ start: 100, end: 113 }), // 1 ETP standard du 11 au 24 avril 1970 : 58 h au plus
   });
-  await assert.rejects(w.update('Tasks', 1, { charges: '[{"teamId":1,"heures":70.5}]' }), /1 ETP/);
-  await w.update('Tasks', 1, { charges: '[{"teamId":1,"heures":70}]' });
+  const max = roundHours(fteHours(100, 113));
+  assert.equal(max, 58);
+  await assert.rejects(w.update('Tasks', 1, { charges: `[{"teamId":1,"heures":${max + 0.5}}]` }), /1 ETP/);
+  await w.update('Tasks', 1, { charges: `[{"teamId":1,"heures":${max}}]` });
   // Valeur au-dessus conservée telle quelle : admise
   await w.update(
     'Tasks',
@@ -619,8 +623,13 @@ test('M3 : le writer refuse plus de 1 ETP par personne sur la période (entrée 
       before: { charges: '[{"teamId":1,"heures":100}]' },
     },
   );
-  // Dates du même lot : la période raccourcie (7 jours, 35 h) s'applique
-  await assert.rejects(w.update('Tasks', 1, { dateEcheance: 106, charges: '[{"teamId":1,"heures":40}]' }), /35 h/);
+  // Dates du même lot : la période raccourcie (du 11 au 17 avril, 5 jours ouvrés) s'applique
+  const short = roundHours(fteHours(100, 106));
+  assert.ok(short < 40);
+  await assert.rejects(
+    w.update('Tasks', 1, { dateEcheance: 106, charges: '[{"teamId":1,"heures":40}]' }),
+    new RegExp(`au plus ${short} h`),
+  );
   assert.equal(doc.sent.length, 2);
 });
 
@@ -678,7 +687,8 @@ test('R2 : même personne modifiée entre la fenêtre et le clic : la fenêtre s
 });
 
 test('R4 : la borne de 1 ETP suit les dates de la ligne relue, pas celles des données chargées', async () => {
-  // Données chargées : 14 jours (70 h) ; ligne relue : dates raccourcies ailleurs à 3 jours (15 h)
+  // Données chargées : 2 au 15 janvier 1970 (1 ETP ≈ 58 h) ; ligne relue : dates raccourcies ailleurs à 3 jours
+  // ouvrés (26 au 28 octobre 2026)
   const { g, writer, fetchRow } = setup({
     writer: { refExists: () => true, periodOf: () => ({ start: 1, end: 14 }) },
   });
@@ -688,7 +698,9 @@ test('R4 : la borne de 1 ETP suit les dates de la ligne relue, pas celles des do
   g.data.Tasks.dateEcheance[i] = g.data.Tasks.dateDebut[i] + 2 * 86400;
   const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
   assert.equal(r.kind, 'failed');
-  assert.match(r.error.message, /15 h/);
+  assert.ok(40 < roundHours(fteHours(1, 14)));
+  const start = dayOfIso('2026-10-26');
+  assert.match(r.error.message, new RegExp(`au plus ${roundHours(fteHours(start, start + 2))} h`));
   assert.equal(g.batches.length, 0);
 });
 
@@ -702,28 +714,39 @@ test('periodConflictCols : charges et date de la période envoyées, période ch
   // Sans charges ou sans date dans le lot : rien
   assert.deepEqual(periodConflictCols(seen, { dateDebut: 17 }, { dateEcheance: 37 }), []);
   assert.deepEqual(periodConflictCols(seen, { dateDebut: 17 }, { charges: '[]' }), []);
+  // Capacité comparée, pas la durée : début déplacé ailleurs du samedi 4 au lundi 6 septembre 2027 (mêmes jours
+  // ouvrés) : pas de conflit ; au mardi 7 : un jour ouvré de moins, conflit
+  const sat = { dateDebut: dayOfIso('2027-09-04'), dateEcheance: dayOfIso('2027-09-10') };
+  const lot = { dateEcheance: dayOfIso('2027-09-17'), charges: '[]' };
+  assert.deepEqual(periodConflictCols(sat, { dateDebut: dayOfIso('2027-09-06') }, lot), []);
+  assert.deepEqual(periodConflictCols(sat, { dateDebut: dayOfIso('2027-09-07') }, lot), ['dateEcheance']);
 });
 
 test('ETP gardé : date de début changée ailleurs pendant un allongement, fenêtre de conflit puis heures recalculées sur les dates envoyées', async () => {
   const { g, writer, fetchRow } = setup();
   const day = (iso) => dayOfIso(iso);
+  // 0,5 ETP du 2 au 15 novembre ; l'ETP fait foi, les heures suivent la capacité standard de chaque période
+  const h0 = roundHours(fteHours(day('2026-11-02'), day('2026-11-15')) / 2);
+  const etp = h0 / fteHours(day('2026-11-02'), day('2026-11-15'));
+  const long = roundHours(etp * fteHours(day('2026-11-02'), day('2026-11-29')));
+  const sent = roundHours(etp * fteHours(day('2026-11-09'), day('2026-11-29')));
   g.otherUserSets('Tasks', 1002, {
     dateDebut: 86400 * day('2026-11-02'),
     dateEcheance: 86400 * day('2026-11-15'),
-    charges: '[{"teamId":1,"heures":70}]',
+    charges: `[{"teamId":1,"heures":${h0}}]`,
   });
   const base = await fetchRow(1002);
-  // Saisie : échéance + 14 jours, 1 ETP gardé (70 h → 140 h) ; ailleurs, début au 9 novembre
-  const draft = { ...draftFrom(base), dateEcheance: day('2026-11-29'), charges: '[{"teamId":1,"heures":140}]' };
+  // Saisie : échéance + 14 jours, 0,5 ETP gardé ; ailleurs, début au 9 novembre
+  const draft = { ...draftFrom(base), dateEcheance: day('2026-11-29'), charges: `[{"teamId":1,"heures":${long}}]` };
   g.otherUserSets('Tasks', 1002, { dateDebut: 86400 * day('2026-11-09') });
   const r = await runSave({ taskId: 1002, base, draft, writer, fetchRow });
   assert.equal(r.kind, 'conflict');
   assert.ok(r.cols.includes('dateEcheance'));
   assert.equal(g.batches.length, 0);
-  // « Garder la mienne » : 9 au 29 novembre (21 jours) → 105 h
+  // « Garder la mienne » : 9 au 29 novembre, heures recalculées sur cette période
   const batch = batchWithCharges(
     conflictBatch(base, draft, r.fresh, { dateEcheance: 'mine' }),
-    '[{"teamId":1,"heures":105}]',
+    `[{"teamId":1,"heures":${sent}}]`,
     r.fresh,
   );
   assert.equal(batch.chargesBase, r.fresh.charges);
@@ -735,7 +758,7 @@ test('ETP gardé : date de début changée ailleurs pendant un allongement, fen�
   const saved = await runSave({ taskId: 1002, base: r.fresh, draft, writer, fetchRow, ...batch });
   assert.equal(saved.kind, 'saved');
   const cells = g.batches.at(-1)[0][3];
-  assert.equal(cells.charges, '[{"teamId":1,"heures":105}]');
+  assert.equal(cells.charges, `[{"teamId":1,"heures":${sent}}]`);
   assert.equal(cells.dateEcheance, 86400 * day('2026-11-29'));
   // Charges identiques à la ligne relue : retirées du lot
   assert.equal('charges' in batchWithCharges({ changes: { charges: 'x' } }, r.fresh.charges, r.fresh).changes, false);

@@ -1,5 +1,5 @@
 /** Kanban : regroupement, tri, ETP et chemin des cartes. Fonctions pures (spec §4.4). */
-import { hoursToEtp } from './capacity.js';
+import { fteHours, hoursToEtp } from './capacity.js';
 import { NO_CHANTIER } from './model.js';
 import { inIsdTeam, isdDomain } from './team-directory.js';
 import { normalize } from './text.js';
@@ -11,11 +11,12 @@ export const SORTS = Object.freeze(['title-asc', 'title-desc', 'due']);
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
 const byTitle = (model) => (a, b) => collator.compare(model.tasks.get(a).title, model.tasks.get(b).title);
 
-/** ETP total de la tâche = Σ heures ÷ (35 × durée ÷ 7) ; null sans dates exploitables. */
+/** ETP total de la tâche = Σ heures ÷ heures de 1 ETP sur sa période (fteHours) ; null sans période exploitable. */
 export function taskEtp(task) {
-  if (task.start === null || task.end === null || task.end < task.start) return null;
+  const fte = fteHours(task.start, task.end);
+  if (!fte) return null;
   const hours = task.charges.reduce((s, c) => s + c.heures, 0);
-  return hoursToEtp(hours, task.end - task.start + 1);
+  return hoursToEtp(hours, fte);
 }
 
 /** Profils ISD ventilés (ordre d'affichage) ; le reste est regroupé sous « Autre ». */
@@ -51,16 +52,17 @@ export function profileKey(person, model) {
  * ETP total et par profil (même formule que taskEtp, charge par charge). Une charge appartient à la personne
  * (teamId) : son rôle ISD donne le profil ; hors ISD ou sans rôle, elle compte dans le total et dans « Autre » ; le Management de l'équipe ISD
  * (rôle Management, Domaine ISD) compte dans « Mgmt », celui des autres domaines dans « Autre ».
- * @returns {{total:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, Autre:number}|null} null sans dates valides
+ * @returns {{total:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, Autre:number}|null} null sans
+ *   période exploitable (dates absentes, inversées ou sans jour ouvré)
  */
 export function taskEtpByRole(task, model) {
-  if (task.start === null || task.end === null || task.end < task.start) return null;
-  const days = task.end - task.start + 1;
+  const fte = fteHours(task.start, task.end);
+  if (!fte) return null;
   const out = { total: 0, PO: 0, DA: 0, DS: 0, DE: 0, Mgmt: 0, Autre: 0 };
   for (const c of task.charges) {
     const person = model.people.get(c.personId);
     const key = etpRoleKey(person, model);
-    const etp = hoursToEtp(c.heures, days);
+    const etp = hoursToEtp(c.heures, fte);
     out[key] += etp;
     out.total += etp;
   }
@@ -89,12 +91,12 @@ function chantierIdOf(model, task) {
 
 /**
  * Liste unique des personnes d'une tâche (bloc « Personnes ») : assignés dans leur ordre, puis personnes ayant une
- * charge sans être assignées ; heures cumulées par personne (null sans charge), ETP sur la durée de la tâche (null
- * sans charge ou sans dates). person : objet du modèle, ou null pour une personne absente de l'équipe.
+ * charge sans être assignées ; heures cumulées par personne (null sans charge), ETP sur la période de la tâche
+ * (fteHours ; null sans charge ou sans période). person : objet du modèle, ou null pour une personne absente de l'équipe.
  * @returns {{personId:number, person:object|null, assigned:boolean, hours:number|null, etp:number|null}[]}
  */
 export function taskPeopleRows(model, task) {
-  const days = task.start !== null && task.end !== null && task.end >= task.start ? task.end - task.start + 1 : 0;
+  const fte = fteHours(task.start, task.end);
   const hours = new Map();
   for (const c of task.charges) hours.set(c.personId, (hours.get(c.personId) ?? 0) + c.heures);
   const assigned = new Set(task.assignees);
@@ -105,7 +107,7 @@ export function taskPeopleRows(model, task) {
       person: model.people.get(personId) ?? null,
       assigned: assigned.has(personId),
       hours: h,
-      etp: h !== null && days ? hoursToEtp(h, days) : null,
+      etp: h !== null && fte ? hoursToEtp(h, fte) : null,
     };
   });
 }

@@ -5,7 +5,7 @@
  * Le brouillon contient les valeurs du modèle des colonnes modifiables : jours (dates), identifiants (Ref),
  * listes d'identifiants (RefList), textes et nombre (progression).
  */
-import { chargeRows, mergeCharges, periodDays, readChargesCell, sameCharges, withPeopleFrom } from './charges-edit.js';
+import { chargeRows, mergeCharges, periodFte, readChargesCell, sameCharges, withPeopleFrom } from './charges-edit.js';
 import { dateMaxError, overMaxDay } from './dates.js';
 import { chantierInScope } from './chantier-form.js';
 import { safeLink } from './detail-data.js';
@@ -341,8 +341,8 @@ export function validateTask(
   if (dup) warnings.push({ field: 'charges', key: 'form.warn.chargesDuplicate', vars: { n: dup } });
   // Dates ajoutées ou modifiées : l'ETP fait foi et les heures sont recalculées (people-block.js) ; les charges qui
   // dépasseraient la borne sur la nouvelle période sont laissées telles quelles (keptOver) et signalées ici
-  const days = periodDays(draft.dateDebut, draft.dateEcheance);
-  if (base && days && days !== periodDays(base.dateDebut, base.dateEcheance)) {
+  const fte = periodFte(draft.dateDebut, draft.dateEcheance);
+  if (base && fte && fte !== periodFte(base.dateDebut, base.dateEcheance)) {
     const over = rows.filter((r) => keptOver.has(r.teamId)).length;
     if (over) warnings.push({ field: 'charges', key: 'form.warn.chargesOverDates', vars: { n: over } });
   }

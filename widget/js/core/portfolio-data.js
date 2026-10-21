@@ -1,6 +1,6 @@
 /** Portfolio : indicateurs, éléments des frises, échelle en mois, charge et capacité hebdomadaires par profil. Fonctions pures (spec §4.5, §5). */
 import { DAY_MS, MONTHS_FR, weekday } from './dates.js';
-import { personWeekCapacity } from './capacity.js';
+import { fteHours, personWeekCapacity } from './capacity.js';
 import { PROFILE_KEYS, profileKey } from './kanban-data.js';
 import { normalize } from './text.js';
 
@@ -161,17 +161,19 @@ const round = (x) => Math.round(x * 1e6) / 1e6;
  * Profils : PO, DA, DS, DE et Mgmt (Management de l'équipe ISD), personnes actives (profileKey).
  * Charge : heures de ces personnes réparties sur les jours calendaires de chaque tâche (chaque tâche une fois).
  * Capacité : toutes les personnes actives du profil (spec §4.5, jour par jour : capacité hebdomadaire ou 35 h,
- * jours fériés, indisponibilités).
+ * jours fériés, indisponibilités). fte : heures de 1 ETP sur la semaine (fteHours, conversion en ETP).
  * @param {object} model
  * @param {Iterable<number>} taskIds
  * @param {number} startDay
  * @param {number} weeks
- * @returns {{weekStart:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, capacity:Record<string, number>}[]}
+ * @returns {{weekStart:number, fte:number|null, PO:number, DA:number, DS:number, DE:number, Mgmt:number,
+ *   capacity:Record<string, number>}[]}
  */
 export function weeklyLoadByProfile(model, taskIds, startDay, weeks) {
   const first = mondayOf(startDay);
   const rows = Array.from({ length: weeks }, (_, i) => ({
     weekStart: first + 7 * i,
+    fte: fteHours(first + 7 * i, first + 7 * i + 6),
     ...Object.fromEntries(PROFILE_KEYS.map((k) => [k, 0])),
     capacity: Object.fromEntries(PROFILE_KEYS.map((k) => [k, 0])),
   }));
@@ -217,10 +219,11 @@ export function loadRate(load, capacity) {
  * - pic : la semaine au taux le plus haut parmi les semaines chargées (charge sans capacité = pic sans taux) ;
  *   son niveau donne celui du profil (« none » sans aucune charge) ;
  * - nombre de semaines chargées, en dépassement et en tension ;
- * - moyenne des seules semaines chargées (heures de charge et de capacité par semaine), null sans charge.
+ * - moyenne des seules semaines chargées (heures de charge, de capacité et de 1 ETP par semaine), null sans charge.
  * @param {{weekStart:number, PO:number, DA:number, DS:number, DE:number, capacity:object}[]} rows
  * @returns {Record<'PO'|'DA'|'DS'|'DE'|'Mgmt', {weeks:number, loadedWeeks:number, overWeeks:number, tensionWeeks:number,
- *   peak:{rate:number|null, weekStart:number, level:string}|null, level:string, avgLoaded:{load:number, capacity:number}|null}>}
+ *   peak:{rate:number|null, weekStart:number, level:string}|null, level:string,
+ *   avgLoaded:{load:number, capacity:number, fte:number}|null}>}
  */
 export function summarizeWeeks(rows) {
   const out = {};
@@ -236,6 +239,7 @@ export function summarizeWeeks(rows) {
     };
     let load = 0;
     let capacity = 0;
+    let fte = 0;
     let best = -1;
     for (const r of rows) {
       if (!(r[k] > 0)) continue;
@@ -245,6 +249,7 @@ export function summarizeWeeks(rows) {
       else if (rate.level === 'tension') s.tensionWeeks++;
       load += r[k];
       capacity += r.capacity[k];
+      fte += r.fte ?? 0;
       const key = rate.rate === null ? Infinity : rate.rate;
       if (key > best) {
         best = key;
@@ -253,7 +258,11 @@ export function summarizeWeeks(rows) {
     }
     if (s.loadedWeeks) {
       s.level = s.peak.level;
-      s.avgLoaded = { load: round(load / s.loadedWeeks), capacity: round(capacity / s.loadedWeeks) };
+      s.avgLoaded = {
+        load: round(load / s.loadedWeeks),
+        capacity: round(capacity / s.loadedWeeks),
+        fte: round(fte / s.loadedWeeks),
+      };
     }
     out[k] = s;
   }

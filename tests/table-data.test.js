@@ -23,11 +23,17 @@ import {
   toCsv,
 } from '../widget/js/core/table-data.js';
 import { feuille } from './fixtures/feuille.js';
+import { fteHours } from '../widget/js/core/capacity.js';
+import { dayOfIso } from '../widget/js/core/dates.js';
 
 const m = buildModel(feuille());
 const view = applyFilters(m, DEFAULT_FILTERS, DEFAULT_PREFS);
 const rows = tableRows(m, view);
 const row = (id) => rows.find((r) => r.taskId === id);
+// ETP sur la capacité standard de la période : 1002 (70 h, 26 oct. → 8 nov. 2026) ≈ 1,21 ; 2010 (14 h, 2 → 6 nov.) ≈ 0,48
+const F1002 = fteHours(dayOfIso('2026-10-26'), dayOfIso('2026-11-08'));
+const E1002 = 70 / F1002;
+const E2010 = 14 / fteHours(dayOfIso('2026-11-02'), dayOfIso('2026-11-06'));
 
 test('une ligne par tâche du périmètre, sans doublon pour le chantier partagé', () => {
   assert.equal(rows.length, view.taskIds.size);
@@ -92,7 +98,7 @@ test('colonnes : catégorie, projet, chantier, tâche, sous-tâche, statut, date
   assert.equal(row(2010).tache, 'Tâche du chantier partagé');
   assert.equal(r.status, 'inprogress');
   assert.equal(r.people, 'Alice DE');
-  assert.equal(r.etp, 1);
+  assert.equal(r.etp, E1002);
   const q = row(2001);
   assert.equal(q.categorie, 'Projet');
   assert.equal(q.projet, 'ChatDPI');
@@ -129,7 +135,7 @@ test('CSV : BOM, séparateur « ; », guillemets doublés, ligne d’en-tête, C
   assert.equal(head, 'Projet;Tâche;Sous-tâche;Équipe (ETP);Début');
   assert.ok(line.includes('"a;b ""c"""'));
   assert.ok(line.startsWith('"x\ny";'));
-  assert.ok(line.includes(';1,0;'));
+  assert.ok(line.includes(';1,2;'));
 });
 
 test('CSV : une ligne par tâche, dates au format français, statut en clair', () => {
@@ -171,8 +177,8 @@ test('CSV : protection contre l’injection de formule', () => {
 
 test('ETP par rôle : lignes, tri et CSV', () => {
   const r = row(1002);
-  assert.deepEqual([r.etpPO, r.etpDA, r.etpDS, r.etpDE, r.etpMgmt, r.etpOther], [null, null, null, 1, null, null]);
-  assert.ok(Math.abs(row(2010).etpDA - 0.56) < 0.01);
+  assert.deepEqual([r.etpPO, r.etpDA, r.etpDS, r.etpDE, r.etpMgmt, r.etpOther], [null, null, null, E1002, null, null]);
+  assert.ok(Math.abs(row(2010).etpDA - E2010) < 1e-9);
   assert.equal(row(2001).etpDE, null);
   assert.equal(sortRows(rows, 'etpDE', 'desc')[0].taskId, 1002);
   assert.equal(sortRows(rows, 'etpDA', 'asc')[0].taskId, 2010);
@@ -180,8 +186,8 @@ test('ETP par rôle : lignes, tri et CSV', () => {
   const csv = toCsv([r, row(2010)], ['etp', 'etpDA', 'etpDE']);
   const [head, a, b] = csv.slice(1).split('\r\n');
   assert.equal(head, 'Équipe (ETP);ETP DA;ETP DE');
-  assert.equal(a, '1,0;;1,0');
-  assert.equal(b, '0,6;0,6;');
+  assert.equal(a, '1,2;;1,2');
+  assert.equal(b, '0,5;0,5;');
   const neg = toCsv([{ ...r, etpDE: -2 }], ['etpDE'])
     .slice(1)
     .split('\r\n')[1];
@@ -198,11 +204,11 @@ test('ETP Mgmt : colonne et CSV, Management ISD en « ETP Mgmt », autre domaine
   ];
   const view = applyFilters(model, { ...DEFAULT_FILTERS }, { ...DEFAULT_PREFS });
   const r = tableRows(model, view).find((x) => x.taskId === 1002);
-  assert.equal(r.etpMgmt, 0.5);
-  assert.equal(r.etpOther, 0.5);
+  assert.equal(r.etpMgmt, 35 / F1002);
+  assert.equal(r.etpOther, 35 / F1002);
   const [head, line] = toCsv([r], ['etpDE', 'etpMgmt', 'etpOther']).slice(1).split('\r\n');
   assert.equal(head, 'ETP DE;ETP Mgmt;ETP autre');
-  assert.equal(line, ';0,5;0,5');
+  assert.equal(line, ';0,6;0,6');
 });
 
 test('nom du fichier', () => {
@@ -258,10 +264,10 @@ test('colonnes affichables : la tâche est toujours affichée, la sous-tâche es
 
 test('lignes enrichies : personnes avec profil, jalon, rang de priorité', () => {
   const r = row(1002);
-  assert.deepEqual(r.persons, [{ nom: 'Alice DE', role: 'DE', assigned: true, etp: 1 }]);
+  assert.deepEqual(r.persons, [{ nom: 'Alice DE', role: 'DE', assigned: true, etp: E1002 }]);
   assert.equal(r.milestone, false);
   assert.deepEqual(r.byRole && Object.keys(r.byRole).sort(), ['Autre', 'DA', 'DE', 'DS', 'Mgmt', 'PO', 'total']);
-  assert.deepEqual(row(2010).persons, [{ nom: 'Eve DA', role: 'DA', assigned: true, etp: 0.56 }]);
+  assert.deepEqual(row(2010).persons, [{ nom: 'Eve DA', role: 'DA', assigned: true, etp: E2010 }]);
   assert.equal(row(1000).byRole, null);
 });
 

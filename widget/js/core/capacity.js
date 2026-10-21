@@ -1,9 +1,15 @@
-/** Capacité (jours ouvrés, fériés, congés, ralentissements) et charge (heures réparties sur les jours calendaires). Spec §4.5. */
+/**
+ * Capacité (jours ouvrés, fériés, congés, ralentissements) et charge (heures réparties sur les jours calendaires).
+ * Spec §4.5. 1 ETP sur une période = capacité d'une personne standard à temps plein (35 h, sans indisponibilité)
+ * sur cette période (fteHours) : même formule que le plan de charge, pour les tâches comme pour les vues.
+ */
 import { monthRange, weekday, monthKey } from './dates.js';
 
+/** Quotité par défaut d'une personne de Team (capacité hebdomadaire vide) et de la personne standard. */
 export const HOURS_PER_FTE_WEEK = 35;
 export const DEFAULT_LEAVE_DAYS = 44;
-export const SLOWDOWN = Object.freeze({ '07': 0.6, '08': 0.5, 12: 0.8 });
+/** Ralentissements par mois (part de la capacité) : ponts de mai, été, fêtes de fin d'année. */
+export const SLOWDOWN = Object.freeze({ '05': 0.8, '07': 0.6, '08': 0.5, 12: 0.8 });
 const DAY = (y, m, d) => Date.UTC(y, m - 1, d) / 86400000;
 
 /** Dimanche de Pâques (Meeus / Jones / Butcher), en jour UTC. */
@@ -80,12 +86,18 @@ export function spreadHours(heures, start, end) {
   return out;
 }
 
-export function hoursToEtp(hours, nDays) {
-  return nDays > 0 ? hours / ((HOURS_PER_FTE_WEEK * nDays) / 7) : 0;
+/**
+ * ETP équivalent à des heures sur une période dont 1 ETP vaut `fte` heures (fteHours) ; 0 si fte n'est pas > 0.
+ * @param {number} hours
+ * @param {number|null} fte
+ */
+export function hoursToEtp(hours, fte) {
+  return fte > 0 ? hours / fte : 0;
 }
 
-export function etpToHours(etp, nDays) {
-  return (etp * HOURS_PER_FTE_WEEK * nDays) / 7;
+/** Heures équivalentes à un ETP sur une période dont 1 ETP vaut `fte` heures (fteHours). */
+export function etpToHours(etp, fte) {
+  return etp * fte;
 }
 
 /** Heures disponibles d'une personne sur un mois 'YYYY-MM'. */
@@ -142,4 +154,48 @@ export function loadByPersonMonth(tasks) {
     }
   }
   return out;
+}
+
+const STANDARD = Object.freeze({ capaciteHebdo: HOURS_PER_FTE_WEEK });
+
+/** Heures d'une personne standard (35 h, sans indisponibilité) un jour donné : 0 le week-end et les jours fériés. */
+export const standardDayHours = (day) => personDayCapacity(STANDARD, day);
+
+const yearOf = (day) => new Date(day * 86400000).getUTCFullYear();
+const cumulCache = new Map();
+/** Sommes cumulées de standardDayHours sur une année : c[i] = heures du 1er janvier au jour i − 1 (en cache). */
+function cumulOf(year) {
+  let c = cumulCache.get(year);
+  if (!c) {
+    const first = DAY(year, 1, 1);
+    const n = DAY(year + 1, 1, 1) - first;
+    c = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) c[i + 1] = c[i] + standardDayHours(first + i);
+    cumulCache.set(year, c);
+  }
+  return c;
+}
+
+/** Heures standard du 1er janvier de l'année de `day` jusqu'à `day` exclu (inclus avec `inclusive`). */
+function sinceNewYear(day, inclusive = false) {
+  const y = yearOf(day);
+  return cumulOf(y)[day - DAY(y, 1, 1) + (inclusive ? 1 : 0)];
+}
+const yearTotal = (year) => cumulOf(year).at(-1);
+
+/**
+ * Heures de 1 ETP sur [start, end] (jours UTC entiers, bornes incluses) : capacité d'une personne standard
+ * (standardDayHours), arrondie à 1e-6. Coût constant par appel (sommes cumulées par année, en cache).
+ * @param {number|null|undefined} start
+ * @param {number|null|undefined} end
+ * @returns {number|null} null si les dates sont absentes, non entières, inversées, ou sans aucun jour ouvré
+ */
+export function fteHours(start, end) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return null;
+  const y0 = yearOf(start);
+  const y1 = yearOf(end);
+  let sum = sinceNewYear(end, true) - sinceNewYear(start);
+  for (let y = y0; y < y1; y++) sum += yearTotal(y);
+  const h = Math.round(sum * 1e6) / 1e6;
+  return h > 0 ? h : null;
 }

@@ -34,7 +34,8 @@ test('Markdown : un titre par projet et par chantier visible, une ligne par tâc
   // 8 tâches du périmètre, chacune une seule fois
   assert.equal(lines.filter((l) => /^\| /.test(l) && !l.includes('---') && !l.startsWith('| Tâche |')).length, 8);
   // Chantiers distincts : le chantier partagé compte une fois, chaque « (sans chantier) » une fois par projet
-  assert.ok(lines.includes('3 projets, 6 chantiers, 8 tâches, 1,6 ETP au total.'), md);
+  // ETP sur la capacité standard de chaque tâche : 1002 (70 h, ≈ 1,21) + 2010 (14 h, ≈ 0,48)
+  assert.ok(lines.includes('3 projets, 6 chantiers, 8 tâches, 1,7 ETP au total.'), md);
   assert.equal(md.match(/Tâche du chantier partagé/g).length, 1);
 });
 
@@ -44,7 +45,7 @@ test('Markdown : statut, échéance, personnes et ETP par profil', () => {
   assert.ok(row, md);
   assert.match(row, /En cours|inprogress/i);
   assert.match(row, /8 nov\. 2026/);
-  assert.match(row, /DE 1,0/);
+  assert.match(row, /DE 1,2/); // 70 h ÷ 57,8 h (1 ETP standard du 26 octobre au 8 novembre 2026)
 });
 
 test('Markdown : colonnes ETP masquées pour un chantier sans aucune charge', () => {

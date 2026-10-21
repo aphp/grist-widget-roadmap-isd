@@ -670,6 +670,16 @@
 .tf-charges__title {
   border-bottom: 0;
 }
+.tf-charges__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Pastille au bord droit du bloc : l'infobulle s'ouvre vers la gauche (jamais de débordement du panneau) */
+.tf-charges__tools .tooltip {
+  left: auto;
+  right: 0;
+}
 .tf-charges__unit {
   display: flex;
   align-items: center;

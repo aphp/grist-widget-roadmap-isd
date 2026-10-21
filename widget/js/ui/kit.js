@@ -124,11 +124,12 @@ function placeTipsInView() {
     const wrap = e.target instanceof Element ? e.target.closest('.info-tip') : null;
     const tip = wrap?.querySelector('.tooltip');
     if (!tip) return;
-    tip.style.left = '0px';
+    // Décalage par translate : la position de la feuille de style (ancrée à gauche, ou à droite) reste la base
+    tip.style.translate = '';
     const box = tip.getBoundingClientRect();
     const right = document.documentElement.clientWidth - TIP_MARGIN;
     const shift = Math.max(Math.min(0, right - box.right), TIP_MARGIN - box.left);
-    tip.style.left = `${shift}px`;
+    tip.style.translate = shift ? `${shift}px 0` : '';
   };
   document.addEventListener('mouseover', place);
   document.addEventListener('focusin', place);

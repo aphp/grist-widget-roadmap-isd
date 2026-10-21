@@ -334,7 +334,7 @@ const FR = Object.freeze({
   'portfolio.load.noCapacity': 'sans capacité',
   'portfolio.load.capacity': 'Capacité PO, DA, DS, DE',
   'portfolio.load.thresholds': 'Taux : moins de 85 % normal, 85 à 100 % tension, plus de 100 % dépassement.',
-  'portfolio.load.unit': 'Valeurs en ETP (heures de la semaine ÷ 35).',
+  'portfolio.load.unit': 'Valeurs en ETP : 1 ETP = une personne à temps plein sur la semaine.',
   'portfolio.load.summary': 'Synthèse de la période',
   'portfolio.range': 'du {debut} au {fin}',
   'portfolio.sum.peak': 'Pic : {valeur}',
@@ -399,7 +399,7 @@ const FR = Object.freeze({
   'plan.label': 'Plan de charge de l’équipe',
   'plan.caption': 'Plan de charge des personnes ISD, de {debut} à {fin} : capacité, charge et taux par mois',
   'plan.scope':
-    'Charge des {taches} retenues par les filtres, chacune comptée une fois, répartie sur ses jours. Capacité : quotité de la Feuille (35 h par semaine par défaut), moins congés, jours fériés, ralentissements (juillet, août, décembre) et indisponibilités.',
+    'Charge des {taches} retenues par les filtres, chacune comptée une fois, répartie sur ses jours. Capacité : quotité de la Feuille (35 h par semaine par défaut), moins congés, jours fériés, ralentissements (mai, juillet, août, décembre) et indisponibilités.',
   'plan.noCharges':
     'Aucune charge n’est renseignée sur les tâches retenues : tous les taux sont à 0 %. La charge vient de la colonne charges des tâches dans la Feuille.',
   'plan.person': 'Personne',
@@ -700,9 +700,13 @@ const FR = Object.freeze({
   'form.charges.unit': 'Saisir en :',
   'form.charges.unit.etp': 'ETP',
   'form.charges.unit.heures': 'heures',
+  'capacity.fte.about': 'À propos de l’ETP',
+  'capacity.fte.help':
+    '1 ETP = une personne à temps plein sur la période : 7 h par jour ouvré (hors week-ends et jours fériés), moins 44 jours de congés par an, et moins en mai (80 %), juillet (60 %), août (50 %) et décembre (80 %). Les heures du plan de charge et des tâches se comptent de la même façon.',
   'form.charges.help':
-    '1 ETP = 35 h par semaine, sur les jours calendaires du début à l’échéance ; 1 ETP au plus par personne (sauf la personne d’estimation). Les heures sont enregistrées à 0,5 h près. Si les dates changent, l’ETP est conservé et les heures sont recalculées.',
+    '1 ETP = une personne à temps plein sur la période du début à l’échéance (voir la pastille « i ») ; 1 ETP au plus par personne (sauf la personne d’estimation). Les heures sont enregistrées à 0,5 h près. Si les dates changent, l’ETP est conservé et les heures sont recalculées.',
   'form.charges.noDates': 'Indiquez début et échéance pour saisir en ETP',
+  'form.charges.noWorkdays': 'La période ne compte aucun jour ouvré : saisissez en heures',
   'form.charges.eqHours': '= {h} h',
   'form.charges.eqEtp': '= {valeur} ETP',
   'form.charges.eqNone': 'ETP : —',
@@ -742,6 +746,7 @@ const FR = Object.freeze({
   'form.charges.invalidPerson':
     'Entrée invalide pour {nom}, conservée telle quelle : une saisie pour cette personne la remplacera. ({texte})',
   'form.charges.error.dates': 'Indiquez début et échéance pour saisir en ETP',
+  'form.charges.error.noWorkdays': 'La période ne compte aucun jour ouvré : saisissez en heures',
   'form.charges.valueText': '{nom} {h} h',
   'form.charges.valueUnreadable': '(contenu illisible) {texte}',
   'form.error.charges': 'Corrigez la charge signalée.',
@@ -946,7 +951,7 @@ const FR = Object.freeze({
   'create.field.cible.path': 'Rattachement : {chemin}',
   'create.field.parent': 'Sous-tâche de',
   'create.people.help':
-    'Ajouter une personne l’assigne ; sa charge est facultative. 1 ETP = 35 h par semaine de la tâche, 1 ETP au plus par personne (sauf la personne d’estimation).',
+    'Ajouter une personne l’assigne ; sa charge est facultative. 1 ETP = une personne à temps plein sur la période de la tâche (voir la pastille « i »), 1 ETP au plus par personne (sauf la personne d’estimation).',
   'create.people.helpMe': 'Par défaut : vous (« Je suis… »).',
   'create.error.chargesOver':
     'Une charge dépasse la borne sur la période ({h} h par personne) : corrigez-la ou les dates.',
@@ -1126,7 +1131,7 @@ const FR = Object.freeze({
   'stats.chart.delays': 'Délais de clôture',
   'stats.chart.roles': 'Charge par profil (ETP par mois)',
   'stats.roles.sub':
-    'ETP moyen du mois (1 ETP = 35 h par semaine), d’après les charges des tâches filtrées réparties sur leurs dates, de {debut} à {fin} : 3 mois passés et 8 à venir, comme un plan de charge. Le filtre Personne retient des tâches et compte toutes leurs charges : ce n’est pas la charge propre de la personne (voir le plan de charge).',
+    'ETP moyen du mois (1 ETP = une personne à temps plein sur le mois), d’après les charges des tâches filtrées réparties sur leurs dates, de {debut} à {fin} : 3 mois passés et 8 à venir, comme un plan de charge. Le filtre Personne retient des tâches et compte toutes leurs charges : ce n’est pas la charge propre de la personne (voir le plan de charge).',
   'stats.roles.other': 'Autre : personnes hors équipe ISD ou sans profil.',
   'stats.roles.noOther': 'Aucune charge « Autre » (hors équipe ISD) sur la période.',
   'stats.roles.axisMonth': 'Mois',

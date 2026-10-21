@@ -5,7 +5,7 @@
 import { MONTHS_FR } from '../core/dates.js';
 import { teamLoad, teamTotals } from '../core/team-data.js';
 import { taskPaths } from '../core/kanban-data.js';
-import { h, icon, statusBadge } from '../ui/kit.js';
+import { h, icon, infoTip, statusBadge } from '../ui/kit.js';
 import { label, taskCount } from '../labels.js';
 
 const MONTHS = 12;
@@ -162,7 +162,7 @@ export function mountLoadPlan(el, ctx) {
 
   el.innerHTML = h`<div class="plan">
     <div class="plan__bar">
-      <p class="plan__scope">${label('plan.scope', { taches: taskCount(ctx.view.taskIds.size).toLowerCase() })}</p>
+      <p class="plan__scope">${label('plan.scope', { taches: taskCount(ctx.view.taskIds.size).toLowerCase() })} ${infoTip('tip-fte-plan', label('capacity.fte.about'), label('capacity.fte.help'))}</p>
       ${legendHtml()}
     </div>
     ${hasLoad ? '' : h`<div class="fr-alert fr-alert--info fr-alert--sm plan__notice"><p>${label('plan.noCharges')}</p></div>`}

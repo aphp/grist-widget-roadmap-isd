@@ -414,3 +414,6 @@
     display: none;
   }
 }
+.plan__scope .info-tip {
+  vertical-align: middle;
+}

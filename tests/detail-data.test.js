@@ -12,6 +12,8 @@ import {
   splitEmptyFields,
 } from '../widget/js/core/detail-data.js';
 import { feuille } from './fixtures/feuille.js';
+import { fteHours } from '../widget/js/core/capacity.js';
+import { dayOfIso } from '../widget/js/core/dates.js';
 
 const m = buildModel(feuille());
 const T = (id) => ({ table: 'Tasks', id });
@@ -85,7 +87,7 @@ test('personnes de la fiche (liste unique) : heures, ETP, profil ; null sans dat
   const rows = taskPeopleRows(m, m.tasks.get(1002)).filter((r) => r.hours !== null);
   assert.deepEqual(
     rows.map((r) => [r.personId, r.person.nom, r.person.role, r.hours, r.etp]),
-    [[1, 'Alice DE', 'DE', 70, 1]],
+    [[1, 'Alice DE', 'DE', 70, 70 / fteHours(dayOfIso('2026-10-26'), dayOfIso('2026-11-08'))]],
   );
   const r = taskPeopleRows(m, m.tasks.get(2001)).find((x) => x.hours !== null);
   assert.equal(r.etp, null);

@@ -2,7 +2,7 @@
  * Vue « Mes tâches » : tâches et sous-tâches d'une personne (assignée, responsable ou chargée), non terminées,
  * groupées par échéance sur des semaines du lundi au dimanche. Fonctions pures.
  */
-import { hoursToEtp, HOURS_PER_FTE_WEEK, personWeekCapacity } from './capacity.js';
+import { fteHours, hoursToEtp, personWeekCapacity } from './capacity.js';
 import { weekStart } from './dates.js';
 
 /** Groupes, dans l'ordre d'affichage. */
@@ -90,7 +90,7 @@ export function myTasks(model, personId, today, { hiddenProjects = [] } = {}) {
     const place = placeOf(model, t);
     if (place.projectId !== null && hidden.has(place.projectId)) continue;
     const hours = t.charges.filter((c) => c.personId === personId).reduce((s, c) => s + c.heures, 0);
-    const days = t.start !== null && t.end !== null && t.end >= t.start ? t.end - t.start + 1 : 0;
+    const fte = fteHours(t.start, t.end);
     const period = periodOf(t.end, today);
     out.push({
       id: t.id,
@@ -103,7 +103,7 @@ export function myTasks(model, personId, today, { hiddenProjects = [] } = {}) {
       lateDays: period === 'late' ? today - t.end : 0,
       roles,
       hours,
-      etp: hours > 0 && days ? hoursToEtp(hours, days) : null,
+      etp: hours > 0 && fte ? hoursToEtp(hours, fte) : null,
       chantier: place.chantier,
       projet: place.projet,
       parent: place.parent,
@@ -136,6 +136,7 @@ export function visibleCount(total, clicks = 0) {
  * Charge de la personne sur la semaine (lundi à dimanche) qui contient `today` : ses heures de chaque tâche
  * datée, réparties sur les jours calendaires de la tâche (comme le plan de charge), face à sa capacité de la
  * semaine (fériés, congés et indisponibilités déduits). Les tâches terminées comptent : la charge était prévue.
+ * etp et capacityEtp : heures ÷ heures de 1 ETP sur la semaine (fteHours).
  * @returns {{start:number, hours:number, capacity:number, etp:number, capacityEtp:number}|null} null si la
  *   personne est inconnue
  */
@@ -153,11 +154,12 @@ export function weekLoad(model, personId, today) {
     hours += (h * overlap) / (t.end - t.start + 1);
   }
   const capacity = personWeekCapacity(person, start);
+  const fte = fteHours(start, end);
   return {
     start,
     hours,
     capacity,
-    etp: hours / HOURS_PER_FTE_WEEK,
-    capacityEtp: capacity / HOURS_PER_FTE_WEEK,
+    etp: hoursToEtp(hours, fte),
+    capacityEtp: hoursToEtp(capacity, fte),
   };
 }

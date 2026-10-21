@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { buildModel } from '../widget/js/core/model.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS } from '../widget/js/core/filters.js';
 import { ROLE_WINDOW, roleLoad, roleSeries, shiftMonth } from '../widget/js/core/stats-data.js';
-import { dayOfIso } from '../widget/js/core/dates.js';
+import { dayOfIso, monthRange } from '../widget/js/core/dates.js';
+import { fteHours } from '../widget/js/core/capacity.js';
 import { feuille } from './fixtures/feuille.js';
 
 const today = dayOfIso('2026-10-20');
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
-const etp = (hours, days) => hours / ((35 * days) / 7);
+/** Heures de 1 ETP sur un mois 'YYYY-MM' : capacité standard du mois. */
+const monthFte = (ym) => fteHours(monthRange(ym).start, monthRange(ym).end);
+const etp = (hours, ym) => hours / monthFte(ym);
+const NOV = monthFte('2026-11');
 
 /** Modèle du jeu de test, avec seulement les tâches données (id, dates ISO, charges). */
 function withTasks(tasks) {
@@ -40,20 +44,20 @@ test('fenêtre : 3 mois passés, le mois courant et 8 à venir', () => {
   assert.equal(rows.at(-1).month, '2027-06');
 });
 
-test('un mois entier chargé à 150 h sur 30 jours = 1 ETP', () => {
-  const m = withTasks([{ id: 1, start: '2026-11-01', end: '2026-11-30', charges: [{ personId: 1, heures: 150 }] }]);
+test('un mois entier chargé à la capacité standard du mois = 1 ETP', () => {
+  const m = withTasks([{ id: 1, start: '2026-11-01', end: '2026-11-30', charges: [{ personId: 1, heures: NOV }] }]);
   const r = row(roleLoad(m, [1], today), '2026-11');
   close(r.DE, 1);
   close(r.total, 1);
   assert.equal(r.PO + r.DA + r.DS + r.Mgmt + r.Autre, 0);
 });
 
-test('tâche à cheval sur deux mois : heures au prorata des jours, ETP sur la durée de chaque mois', () => {
+test('tâche à cheval sur deux mois : heures au prorata des jours, ETP sur la capacité de chaque mois', () => {
   // 25 octobre → 7 novembre : 7 jours de chaque côté, 70 h → 35 h par mois
   const m = withTasks([{ id: 1, start: '2026-10-25', end: '2026-11-07', charges: [{ personId: 1, heures: 70 }] }]);
   const rows = roleLoad(m, [1], today);
-  close(row(rows, '2026-10').DE, etp(35, 31));
-  close(row(rows, '2026-11').DE, etp(35, 30));
+  close(row(rows, '2026-10').DE, etp(35, '2026-10'));
+  close(row(rows, '2026-11').DE, etp(35, '2026-11'));
   assert.equal(row(rows, '2026-09').total, 0);
   assert.equal(row(rows, '2026-12').total, 0);
 });
@@ -65,10 +69,10 @@ test('bornes de la fenêtre : seules les heures des mois affichés comptent', ()
     { id: 2, start: '2027-07-01', end: '2027-07-31', charges: [{ personId: 1, heures: 99 }] },
   ]);
   const rows = roleLoad(m, [1, 2], today);
-  close(row(rows, '2026-07').DE, etp(31, 31));
+  close(row(rows, '2026-07').DE, etp(31, '2026-07'));
   close(
     rows.reduce((s, r) => s + r.total, 0),
-    etp(31, 31),
+    etp(31, '2026-07'),
   );
   assert.deepEqual(roleLoad(m, [2], today), []);
 });
@@ -91,12 +95,12 @@ test('Management de l’ISD → Mgmt ; Management d’un autre domaine, hors ISD
     },
   ]);
   const r = row(roleLoad(m, [1], today), '2026-11');
-  close(r.Mgmt, 1);
-  close(r.Autre, 2.2);
-  close(r.PO, 0.2);
-  close(r.DA, 0.1);
+  close(r.Mgmt, 150 / NOV);
+  close(r.Autre, 330 / NOV);
+  close(r.PO, 30 / NOV);
+  close(r.DA, 15 / NOV);
   assert.equal(r.DS, 0);
-  close(r.total, 3.5);
+  close(r.total, 525 / NOV);
 });
 
 test('profils tracés : « Autre » seulement s’il a une charge', () => {
@@ -114,7 +118,7 @@ test('tâches sans dates ou aux dates incohérentes ignorées ; ids inconnus et 
     { id: 3, start: '2026-11-01', end: '2026-11-30', charges: [{ personId: 1, heures: 15 }] },
   ]);
   assert.deepEqual(roleLoad(m, [1, 2], today), []);
-  close(row(roleLoad(m, [3, 3, 404], today), '2026-11').DE, 0.1);
+  close(row(roleLoad(m, [3, 3, 404], today), '2026-11').DE, 15 / NOV);
 });
 
 test('filtres : seules les tâches visibles comptent', () => {
@@ -125,7 +129,7 @@ test('filtres : seules les tâches visibles comptent', () => {
   assert.ok(!view.taskIds.has(1002));
   const eve = row(roleLoad(m, [...view.taskIds], today), '2026-11');
   assert.equal(eve.DE, 0);
-  close(eve.DA, etp(14, 30));
+  close(eve.DA, etp(14, '2026-11'));
 });
 
 test('rendu : segments à « 0,0 » omis, mois courant marqué, pas d’infobulle, filtre Personne expliqué', async () => {
@@ -136,7 +140,7 @@ test('rendu : segments à « 0,0 » omis, mois courant marqué, pas d’infobull
       start: '2026-10-01',
       end: '2026-10-31',
       charges: [
-        { personId: 1, heures: 155 }, // DE : 1,0 ETP
+        { personId: 1, heures: 155 }, // DE : 1,2 ETP (capacité standard d'octobre ≈ 127 h)
         { personId: 2, heures: 4 }, // PO : 0,03 ETP → « 0,0 »
       ],
     },
@@ -151,4 +155,9 @@ test('rendu : segments à « 0,0 » omis, mois courant marqué, pas d’infobull
   assert.match(out, /Le filtre Personne retient des tâches et compte toutes leurs charges/);
   // Le tableau garde la colonne PO (0,0)
   assert.match(out, /<th scope="col">PO<\/th>/);
+  // Pastille « i » à côté du titre : explication de l'ETP, reliée au bouton
+  assert.match(out, /<div class="stats__card-head"><h3 class="stats__card-title" id="stats-roles">/);
+  assert.match(out, /aria-label="À propos de l’ETP" aria-describedby="tip-fte-stats"/);
+  assert.match(out, /id="tip-fte-stats">1 ETP = une personne à temps plein sur la période/);
+  assert.match(rolesCard([], [], { today }).toString(), /tip-fte-stats/);
 });

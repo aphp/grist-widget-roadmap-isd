@@ -21,7 +21,7 @@ import {
   visibleChantierIds,
   visibleProjectIds,
 } from '../core/stats-data.js';
-import { h } from '../ui/kit.js';
+import { h, infoTip } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
 import { etpLabel, label, taskCount } from '../labels.js';
 import { mountLoadPlan } from './load-plan.js';
@@ -147,7 +147,8 @@ function roleBars(rows, keys, current) {
 
 export function rolesCard(rows, keys, ctx) {
   const T = label('stats.chart.roles');
-  if (!rows.length) return card('roles', T, empty(), { wide: true });
+  const tip = infoTip('tip-fte-stats', label('capacity.fte.about'), label('capacity.fte.help'));
+  if (!rows.length) return card('roles', T, empty(), { wide: true, tip });
   const sub = label('stats.roles.sub', { debut: monthLabel(rows[0].month), fin: monthLabel(rows.at(-1).month) });
   const other = keys.includes('Autre') ? label('stats.roles.other') : label('stats.roles.noOther');
   return card(
@@ -160,7 +161,7 @@ export function rolesCard(rows, keys, ctx) {
         [label('stats.col.month'), ...keys.map(roleName), label('stats.roles.total')],
         rows.map((r) => [monthLabel(r.month), ...keys.map((k) => etp1(r[k])), etp1(r.total)]),
       )}`,
-    { wide: true, sub },
+    { wide: true, sub, tip },
   );
 }
 
@@ -168,9 +169,10 @@ function legend(items) {
   return h`<ul class="list stats__legend">${items.map(([tone, text]) => h`<li><span class="stats__swatch tone--${tone}" aria-hidden="true"></span>${text}</li>`)}</ul>`;
 }
 
-function card(key, title, body, { wide = false, sub = '' } = {}) {
+function card(key, title, body, { wide = false, sub = '', tip = '' } = {}) {
+  const head = h`<h3 class="stats__card-title" id="stats-${key}">${title}</h3>`;
   return h`<section class="stats__card card${raw(wide ? ' stats__card--wide' : '')}" aria-labelledby="stats-${key}">
-    <h3 class="stats__card-title" id="stats-${key}">${title}</h3>
+    ${tip ? h`<div class="stats__card-head">${head}${tip}</div>` : head}
     ${sub ? h`<p class="stats__sub">${sub}</p>` : ''}
     ${body}
   </section>`;
