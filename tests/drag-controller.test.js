@@ -567,3 +567,20 @@ test('doigt, immediate (élément en touch-action: none) : pas d’appui long, s
   s.win.emit('pointerup', { pointerType: 'touch' });
   assert.deepEqual(s.calls.at(-1), ['drop']);
 });
+
+test('stylet : survol sans contact (buttons 0) après un relâchement perdu = annulation ; doigt jamais', (t) => {
+  const s = setup();
+  trackPointer(down({ pointerType: 'pen' }), s.handlers);
+  s.win.emit('pointermove', { clientX: 110, buttons: 1, pointerType: 'pen' });
+  s.win.emit('pointermove', { clientX: 120, buttons: 0, pointerType: 'pen' });
+  assert.deepEqual(s.calls, [['start'], ['cancel', 'cancel']]);
+  s.win.emit('pointerup', { pointerType: 'pen' });
+  assert.equal(s.calls.length, 2);
+  // Doigt : buttons n'est pas fiable, aucune annulation pour cela
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = setup();
+  trackPointer(down({ pointerType: 'touch' }), f.handlers);
+  t.mock.timers.tick(400);
+  f.win.emit('pointermove', { clientX: 120, buttons: 0, pointerType: 'touch' });
+  assert.deepEqual(f.calls, [['start']]);
+});

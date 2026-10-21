@@ -182,8 +182,9 @@ export function trackPointer(down, handlers) {
     'pointermove',
     (e) => {
       if (done || !mine(e)) return;
-      if (e.pointerType === 'mouse' && e.buttons === 0) {
-        cancel('cancel'); // relâchement manqué (hors de la fenêtre)
+      // Souris ou stylet sans bouton ni contact : relâchement manqué (hors de la fenêtre, capture perdue)
+      if (e.pointerType !== 'touch' && e.buttons === 0) {
+        cancel('cancel');
         return;
       }
       if (!dragging) {
