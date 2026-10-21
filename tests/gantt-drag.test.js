@@ -438,3 +438,10 @@ test('keyMode : jalon à la seule échéance, borne du 31/12 de l’année suiva
   assert.equal(day1.state.limit, false);
   assert.deepEqual(iso2(keyMode(day1.state, { key: 'Backspace' }).state.now), ['2027-12-27', '2027-12-27']);
 });
+
+test('mode clavier : chaque refus de dragTarget (hors liste) a son annonce, chaque pas son nom', async () => {
+  const { hasLabel } = await import('../widget/js/labels.js');
+  for (const r of ['kind', 'virtual', 'deduced', 'nodates', 'order', 'edit', 'scope', 'column'])
+    assert.ok(hasLabel(`gantt.key.no.${r}`), r);
+  for (const u of ['day', 'week', 'month']) assert.ok(hasLabel(`gantt.key.unit.${u}`), u);
+});
