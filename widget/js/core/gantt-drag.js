@@ -195,7 +195,7 @@ export function dragContext(model, target, from) {
 
 /**
  * Heures de Tasks.charges avant et après le recalcul à ETP constant, ou null (pas de charges, capacité égale, ou
- * total inchangé : toutes les entrées laissées telles quelles).
+ * cellule inchangée : toutes les entrées laissées telles quelles).
  */
 function hoursEffect(model, ctx, to) {
   const toFte = periodFte(to.start, to.end);
@@ -203,8 +203,10 @@ function hoursEffect(model, ctx, to) {
   const bound = chargeMaxOf(model);
   const maxOf = (teamId) => bound(teamId, toFte);
   const r = rescaleCharges(ctx.raw, ctx.refs, toFte, { maxOf });
-  const total = sumHours(r.raw);
-  return { hours: total === ctx.fromHours ? null : { from: ctx.fromHours, to: total }, keptOver: r.over };
+  // Cellule inchangée (toutes les entrées laissées telles quelles) : pas de ligne d'heures ; réécrite : la ligne,
+  // même si le total ne bouge pas
+  if (r.raw === ctx.raw) return { hours: null, keptOver: r.over };
+  return { hours: { from: ctx.fromHours, to: sumHours(r.raw) }, keptOver: r.over };
 }
 
 /**
@@ -219,8 +221,8 @@ function hoursEffect(model, ctx, to) {
  * @param {ReturnType<typeof dragContext>} [ctx]
  * @returns {{start:number, end:number, days:number, delta:number, hours:{from:number, to:number}|null,
  *   keptOver:number[], childrenOutside:number, childKind:'sous-tache'|'tache', lateCleared:boolean}}
- *   days : jours calendaires ; hours : null sans charges, si la capacité standard ne change pas ou si le total
- *   d'heures reste le même (toutes les entrées laissées telles quelles) ; keptOver :
+ *   days : jours calendaires ; hours : null sans charges, si la capacité standard ne change pas ou si la cellule
+ *   des charges reste la même (toutes les entrées laissées telles quelles) ; keptOver :
  *   personnes dont l'entrée dépasse la borne et reste telle quelle ; childrenOutside : enfants dont une date
  *   propre sort de `to` (même ceux qui en sortaient déjà)
  */

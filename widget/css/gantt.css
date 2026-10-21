@@ -1105,7 +1105,7 @@ button.glist__title:focus-visible {
   .gantt .gms--hollow.is-late {
     border: 2px dashed CanvasText;
   }
-  .gantt .gbar--hollow.is-late:not(:focus),
+  .gantt .gbar--hollow.is-late:not(:focus, .is-touch-selected),
   .gantt .gms--hollow.is-late:not(:focus) {
     outline: 2px solid CanvasText;
     outline-offset: 1px;

@@ -5247,3 +5247,23 @@ test('gantt : au doigt, l’appui long sur un jalon ne le choisit pas (pas de po
   assert.equal(await w(`return D.querySelectorAll('.is-touch-selected').length;`), 0);
   assert.equal(await w(`return W.__writes.length;`), 0);
 });
+
+test(
+  'gantt : le menu contextuel d’un appui long au doigt n’ouvre pas le menu de ligne ; clic droit l’ouvre',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    const rowId = await focusTaskRow(task.id);
+    const menu = (pointerType) =>
+      w(`const b = D.getElementById(${JSON.stringify(rowId)}).querySelector('[data-drag]');
+      const e = new W.PointerEvent('contextmenu', { bubbles: true, cancelable: true, pointerType: '${pointerType}' });
+      b.dispatchEvent(e); return e.defaultPrevented;`);
+    assert.equal(await menu('touch'), true);
+    await sleep(200);
+    assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), false);
+    assert.equal(await menu('mouse'), true);
+    await until(`D.getElementById('qs-menu')`);
+    await hit('Escape');
+  },
+);

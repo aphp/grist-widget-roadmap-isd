@@ -24,7 +24,8 @@ import {
 } from '../widget/js/core/gantt-drag.js';
 import { expandableKeys, ganttRows, sortTreeByDate } from '../widget/js/core/gantt-data.js';
 import { etpToHours } from '../widget/js/core/capacity.js';
-import { periodFte, roundHours } from '../widget/js/core/charges-edit.js';
+import { chargeMaxOf, periodFte, roundHours } from '../widget/js/core/charges-edit.js';
+import { chargeRefs, rescaleCharges } from '../widget/js/core/charges-rescale.js';
 import { feuille } from './fixtures/feuille.js';
 
 const d = dayOfIso;
@@ -727,4 +728,24 @@ test('summaryText : décalage seulement en déplacement, heures sans réserve si
   assert.deepEqual(summaryText(s, 'move'), [range, '+7 j', hours]);
   assert.deepEqual(summaryText(s, 'end'), [range, hours]);
   assert.deepEqual(summaryText(s, 'start'), [range, hours]);
+});
+
+test('dragSummary : ligne d’heures absente exactement quand la cellule des charges reste la même', () => {
+  const from = span('2026-11-02', '2026-11-15');
+  const fromFte = periodFte(from.start, from.end);
+  const charges = [
+    { personId: 7, heures: hoursOf('2026-11-02', '2026-11-15', 0.95) },
+    { personId: 8, heures: hoursOf('2026-11-02', '2026-11-15', 1.5) },
+  ];
+  const raw = JSON.stringify(charges.map((c) => ({ teamId: c.personId, heures: c.heures })));
+  for (let n = 1; n <= 40; n += 1) {
+    const m = modelOf(task(1, { charges }));
+    const to = { start: from.start, end: from.end + n };
+    const toFte = periodFte(to.start, to.end);
+    const s = dragSummary(m, T(1), from, to, 0);
+    if (toFte === fromFte) continue;
+    const bound = chargeMaxOf(m);
+    const r = rescaleCharges(raw, chargeRefs(raw, fromFte), toFte, { maxOf: (id) => bound(id, toFte) });
+    assert.equal(s.hours === null, r.raw === raw, `+${n} j`);
+  }
 });

@@ -1655,8 +1655,9 @@ export function render(el, ctx) {
     return true;
   }
   el.oncontextmenu = (e) => {
-    // Mode clavier : ni menu de ligne ni menu du navigateur (Maj+F10, touche Menu)
-    if (memory.gesture?.keyboard) return void e.preventDefault();
+    // Mode clavier : ni menu de ligne ni menu du navigateur (Maj+F10, touche Menu) ; appui long du doigt : il
+    // choisit ou glisse la barre, jamais le menu de ligne (qui prendrait le focus)
+    if (memory.gesture?.keyboard || e.pointerType === 'touch') return void e.preventDefault();
     const row = e.target.closest?.('[data-row]');
     if (!row || !ctx.dates || memory.gesture || isStatusPopoverOpen()) {
       if (row && isStatusPopoverOpen()) e.preventDefault(); // « contextmenu » qui suit Maj+F10 : menu déjà ouvert
