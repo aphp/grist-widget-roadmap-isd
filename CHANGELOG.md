@@ -5,7 +5,9 @@
 - Charges are typed in ETP or in hours per week ("h/semaine", the quotité: 35 h/week = 1 ETP) instead of total
   hours. Total hours = ETP × standard capacity of the period (leave, public holidays and slowdowns deducted), rounded
   to 0.5 h; storage unchanged (`Tasks.charges` keeps total hours). h/week shown from storage = hours ÷ capacity × 35,
-  one decimal; retyping the shown value keeps the stored hours; bound 35 h/week (50 × 35 for estimation people);
+  one decimal, except that a typed value (ETP or h/week) stays shown as typed while the line's hours are still the ones
+  it gives, dates changes included; retyping the shown value keeps the stored hours; a too small h/week entry names
+  the smallest allowed value; the help above the lines is one sentence, the details are in the « i » tooltip; bound 35 h/week (50 × 35 for estimation people);
   errors say the bound in h/week with the matching total. Each line shows "= {h} h au total" in both units. Without a
   usable period (dates missing, inverted, or no working day), no charge can be typed; stored hours stay shown and
   kept. An h/week entry records its exact ETP as reference, so "the ETP holds" when dates change. The saved unit
