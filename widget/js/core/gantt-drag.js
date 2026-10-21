@@ -6,7 +6,7 @@ import { DAY_MS, formatDayShort } from './dates.js';
 import { label } from '../labels.js';
 import { chargeRefs, rescaleCharges } from './charges-rescale.js';
 import { entryHours, isEstimationPerson, maxHours, periodFte, readChargesCell } from './charges-edit.js';
-import { isMilestone, nodeBar } from './gantt-data.js';
+import { isMilestone, isTaskLate, nodeBar } from './gantt-data.js';
 import { editAvailability } from './task-form.js';
 
 /** @typedef {'day'|'week'|'month'} Unit */
@@ -121,55 +121,79 @@ const sumHours = (raw) =>
     0,
   );
 
-/** Heures de Tasks.charges avant et après le recalcul à ETP constant, ou null (pas de charges, capacité égale). */
-function hoursEffect(model, task, from, to) {
+/**
+ * Données d'un glisser qui ne dépendent que de l'élément et de sa période d'origine, calculées une fois au début
+ * du geste : capacité de la période d'origine, cellule des charges et références, enfants, retard.
+ * Les charges viennent des charges connues du modèle (le modèle ne garde pas le texte brut de la cellule : les
+ * entrées inconnues ou invalides n'y figurent pas ; le writer les recopie telles quelles à l'envoi).
+ * @param {object} model
+ * @param {{table:'Tasks'|'Chantiers', id:number}} target voir dragTarget
+ * @param {{start:number, end:number}} from période d'origine
+ */
+export function dragContext(model, target, from) {
+  const task = target.table === 'Tasks' ? (model.tasks.get(target.id) ?? null) : null;
   const fromFte = periodFte(from.start, from.end);
-  const toFte = periodFte(to.start, to.end);
-  if (!task.charges.length || !fromFte || !toFte || fromFte === toFte) return { hours: null, keptOver: [] };
-  const raw = JSON.stringify(task.charges.map((c) => ({ teamId: c.personId, heures: c.heures })));
-  const maxOf = (teamId) => maxHours(toFte, isEstimationPerson(model, teamId));
-  const r = rescaleCharges(raw, chargeRefs(raw, fromFte), toFte, { maxOf });
-  return { hours: { from: sumHours(raw), to: sumHours(r.raw) }, keptOver: r.over };
+  const raw = task?.charges.length
+    ? JSON.stringify(task.charges.map((c) => ({ teamId: c.personId, heures: c.heures })))
+    : null;
+  const ids = task
+    ? task.childIds
+    : [...model.tasks.values()].filter((t) => t.chantierId === target.id && !t.parentId).map((t) => t.id);
+  return {
+    task,
+    fromFte,
+    raw,
+    refs: raw && fromFte ? chargeRefs(raw, fromFte) : new Map(),
+    fromHours: raw ? sumHours(raw) : 0,
+    children: ids.map((id) => model.tasks.get(id)).filter(Boolean),
+    last: null,
+  };
 }
 
-/** Éléments enfants (sous-tâches directes, ou tâches de premier niveau d'un chantier) dont une date propre sort de `to`. */
-function outsideCount(model, target, to) {
-  const ids =
-    target.table === 'Tasks'
-      ? (model.tasks.get(target.id)?.childIds ?? [])
-      : [...model.tasks.values()].filter((t) => t.chantierId === target.id && !t.parentId).map((t) => t.id);
-  return ids.filter((id) => {
-    const t = model.tasks.get(id);
-    return t && ((t.start !== null && t.start < to.start) || (t.end !== null && t.end > to.end));
-  }).length;
+/** Heures de Tasks.charges avant et après le recalcul à ETP constant, ou null (pas de charges, capacité égale). */
+function hoursEffect(model, ctx, to) {
+  const toFte = periodFte(to.start, to.end);
+  if (!ctx.raw || !ctx.fromFte || !toFte || toFte === ctx.fromFte) return { hours: null, keptOver: [] };
+  const maxOf = (teamId) => maxHours(toFte, isEstimationPerson(model, teamId));
+  const r = rescaleCharges(ctx.raw, ctx.refs, toFte, { maxOf });
+  return { hours: { from: ctx.fromHours, to: sumHours(r.raw) }, keptOver: r.over };
 }
 
 /**
  * Effets d'un glisser sur la période d'une tâche ou d'un chantier, pour l'infobulle et les annonces.
+ * Le contexte (dragContext) se crée une fois au début du geste ; on n'appelle dragSummary que lorsque la période
+ * alignée `to` change (le dernier résultat est gardé : même `to`, même objet).
  * @param {object} model
  * @param {{table:'Tasks'|'Chantiers', id:number}} target voir dragTarget
  * @param {{start:number, end:number}} from période d'origine
  * @param {{start:number, end:number}} to nouvelle période
  * @param {number} today
+ * @param {ReturnType<typeof dragContext>} [ctx]
  * @returns {{start:number, end:number, days:number, delta:number, hours:{from:number, to:number}|null,
  *   keptOver:number[], childrenOutside:number, childKind:'sous-tache'|'tache', lateCleared:boolean}}
  *   days : jours calendaires ; hours : null sans charges ou si la capacité standard ne change pas ; keptOver :
- *   personnes dont l'entrée dépasse la borne et reste telle quelle
+ *   personnes dont l'entrée dépasse la borne et reste telle quelle ; childrenOutside : enfants dont une date
+ *   propre sort de `to` (même ceux qui en sortaient déjà)
  */
-export function dragSummary(model, target, from, to, today) {
-  const task = target.table === 'Tasks' ? model.tasks.get(target.id) : null;
-  const { hours, keptOver } = task ? hoursEffect(model, task, from, to) : { hours: null, keptOver: [] };
-  return {
+export function dragSummary(model, target, from, to, today, ctx = dragContext(model, target, from)) {
+  const last = ctx.last;
+  if (last && last.today === today && last.to.start === to.start && last.to.end === to.end) return last.summary;
+  const { hours, keptOver } = hoursEffect(model, ctx, to);
+  const summary = {
     start: to.start,
     end: to.end,
     days: to.end - to.start + 1,
     delta: to.start - from.start,
     hours,
     keptOver,
-    childrenOutside: outsideCount(model, target, to),
+    childrenOutside: ctx.children.filter(
+      (t) => (t.start !== null && t.start < to.start) || (t.end !== null && t.end > to.end),
+    ).length,
     childKind: target.table === 'Tasks' ? 'sous-tache' : 'tache',
-    lateCleared: Boolean(task && task.end !== null && task.end < today && !task.done && to.end >= today),
+    lateCleared: Boolean(ctx.task && isTaskLate(ctx.task, today) && to.end >= today),
   };
+  ctx.last = { to: { start: to.start, end: to.end }, today, summary };
+  return summary;
 }
 
 const fr = (n) => String(n).replace('.', ',');

@@ -5,6 +5,7 @@ import { buildModel } from '../widget/js/core/model.js';
 import { dayOfIso, isoOfDay } from '../widget/js/core/dates.js';
 import {
   clampShift,
+  dragContext,
   dragSummary,
   dragTarget,
   movedDates,
@@ -265,4 +266,45 @@ test('summaryText : lignes de l’infobulle, alertes avec ⚠ et texte', () => {
       '20 déc. 2026 → 5 janv.',
     ),
   );
+});
+
+test('dragSummary : personne estimation à 2 ETP raccourcie, hors keptOver', () => {
+  const m = modelOf(task(1, { charges: [{ personId: 7, heures: hoursOf('2026-11-02', '2026-11-29', 2) }] }));
+  m.estimation.ids.add(7);
+  const s = dragSummary(m, T(1), span('2026-11-02', '2026-11-29'), span('2026-11-02', '2026-11-15'), 0);
+  assert.deepEqual(s.keptOver, []);
+  assert.equal(s.hours.to, hoursOf('2026-11-02', '2026-11-15', 2));
+});
+
+test('dragSummary : une personne recalculée, une laissée telle quelle', () => {
+  const m = modelOf(
+    task(1, {
+      charges: [
+        { personId: 7, heures: hoursOf('2026-11-02', '2026-11-29', 1) },
+        { personId: 8, heures: hoursOf('2026-11-02', '2026-11-29', 2) },
+      ],
+    }),
+  );
+  const s = dragSummary(m, T(1), span('2026-11-02', '2026-11-29'), span('2026-11-02', '2026-11-15'), 0);
+  assert.deepEqual(s.keptOver, [8]);
+  assert.equal(s.hours.from, hoursOf('2026-11-02', '2026-11-29', 3));
+  assert.equal(s.hours.to, hoursOf('2026-11-02', '2026-11-15', 1) + hoursOf('2026-11-02', '2026-11-29', 2));
+});
+
+test('dragContext : réutilisé, mêmes résultats qu’un appel neuf ; même période, même objet', () => {
+  const m = modelOf(
+    task(1, {
+      end: d('2026-10-10'),
+      childIds: [2],
+      charges: [{ personId: 7, heures: hoursOf('2026-11-02', '2026-11-29', 1) }],
+    }),
+    task(2, { parentId: 1, start: d('2026-11-20'), end: d('2026-11-28') }),
+  );
+  const from = span('2026-11-02', '2026-11-29');
+  const ctx = dragContext(m, T(1), from);
+  const tos = [span('2026-11-02', '2026-11-15'), span('2026-11-09', '2026-12-06'), span('2026-11-02', '2026-11-15')];
+  for (const to of tos) assert.deepEqual(dragSummary(m, T(1), from, to, 5, ctx), dragSummary(m, T(1), from, to, 5));
+  const a = dragSummary(m, T(1), from, tos[0], 5, ctx);
+  assert.equal(dragSummary(m, T(1), from, { ...tos[0] }, 5, ctx), a);
+  assert.notEqual(dragSummary(m, T(1), from, tos[1], 5, ctx), a);
 });

@@ -369,8 +369,11 @@ export function isEmptyContainer(node) {
 /** Tâche en retard : échéance passée (avant aujourd'hui) et non terminée. Les autres niveaux ne sont jamais en retard. */
 export function isLate(model, node, today) {
   const task = node.taskId ? model.tasks.get(node.taskId) : null;
-  return Boolean(task && task.end !== null && task.end < today && !task.done);
+  return Boolean(task && isTaskLate(task, today));
 }
+
+/** Règle du retard sur une tâche du modèle : échéance passée (avant aujourd'hui) et non terminée. */
+export const isTaskLate = (task, today) => task.end !== null && task.end < today && !task.done;
 
 /** Jalon : tâche de type « jalon ». */
 export function isMilestone(model, node) {
