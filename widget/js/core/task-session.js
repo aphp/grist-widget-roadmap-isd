@@ -352,13 +352,14 @@ export async function runMove({ writer, taskId, plan, fetchRow, readTable, timeo
  * @param {{writer:object, table:'Tasks'|'Chantiers', id:number, cols:[string, string],
  *   seen:{start:number|null, end:number|null}, next:{start:number|null, end:number|null}, localBase:object|null,
  *   fetchRow:(id:number)=>Promise<object|null>, maxOf:(teamId:number, fte:number|null)=>number, timeoutMs?:number}} snap
- *   cols : colonnes de début et de fin ; localBase : ligne des données chargées (mode essai) ; maxOf : heures
- *   maximales d'une personne sur la période d'arrivée (fte : heures de 1 ETP, periodFte)
+ *   cols : colonnes de début et de fin ; localBase : ligne des données chargées (mode essai) ; maxOf (obligatoire,
+ *   chargeMaxOf du modèle) : heures maximales d'une personne sur la période d'arrivée (fte : heures de 1 ETP)
  * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object, keptOver:number[]}|{kind:'changed', fresh:object}
  *   |{kind:'missing'}|{kind:'reread-failed', error:string}|{kind:'refused', reason:'charges'}
  *   |{kind:'unknown', stored:object|null|undefined, changes:object}|{kind:'failed', error:Error}>}
  */
 export async function runDates({ writer, table, id, cols, seen, next, localBase, fetchRow, maxOf, timeoutMs }) {
+  if (typeof maxOf !== 'function') throw new TypeError('runDates : maxOf requis (borne des charges, chargeMaxOf)');
   const ms = timeoutMs || DEFAULT_TIMEOUT_MS;
   const [startCol, endCol] = cols;
   let row = localBase ?? null;
@@ -382,7 +383,7 @@ export async function runDates({ writer, table, id, cols, seen, next, localBase,
   if (table === 'Tasks' && fromFte !== toFte && readChargesCell(row.charges).ok) {
     const res = rescaleCharges(row.charges, chargeRefs(row.charges, fromFte), toFte, {
       baseRaw: row.charges,
-      maxOf: (teamId) => (maxOf ? maxOf(teamId, toFte) : Infinity),
+      maxOf: (teamId) => maxOf(teamId, toFte),
     });
     keptOver = res.over;
     if (res.raw !== row.charges) {

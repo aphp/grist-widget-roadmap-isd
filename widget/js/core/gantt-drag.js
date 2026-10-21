@@ -5,7 +5,7 @@
 import { DAY_MS, formatDayShort } from './dates.js';
 import { label } from '../labels.js';
 import { chargeRefs, rescaleCharges } from './charges-rescale.js';
-import { entryHours, isEstimationPerson, maxHours, periodFte, readChargesCell } from './charges-edit.js';
+import { chargeMaxOf, entryHours, periodFte, readChargesCell } from './charges-edit.js';
 import { isMilestone, isTaskLate, nodeBar } from './gantt-data.js';
 import { editAvailability } from './task-form.js';
 
@@ -154,7 +154,8 @@ export function dragContext(model, target, from) {
 function hoursEffect(model, ctx, to) {
   const toFte = periodFte(to.start, to.end);
   if (!ctx.raw || !ctx.fromFte || !toFte || toFte === ctx.fromFte) return { hours: null, keptOver: [] };
-  const maxOf = (teamId) => maxHours(toFte, isEstimationPerson(model, teamId));
+  const bound = chargeMaxOf(model);
+  const maxOf = (teamId) => bound(teamId, toFte);
   const r = rescaleCharges(ctx.raw, ctx.refs, toFte, { maxOf });
   return { hours: { from: ctx.fromHours, to: sumHours(r.raw) }, keptOver: r.over };
 }

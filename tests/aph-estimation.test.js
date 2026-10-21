@@ -15,6 +15,7 @@ import {
   chargesWriteProblem,
   hoursFromInput,
   isEstimationAph,
+  chargeMaxOf,
   isEstimationPerson,
   maxHours,
 } from '../widget/js/core/charges-edit.js';
@@ -275,6 +276,9 @@ test('estimation : seul le texte exact 9999999 désigne la personne estimation (
   assert.equal(isEstimationPerson(m, 5), false);
   assert.equal(isEstimationPerson(m, null), false);
   assert.equal(isEstimationPerson(null, 1), false);
+  // Borne partagée (fiche, création, glisser, runDates) : 50 ETP pour la personne estimation, 1 ETP sinon
+  const bound = chargeMaxOf(m);
+  assert.deepEqual([bound(1, 70), bound(5, 70), bound(5, null)], [maxHours(70, true), 70, 2000]);
   // Espaces de bord dans la Feuille : pas la personne estimation
   const r = raw();
   r.tables.Team.aph[0] = ' 9999999 ';

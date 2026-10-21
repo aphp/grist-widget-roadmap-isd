@@ -15,7 +15,7 @@
 import { HOURS_PER_FTE_WEEK, etpToHours, fteHours, hoursToEtp } from './capacity.js';
 import { taskEtpByRole } from './kanban-data.js';
 import { EncodeError, parseNumberFr } from './write-encode.js';
-import { ESTIMATION_MAX_ETP } from './estimation.js';
+import { ESTIMATION_MAX_ETP, isEstimationPerson } from './estimation.js';
 
 /** Pas de stockage des heures. */
 export const HOURS_STEP = 0.5;
@@ -62,6 +62,14 @@ export function periodState(start, end) {
 export function maxHours(fte, estimation = false) {
   return fte ? roundHours(etpToHours(estimation ? ESTIMATION_MAX_ETP : MAX_ETP, fte)) : MAX_HOURS;
 }
+
+/**
+ * Borne de chaque personne pour un modèle : maxHours(fte, personne estimation ?). Seul endroit où la règle est
+ * assemblée (fiche, fenêtres de création, glisser du Gantt, runDates).
+ * @param {object} model
+ * @returns {(teamId:number, fte:number|null) => number}
+ */
+export const chargeMaxOf = (model) => (teamId, fte) => maxHours(fte, isEstimationPerson(model, teamId));
 
 /** teamId d'une entrée (entier > 0, ou chaîne de chiffres), sinon null. Même règle que charges.js. */
 export function entryTeamId(e) {

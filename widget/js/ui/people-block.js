@@ -5,9 +5,9 @@
  * écriture ici : le brouillon change seulement par applyDraft, qui relit les droits du formulaire hôte.
  */
 import {
+  chargeMaxOf,
   chargeRows,
   isEstimationPerson,
-  maxHours,
   mergeDuplicates,
   periodFte,
   readChargesCell,
@@ -93,7 +93,8 @@ export function followBase(s, model, { rescale = true } = {}) {
   );
   const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
   const untyped = new Map([...s.chargeRefs].filter(([teamId]) => !s.chargesTyped.has(teamId)));
-  const maxOf = (teamId) => maxHours(fte, isEstimationPerson(model, teamId));
+  const bound = chargeMaxOf(model);
+  const maxOf = (teamId) => bound(teamId, fte);
   const r = rescale
     ? rescaleCharges(s.draft.charges, untyped, fte, { baseRaw, maxOf })
     : { raw: s.draft.charges, over: [] };
@@ -111,7 +112,8 @@ export function followBase(s, model, { rescale = true } = {}) {
 export function rescaleAll(s, model) {
   if (!s?.chargeRefs || !('charges' in s.draft)) return;
   const fte = periodFte(s.draft.dateDebut, s.draft.dateEcheance);
-  const maxOf = (teamId) => maxHours(fte, isEstimationPerson(model, teamId));
+  const bound = chargeMaxOf(model);
+  const maxOf = (teamId) => bound(teamId, fte);
   const r = rescaleCharges(s.draft.charges, s.chargeRefs, fte, { baseRaw: s.base?.charges ?? null, maxOf });
   if (r.raw !== s.draft.charges) s.draft = { ...s.draft, charges: r.raw };
   s.chargesFte = fte;
@@ -341,7 +343,8 @@ export function createPeopleBlock(deps) {
       if (redraw) render();
       return;
     }
-    const maxOf = (teamId) => maxHours(fte, isEstimationPerson(model(), teamId));
+    const bound = chargeMaxOf(model());
+    const maxOf = (teamId) => bound(teamId, fte);
     const r = rescaleCharges(s.draft.charges, s.chargeRefs, fte, { baseRaw: s.base?.charges ?? null, maxOf });
     if (r.raw !== s.draft.charges) {
       // Posé avant : un refus redessine le formulaire (applyDraft), qui doit alors le dire

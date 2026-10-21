@@ -860,7 +860,7 @@ test('runDates : déplacement à capacité égale → charges non envoyées', as
   assert.deepEqual(r.keptOver, []);
   assert.deepEqual(g.batches[0][0][3], { dateDebut: D * OCT2.start, dateEcheance: D * OCT2.end });
   assert.deepEqual(r.entry.before, { dateDebut: OCT1.start, dateEcheance: OCT1.end });
-  // Une seule date change (étirement à la fin dans la même capacité ? non : seule l'échéance diffère)
+  // Seule l'échéance change (dimanche → samedi, même capacité) : elle part seule, sans charges
   const { g: g2, writer: w2, fetchRow: f2 } = datesSetup();
   place(g2, OCT1, '[{"teamId":1,"heures":14.5}]');
   const sunday = { start: OCT1.start, end: day('2027-10-09') };
@@ -962,6 +962,8 @@ test('runDates : ligne disparue → missing ; relecture en échec → reread-fai
   place(g, OCT1, '[{"teamId":1,"heures":14.5}]');
   const snap = { writer, table: 'Tasks', id: 1002, cols: TASK_COLS, seen: OCT1, next: OCT2, fetchRow, maxOf };
   assert.equal((await runDates({ ...snap, id: 4242 })).kind, 'missing');
+  // Borne des charges oubliée par l'appelant : erreur de programmation, rien n'est lu ni envoyé
+  await assert.rejects(runDates({ ...snap, maxOf: undefined }), TypeError);
   const broken = await runDates({ ...snap, fetchRow: async () => assert.fail('x') });
   assert.equal(broken.kind, 'reread-failed');
   const slow = await runDates({ ...snap, fetchRow: () => new Promise(() => {}), timeoutMs: 20 });
