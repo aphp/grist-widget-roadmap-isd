@@ -8,7 +8,6 @@ import { raw } from '../core/sanitize.js';
 import { formatDateFr } from '../core/dates.js';
 import {
   COLOR_BY,
-  sortTreeByDate,
   DEFAULT_LEVEL,
   GANTT_LEVELS,
   PHASES,
@@ -37,6 +36,7 @@ import {
   phaseOf,
   prunedExpanded,
   shiftAnchor,
+  sortTreeByDate,
   timeScale,
   todayAnchor,
 } from '../core/gantt-data.js';
@@ -330,9 +330,8 @@ function linesHtml(scale, today) {
 export function render(el, ctx) {
   const gen = ++memory.generation;
   const saved = ctx.prefs ?? {};
-  const baseTree = ctx.view.tree;
-  // Arbre affiché : toujours trié par date (copies, le modèle reste intact), recalculé à chaque rendu
-  let tree = baseTree;
+  // Arbre affiché : toujours trié par date, une fois par rendu (copies : l'arbre du modèle reste intact)
+  const tree = sortTreeByDate(ctx.view.tree);
   const searching = Boolean(saved.filters?.search);
   const scaleMode = SCALES.includes(saved.ganttScale) ? saved.ganttScale : 'month';
   const level =
@@ -412,7 +411,6 @@ export function render(el, ctx) {
     const left = box?.scrollLeft ?? 0;
     const isList = Boolean(narrow?.matches);
     scale = timeScale(st.scale, st.anchor);
-    tree = sortTreeByDate(baseTree);
     rows = isList ? [] : ganttRows(tree, st.expanded);
     items = isList ? chronoItems(tree, scale) : [];
     slots = st.colorBy === 'chantier' ? chantierSlots(ctx.model) : null;
