@@ -55,10 +55,9 @@ export function createToast() {
   function show(message, opts = {}) {
     clearTimeout(timer);
     // Un bouton du message a le focus : il le garde sur le nouveau message (même bouton, sinon « Fermer »)
-    const focused = root.contains(document.activeElement)
-      ? document.activeElement.hasAttribute('data-toast-action')
-        ? '[data-toast-action]'
-        : '[data-toast-close]'
+    const a = document.activeElement;
+    const focused = root.contains(a)
+      ? (['data-toast-action', 'data-toast-more'].find((k) => a.hasAttribute(k)) ?? 'data-toast-close')
       : null;
     action = opts.onAction ?? null;
     more = opts.more ?? null;
@@ -70,7 +69,7 @@ export function createToast() {
     </div>`.toString();
     duration = opts.duration ?? TOAST_MS;
     if (focused) {
-      (root.querySelector(focused) ?? root.querySelector('[data-toast-close]'))?.focus();
+      (root.querySelector(`[${focused}]`) ?? root.querySelector('[data-toast-close]'))?.focus();
       // Focus gardé dans le message : le délai repartira à sa sortie (focusout)
       return;
     }

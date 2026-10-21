@@ -4466,9 +4466,13 @@ test(
     assert.equal(after[0].teamId, task.person);
     assert.notEqual(after[0].heures, 35);
     assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Dates enregistrées/);
-    // « Annuler » : dates et charges d'avant, à l'identique
-    await w(`D.querySelector('.toast [data-toast-action]').click(); return true;`);
+    // Focus rendu à la ligne après l'enregistrement et la relecture
+    const onRow = `D.activeElement?.matches?.('.grow') && D.activeElement.id.endsWith('/T${task.id}')`;
+    await until(onRow, 8000);
+    // « Annuler » (bouton du message focalisé) : dates et charges d'avant, à l'identique, focus rendu à la ligne
+    await clickOn('.toast [data-toast-action]');
     await until(`W.__writes.length === 2`, 8000);
+    await until(onRow, 8000);
     const undo = await w(`return W.__writes[1].args[0][0][3];`);
     assert.deepEqual(undo, { dateDebut: secOf('2026-06-01'), dateEcheance: secOf('2026-06-14'), charges });
   },
@@ -4564,5 +4568,37 @@ test(
     assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /1 charge\(s\) laissée\(s\)/);
     await w(`D.querySelector('.toast [data-toast-more]').click(); return true;`);
     await until(`D.activeElement?.id === 'tf-people-title'`);
+  },
+);
+
+test(
+  'message : le bouton « Voir les charges » focalisé garde le focus sur le message suivant qui en a un',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    const top = async (body) => {
+      const r = await send('Runtime.evaluate', {
+        expression: `(async () => { ${body} })()`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails.exception?.description));
+      return r.result?.result?.value;
+    };
+    const focused = `const a = document.activeElement; return a.hasAttribute('data-toast-more') ? 'more' : a.hasAttribute('data-toast-action') ? 'action' : a.hasAttribute('data-toast-close') ? 'close' : a.tagName;`;
+    await top(`
+    const { createToast } = await import('/js/ui/toast.js');
+    window.__t2 = createToast();
+    const more = { label: 'Voir', onAction() {} };
+    window.__t2.show('Un', { onAction() {}, more });
+    document.querySelector('.toast-region:last-of-type [data-toast-more]').focus();
+    window.__t2.show('Deux', { onAction() {}, more });
+    return true;`);
+    assert.equal(await top(focused), 'more');
+    await top(`window.__t2.show('Trois', { onAction() {} }); return true;`);
+    assert.equal(await top(focused), 'close');
+    await top(`window.__t2.hide(); return true;`);
+    await send('Emulation.setFocusEmulationEnabled', { enabled: false });
   },
 );

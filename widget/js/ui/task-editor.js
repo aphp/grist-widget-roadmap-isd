@@ -582,15 +582,41 @@ export function createTaskEditor(deps) {
    * enregistré tout de suite. Le formulaire ouvert ne suit que s'il porte sur la même ligne.
    * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'unknown', 'busy', échec…)
    */
-  async function quickStatus(ref, status) {
+  /**
+   * Garde commune des envois rapides (statut, dates) : writer présent, un seul envoi à la fois, droit relu au
+   * moment d'agir (le contrôle a pu être affiché avant un passage en lecture) ; rien n'est lu ni envoyé sinon.
+   * @param {(w:object) => {ok:boolean, reason:string}} rightOf
+   * @returns {string|null} genre du refus ('busy', 'refused:…'), null si l'envoi peut partir
+   */
+  function quickGate(rightOf) {
     const w = writer();
-    if (!w || quickBusy || st?.busy) return 'busy';
-    // Droit relu au moment d'agir : le menu a pu être affiché avant un passage en lecture ; rien n'est lu ni envoyé
-    const right = quickStatusRight(w, ref.table);
-    if (!right.ok) {
-      deps.toast.show(label('form.fail.refused', { raison: refusedText(right.reason) }), { tone: 'error' });
-      return `refused:${right.reason}`;
-    }
+    const right = w ? rightOf(w) : { ok: false, reason: 'off' };
+    if (w && (quickBusy || st?.busy)) return 'busy';
+    if (right.ok) return null;
+    deps.toast.show(label('form.fail.refused', { raison: refusedText(right.reason) }), { tone: 'error' });
+    return `refused:${right.reason}`;
+  }
+
+  /**
+   * Échec d'un envoi rapide (statut, dates) : session passée en lecture, refus du writer, sinon message selon le
+   * genre (texts : clés de libellé de reread, acl, missing et other).
+   * @returns {string} genre du résultat (failureKind, 'reread', 'missing'…)
+   */
+  function quickFail(result, texts) {
+    const kind =
+      result.kind === 'failed' ? failureKind(result.error) : result.kind === 'reread-failed' ? 'reread' : result.kind;
+    if (sessionReadOnly(kind)) return kind;
+    const text = kind.startsWith('refused:')
+      ? label('form.fail.refused', { raison: refusedText(kind.slice(8)) })
+      : label(texts[kind] ?? texts.other);
+    deps.toast.show(text, { tone: 'error' });
+    return kind;
+  }
+
+  async function quickStatus(ref, status) {
+    const gate = quickGate((w) => quickStatusRight(w, ref.table));
+    if (gate) return gate;
+    const w = writer();
     quickBusy = true;
     const cur = st && st.ref.table === ref.table && st.ref.id === ref.id ? st : null;
     const result = await runQuickStatus({
@@ -629,15 +655,12 @@ export function createTaskEditor(deps) {
       }
       return 'unknown';
     }
-    const kind =
-      result.kind === 'failed' ? failureKind(result.error) : result.kind === 'reread-failed' ? 'reread' : result.kind;
-    if (sessionReadOnly(kind)) return kind;
-    const text = kind.startsWith('refused:')
-      ? label('form.fail.refused', { raison: refusedText(kind.slice(8)) })
-      : kind === 'reread'
-        ? label('quickStatus.fail.reread')
-        : label(`form.fail.${['acl', 'missing'].includes(kind) ? kind : 'other'}`);
-    deps.toast.show(text, { tone: 'error' });
+    const kind = quickFail(result, {
+      reread: 'quickStatus.fail.reread',
+      acl: 'form.fail.acl',
+      missing: 'form.fail.missing',
+      other: 'form.fail.other',
+    });
     if (cur && st === cur) render('btn-status-menu');
     return kind;
   }
@@ -651,19 +674,13 @@ export function createTaskEditor(deps) {
    * @param {string[]} cols voir dragTarget (début et fin, ou la seule échéance d'un jalon)
    * @param {{start:number|null, end:number|null}} seen dates propres au début du geste
    * @param {{start:number, end:number}} next
-   * @returns {Promise<string>} 'saved', 'nothing', 'busy', 'changed', 'refused:…', 'unknown' ou 'failed'
+   * @returns {Promise<string>} 'saved', 'nothing', 'busy', 'changed', 'refused:…', 'unknown', sinon le genre de
+   *   l'échec comme quickStatus ('reread', 'missing', 'acl', 'document'…)
    */
   async function saveDates(ref, cols, seen, next) {
+    const gate = quickGate((w) => datesRight(w, ref.table, cols));
+    if (gate) return gate;
     const w = writer();
-    if (!w || quickBusy || st?.busy) {
-      deps.toast.show(label('dates.fail.busy'), { tone: 'error' });
-      return 'busy';
-    }
-    const right = datesRight(w, ref.table, cols);
-    if (!right.ok) {
-      deps.toast.show(label('form.fail.refused', { raison: refusedText(right.reason) }), { tone: 'error' });
-      return `refused:${right.reason}`;
-    }
     quickBusy = true;
     const cur = st && st.ref.table === ref.table && st.ref.id === ref.id ? st : null;
     let result;
@@ -727,19 +744,13 @@ export function createTaskEditor(deps) {
       deps.toast.show(label('dates.fail.charges'), { tone: 'error' });
       return `refused:${result.reason}`;
     }
-    if (result.kind === 'missing' || result.kind === 'reread-failed') {
-      deps.toast.show(label(result.kind === 'missing' ? 'dates.fail.missing' : 'dates.fail.reread'), { tone: 'error' });
-      if (result.kind === 'missing') deps.onUnknown?.();
-      return 'failed';
-    }
-    const kind = failureKind(result.error);
-    if (sessionReadOnly(kind)) return `refused:${kind}`;
-    if (kind.startsWith('refused:')) {
-      deps.toast.show(label('form.fail.refused', { raison: refusedText(kind.slice(8)) }), { tone: 'error' });
-      return kind;
-    }
-    deps.toast.show(label(kind === 'acl' ? 'dates.fail.acl' : 'dates.fail.other'), { tone: 'error' });
-    return 'failed';
+    if (result.kind === 'missing') deps.onUnknown?.();
+    return quickFail(result, {
+      reread: 'dates.fail.reread',
+      acl: 'dates.fail.acl',
+      missing: 'dates.fail.missing',
+      other: 'dates.fail.other',
+    });
   }
 
   // ---------- Suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide) ----------

@@ -258,7 +258,7 @@ function buildCtx(view) {
  * la relecture qui suit un envoi réel (deux rendus), puis oublié.
  */
 let viewFocus = null;
-/** Dernier changement de statut fait depuis une vue : « Annuler » y ramène le focus. */
+/** Dernier statut ou déplacement de dates fait depuis une vue ({entry, focus}) : « Annuler » y ramène le focus. */
 let lastQuick = null;
 
 /** Contrôle de statut des vues : null en lecture seule (rien n'est affiché), sinon droit par tâche et ouverture. */
@@ -315,11 +315,17 @@ function datesCtx() {
   if (!m || !writer || writer.mode === 'off' || !editState.canEdit) return null;
   return {
     target: (node) => dragTarget(m, node, { edit: editState, writer, narrow: false }),
-    save: ({ target, seen, next, key }) =>
-      withViewFocus(
-        { keys: [], selectors: key ? [`#${CSS.escape(`gr-${key}`)}`] : [], reveal: false, untilReload: false },
-        () => editor.saveDates({ table: target.table, id: target.id }, target.cols, seen, next),
-      ),
+    save: async ({ target, seen, next, key }) => {
+      const selectors = key ? [`#${CSS.escape(`gr-${key}`)}`] : [];
+      const kind = await withViewFocus({ keys: [], selectors, reveal: false, untilReload: false }, () =>
+        editor.saveDates({ table: target.table, id: target.id }, target.cols, seen, next),
+      );
+      if (kind === 'busy') toast.show(label('dates.fail.busy'), { tone: 'error' });
+      // « Annuler » de ce déplacement : le focus revient à la ligne
+      if (kind === 'saved')
+        lastQuick = { entry: writer?.lastUndoable() ?? null, focus: { keys: [], selectors, reveal: false } };
+      return kind;
+    },
   };
 }
 
@@ -331,7 +337,8 @@ async function changeStatusFromView(taskId, status, focusEl) {
   const kind = await withViewFocus(focus, () => editor.quickStatus({ table: 'Tasks', id: taskId }, status));
   // Autre envoi en cours (statut rapide ou formulaire) : le choix n'est pas perdu en silence
   if (kind === 'busy') toast.show(label('quickStatus.busy'), { tone: 'error' });
-  lastQuick = kind === 'saved' ? { entry: writer?.lastUndoable() ?? null, keys: [String(taskId)], taskId } : lastQuick;
+  if (kind === 'saved')
+    lastQuick = { entry: writer?.lastUndoable() ?? null, focus: { keys: [String(taskId)], reveal: taskId } };
 }
 
 const qsSelector = (k) => `[data-qs-focus="${CSS.escape(k)}"]`;
@@ -605,9 +612,7 @@ async function undoLast() {
       }
       return res;
     };
-    const r = quick
-      ? await withViewFocus({ keys: quick.keys, reveal: quick.taskId, untilReload: false }, undo)
-      : await undo();
+    const r = quick ? await withViewFocus({ ...quick.focus, untilReload: false }, undo) : await undo();
     if (r.busy) return; // annulation déjà en cours
     if (!r.entry) return toast.show(label('toast.nothing'));
     const names = r.skipped.map((c) => label(`form.field.${c}`)).join(', ');
