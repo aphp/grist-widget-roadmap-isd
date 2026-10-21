@@ -9,6 +9,7 @@ import {
   dragSummary,
   dragTarget,
   movedDates,
+  periodOf,
   reattachDrag,
   shiftDay,
   snapUnit,
@@ -117,6 +118,21 @@ test('dragTarget : chaque condition', () => {
   assert.equal(reason(task(1001, { start: 30, end: 20 })), 'order');
   const jalon = { ...model, tasks: new Map(model.tasks).set(1001, { ...model.tasks.get(1001), type: 'jalon' }) };
   assert.equal(dragTarget(jalon, task(1001), ctx).milestone, true);
+  assert.deepEqual(dragTarget(jalon, task(1001), ctx).cols, ['dateDebut', 'dateEcheance']);
+  // Jalon à la seule échéance : glissable sur l'échéance seule ; seul début ou aucune date : non
+  assert.deepEqual(dragTarget(jalon, task(1001, { start: null, end: 20 }), ctx), {
+    ok: true,
+    table: 'Tasks',
+    id: 1001,
+    cols: ['dateEcheance'],
+    milestone: true,
+  });
+  assert.equal(dragTarget(jalon, task(1001, { start: 20, end: null }), ctx).reason, 'nodates');
+  assert.equal(dragTarget(jalon, task(1001, { start: null, end: null }), ctx).reason, 'nodates');
+  assert.equal(
+    dragTarget(jalon, task(1001, { start: null, end: 20 }), { ...ctx, edit: { mode: 'off', canEdit: false } }).reason,
+    'edit',
+  );
 
   const chantier = { kind: 'chantier', ref: { table: 'Chantiers', id: 100 }, start: 10, end: 20 };
   assert.deepEqual(dragTarget(model, chantier, ctx), {
@@ -351,4 +367,17 @@ test('reattachDrag : ligne disparue → gone ; dates relues différentes → cha
     ok: false,
     reason: 'changed',
   });
+});
+
+test('periodOf : période d’origine, début = fin = échéance pour un jalon à une date', () => {
+  assert.deepEqual(periodOf({ start: 5, end: 9 }), { start: 5, end: 9 });
+  assert.deepEqual(periodOf({ start: null, end: 9 }), { start: 9, end: 9 });
+  assert.deepEqual(movedDates(9, 9, 'week', 1), { start: 16, end: 16 });
+  assert.equal(clampShift(9, 9, 3, 'day', { max: 10 }), 1);
+});
+
+test('reattachDrag : jalon à la seule échéance', () => {
+  const g = { key: 'j', seen: { start: null, end: 9 } };
+  assert.deepEqual(reattachDrag(g, [{ key: 'j', node: { start: null, end: 9 } }]), { ok: true, index: 0 });
+  assert.equal(reattachDrag(g, [{ key: 'j', node: { start: 9, end: 9 } }]).reason, 'changed');
 });

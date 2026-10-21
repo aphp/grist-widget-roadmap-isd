@@ -367,10 +367,11 @@ export async function runMove({ writer, taskId, plan, fetchRow, readTable, timeo
  * celles vues au début du geste, rien n'est envoyé. Seules les dates qui changent partent. Tâche dont la capacité
  * standard de la période change : l'ETP fait foi, les heures de la cellule RELUE sont recalculées (rescaleCharges ;
  * entrées au-dessus de la borne laissées telles quelles, keptOver) et partent dans le même lot.
- * @param {{writer:object, table:'Tasks'|'Chantiers', id:number, cols:[string, string],
+ * @param {{writer:object, table:'Tasks'|'Chantiers', id:number, cols:[string, string]|[string],
  *   seen:{start:number|null, end:number|null}, next:{start:number|null, end:number|null}, localBase:object|null,
  *   fetchRow:(id:number)=>Promise<object|null>, maxOf:(teamId:number, fte:number|null)=>number, timeoutMs?:number}} snap
- *   cols : colonnes de début et de fin ; localBase : ligne des données chargées (mode essai) ; maxOf (obligatoire,
+ *   cols : colonnes de début et de fin, ou la seule échéance d'un jalon (début = fin = échéance, seule l'échéance
+ *   est relue et envoyée) ; localBase : ligne des données chargées (mode essai) ; maxOf (obligatoire,
  *   chargeMaxOf du modèle) : heures maximales d'une personne sur la période d'arrivée (fte : heures de 1 ETP)
  * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object, keptOver:number[]}|{kind:'changed', fresh:object}
  *   |{kind:'missing'}|{kind:'reread-failed', error:string}|{kind:'refused', reason:'charges'}
@@ -379,7 +380,8 @@ export async function runMove({ writer, taskId, plan, fetchRow, readTable, timeo
 export async function runDates({ writer, table, id, cols, seen, next, localBase, fetchRow, maxOf, timeoutMs }) {
   if (typeof maxOf !== 'function') throw new TypeError('runDates : maxOf requis (borne des charges, chargeMaxOf)');
   const ms = timeoutMs || DEFAULT_TIMEOUT_MS;
-  const [startCol, endCol] = cols;
+  const [startCol, endCol] = cols.length === 1 ? [null, cols[0]] : cols;
+  const startOf = (r) => (startCol ? r[startCol] : r[endCol]);
   let row = localBase ?? null;
   if (writer.mode === 'on') {
     try {
@@ -387,16 +389,17 @@ export async function runDates({ writer, table, id, cols, seen, next, localBase,
     } catch (err) {
       return { kind: 'reread-failed', error: String(err?.message ?? err) };
     }
-    if (row && (row[startCol] !== seen.start || row[endCol] !== seen.end)) return { kind: 'changed', fresh: row };
+    if (row && ((startCol && row[startCol] !== seen.start) || row[endCol] !== seen.end))
+      return { kind: 'changed', fresh: row };
   }
   if (!row) return { kind: 'missing' };
   const changes = {};
-  if (next.start !== row[startCol]) changes[startCol] = next.start;
+  if (startCol && next.start !== row[startCol]) changes[startCol] = next.start;
   if (next.end !== row[endCol]) changes[endCol] = next.end;
   if (!Object.keys(changes).length) return { kind: 'nothing' };
   const before = pick(row, Object.keys(changes));
   let keptOver = [];
-  const fromFte = periodFte(row[startCol], row[endCol]);
+  const fromFte = periodFte(startOf(row), row[endCol]);
   const toFte = periodFte(next.start, next.end);
   if (table === 'Tasks' && fromFte !== toFte && readChargesCell(row.charges).ok) {
     const res = rescaleCharges(row.charges, chargeRefs(row.charges, fromFte), toFte, {

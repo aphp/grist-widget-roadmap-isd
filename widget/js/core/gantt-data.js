@@ -343,12 +343,16 @@ export function barGeometry(scale, start, end) {
 }
 
 /**
- * Période d'un nœud : ses dates propres si les deux existent, sinon son étendue (`span`, « période déduite »).
+ * Période d'un nœud : ses dates propres si les deux existent (jalon : l'échéance suffit), sinon son étendue
+ * (`span`, « période déduite »).
  * @returns {{start:number, end:number, deduced:boolean}|null}
  */
 export function nodeBar(node) {
-  if (node.start !== null && node.start !== undefined && node.end !== null && node.end !== undefined)
+  const hasEnd = node.end !== null && node.end !== undefined;
+  if (node.start !== null && node.start !== undefined && hasEnd)
     return { start: Math.min(node.start, node.end), end: Math.max(node.start, node.end), deduced: false };
+  // Jalon à la seule échéance (le formulaire d'un jalon n'a que l'échéance) : losange à cette date
+  if (node.milestone && hasEnd) return { start: node.end, end: node.end, deduced: false };
   if (node.span)
     return {
       start: Math.min(node.span.start, node.span.end),

@@ -237,7 +237,15 @@ export function buildModel(raw) {
       kind,
       task.title,
       { table: 'Tasks', id: task.id },
-      { taskId: task.id, status: task.status, start: task.start, end: task.end, parentKey, projectId },
+      {
+        taskId: task.id,
+        status: task.status,
+        start: task.start,
+        end: task.end,
+        milestone: task.type === 'jalon',
+        parentKey,
+        projectId,
+      },
     );
     n.children = task.childIds
       .map((id) => tasks.get(id))

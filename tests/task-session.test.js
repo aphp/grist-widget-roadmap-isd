@@ -1032,3 +1032,19 @@ test('runDates : chantier → Debut et Fin seulement, jamais charges', async () 
   assert.deepEqual(g.batches[0][0], ['UpdateRecord', 'Chantiers', 200, { Fin: D * OCT2.end }]);
   assert.deepEqual(r.keptOver, []);
 });
+
+test('runDates : jalon à la seule échéance (cols [dateEcheance]) → seule l’échéance part', async () => {
+  const { g, writer, fetchRow } = datesSetup();
+  g.otherUserSets('Tasks', 1002, { dateDebut: null, dateEcheance: D * OCT1.end, charges: null });
+  const seen = { start: null, end: OCT1.end };
+  const next = { start: OCT2.end, end: OCT2.end };
+  const snap = { writer, table: 'Tasks', id: 1002, cols: ['dateEcheance'], seen, next, fetchRow, maxOf };
+  const r = await runDates(snap);
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(g.batches[0][0][3], { dateEcheance: D * OCT2.end });
+  assert.deepEqual(r.entry.before, { dateEcheance: OCT1.end });
+  // Échéance changée ailleurs : conflit, rien n'est envoyé
+  g.otherUserSets('Tasks', 1002, { dateEcheance: D * day('2027-10-20') });
+  assert.equal((await runDates(snap)).kind, 'changed');
+  assert.equal(g.batches.length, 1);
+});

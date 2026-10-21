@@ -96,7 +96,8 @@ export function clampShift(start, end, n, unit, { min = 1, max }) {
  * @param {object} node nœud de l'arbre (ou copie triée : seuls ses champs comptent)
  * @param {{edit:object, writer:{can(table:string, col:string):{ok:boolean}}|null, narrow:boolean}} ctx
  *   narrow : liste chronologique (petit écran), sans barres
- * @returns {{ok:true, table:'Tasks'|'Chantiers', id:number, cols:[string,string], milestone:boolean}
+ *   Un jalon à la seule échéance est glissable : cols = ['dateEcheance'] (voir periodOf).
+ * @returns {{ok:true, table:'Tasks'|'Chantiers', id:number, cols:[string,string]|[string], milestone:boolean}
  *   |{ok:false, reason:'list'|'kind'|'deduced'|'nodates'|'order'|'virtual'|'edit'|'scope'|'column'}}
  */
 export function dragTarget(model, node, { edit, writer, narrow }) {
@@ -106,14 +107,27 @@ export function dragTarget(model, node, { edit, writer, narrow }) {
   if (!node.ref) return { ok: false, reason: 'virtual' };
   const hasStart = node.start !== null && node.start !== undefined;
   const hasEnd = node.end !== null && node.end !== undefined;
-  if (!hasStart || !hasEnd) return { ok: false, reason: !hasStart && !hasEnd && nodeBar(node) ? 'deduced' : 'nodates' };
+  // Jalon à la seule échéance : glissé sur l'échéance seule (début = fin = échéance)
+  const endOnly = isTask && !hasStart && hasEnd && isMilestone(model, node);
+  if ((!hasStart || !hasEnd) && !endOnly)
+    return { ok: false, reason: !hasStart && !hasEnd && nodeBar(node) ? 'deduced' : 'nodates' };
   if (node.start > node.end) return { ok: false, reason: 'order' };
   const availability = editAvailability(model, node.ref, edit);
   if (!availability.editable) return { ok: false, reason: availability.reason === 'scope' ? 'scope' : 'edit' };
   const table = isTask ? 'Tasks' : 'Chantiers';
-  const cols = isTask ? ['dateDebut', 'dateEcheance'] : ['Debut', 'Fin'];
+  const cols = endOnly ? ['dateEcheance'] : isTask ? ['dateDebut', 'dateEcheance'] : ['Debut', 'Fin'];
   if (!writer || !cols.every((c) => writer.can(table, c)?.ok)) return { ok: false, reason: 'column' };
   return { ok: true, table, id: node.ref.id, cols, milestone: isMilestone(model, node) };
+}
+
+/**
+ * Période d'origine d'un glisser à partir des dates propres vues (seen) : un jalon à la seule échéance part de
+ * début = fin = échéance.
+ * @param {{start:number|null, end:number}} seen
+ * @returns {{start:number, end:number}}
+ */
+export function periodOf(seen) {
+  return { start: seen.start ?? seen.end, end: seen.end };
 }
 
 /**

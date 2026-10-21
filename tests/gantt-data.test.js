@@ -269,6 +269,13 @@ test('barre d’un nœud : dates propres, sinon période déduite', () => {
   const backwards = nodeBar(byTask(3000)); // fin avant début : remise dans l'ordre
   assert.ok(backwards.start <= backwards.end);
   assert.equal(nodeBar({ start: d('2026-01-01'), end: null, span: null }), null);
+  // Jalon à la seule échéance : losange à l'échéance (le seul début ne suffit pas)
+  assert.deepEqual(nodeBar({ milestone: true, start: null, end: d('2026-01-05'), span: null }), {
+    start: d('2026-01-05'),
+    end: d('2026-01-05'),
+    deduced: false,
+  });
+  assert.equal(nodeBar({ milestone: true, start: d('2026-01-05'), end: null, span: null }), null);
 });
 
 test('retard, jalon et clé de couleur', () => {
@@ -498,4 +505,18 @@ test('sortTreeByDate : début, fin, titre, sans barre en dernier, tous niveaux, 
   assert.equal(out[0].children[0].title, 'Déduite');
   assert.equal(out[1].title, 'A');
   assert.deepEqual(sortTreeByDate([]), []);
+});
+
+test('nœud de tâche : drapeau milestone du type « jalon » (barre d’un jalon à la seule échéance)', () => {
+  const f = feuille();
+  const t = f.tables.Tasks;
+  const i = t.id.indexOf(1002);
+  t.type ??= t.id.map(() => null);
+  t.type[i] = 'jalon';
+  t.dateDebut[i] = null;
+  const model = buildModel(f);
+  const node = (id) => [...model.nodes.values()].find((n) => n.taskId === id);
+  assert.equal(node(1002).milestone, true);
+  assert.equal(node(1001).milestone, false);
+  assert.deepEqual(nodeBar(node(1002)), { start: node(1002).end, end: node(1002).end, deduced: false });
 });
