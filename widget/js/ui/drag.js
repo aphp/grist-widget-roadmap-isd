@@ -191,7 +191,14 @@ export function trackPointer(down, handlers) {
           return;
         }
         if (!far) return;
-        if (handlers.onStart(e) === false) {
+        let started;
+        try {
+          started = handlers.onStart(e);
+        } catch (err) {
+          finish(); // geste terminé avant de relancer : aucun écouteur ni verrou ne reste
+          throw err;
+        }
+        if (started === false) {
           finish();
           return;
         }

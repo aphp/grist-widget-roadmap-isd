@@ -537,3 +537,19 @@ test('onEdge qui lève : la chaîne de minuteurs continue', (t) => {
   assert.equal(n, 2);
   assert.equal(errors.length, 2);
 });
+
+test('onStart qui lève : geste terminé (aucun écouteur, nouveau geste possible), erreur relancée', () => {
+  const s = setup({
+    onStart: () => {
+      throw new Error('boum');
+    },
+  });
+  trackPointer(down(), s.handlers);
+  assert.throws(() => s.win.emit('pointermove', { clientX: 110 }), /boum/);
+  assert.equal(s.win.list.length, 0);
+  assert.equal(s.win.emit('click').defaultPrevented, false);
+  const t = setup();
+  trackPointer(down(), t.handlers);
+  t.win.emit('pointermove', { clientX: 110 });
+  assert.deepEqual(t.calls, [['start']]);
+});
