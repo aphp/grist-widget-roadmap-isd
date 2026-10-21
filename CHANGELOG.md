@@ -13,7 +13,10 @@
   not rewritten: their displayed ETP rises (about ×1.2 outside summer); an entry now above 1 ETP is kept and flagged.
   The May slowdown also applies to the load plan. "i" buttons explain the rule next to the charges unit (task form
   and creation dialogs), the Statistics ETP chart title and the load plan; texts that said "35 h par semaine" for
-  the ETP are rewritten. Info tooltips are now shifted with `translate`, so a tooltip anchored to the right stays in
+  the ETP are rewritten. A charge's hours are now spread over the task's days in proportion to the standard capacity
+  of each day (`hoursShare`, `spreadHours`), not evenly over calendar days: a 1-ETP task shows 1 ETP in every month
+  and week (Statistics, load plan, Portfolio, My tasks); a period with no working day keeps the calendar spread. Info
+  tooltips are now shifted with `translate`, so a tooltip anchored to the right stays in
   its panel.
 - Filters: the "ISD seulement" help moves from a hint under the checkbox to an "i" button with a tooltip (hover
   and keyboard focus, kept inside the window), so the filter row no longer wraps. Reusable `infoTip` in the UI kit.

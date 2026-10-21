@@ -6,7 +6,10 @@ Vue de pilotage de l'équipe ISD (avancement et charge) sur les tables de la Feu
 widget (charges des tâches, Kanban, Tableau, Statistiques, Portfolio, Mes tâches, plan de charge) :
 7 h par jour ouvré (hors week-ends et jours fériés), moins 44 jours de congés par an (au prorata des jours ouvrés de
 l'année), à 80 % en mai et en décembre, 60 % en juillet, 50 % en août (`core/capacity.js` : `fteHours`, `SLOWDOWN`).
-C'est la formule du plan de charge pour une personne à 35 h sans indisponibilité ; la quotité et les
+Les heures d'une charge se répartissent sur les jours ouvrés de la tâche au prorata de cette capacité (`hoursShare`) :
+une tâche à 1 ETP compte 1 ETP chaque semaine et chaque mois (Statistiques, plan de charge, Portfolio, Mes tâches ;
+une période sans jour ouvré reste répartie sur ses jours calendaires). C'est la formule du plan de charge pour une
+personne à 35 h sans indisponibilité ; la quotité et les
 indisponibilités individuelles ne comptent que dans le plan de charge. Une période sans jour ouvré (un week-end) se
 traite comme une tâche sans dates (pas d'ETP, borne de 2 000 h). Les heures déjà stockées ne changent pas : leur ETP
 affiché suit la formule (une charge qui dépasse désormais 1 ETP est signalée, conservée telle quelle). Une pastille
