@@ -105,6 +105,20 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   teinte (liseré foncé), barre du chantier en teinte foncée, tâche terminée délavée ; projet, catégorie et
   « (sans chantier) » restent neutres. Pas de texte d'étape dans les barres : l'infobulle et le nom accessible
   donnent l'étape et « Chantier : … ». Le retard garde son contour rouge (absent de la palette des chantiers).
+- **Déplacer dans le Gantt** (édition ouverte seulement) : une tâche, une sous-tâche, un jalon ou un chantier se
+  déplace dans le temps, durée gardée, en glissant sa barre (curseur « main ») ; au doigt, après un appui long
+  (400 ms), un appui court fait défiler. Pas selon l'échelle : au jour en Semaine, à la semaine en Mois et Année, au
+  mois en 2 ans, au jour avec Maj ; jamais après le 31 décembre de l'année suivante. L'infobulle donne les nouvelles
+  dates, l'écart, les heures recalculées (l'ETP fait foi), les charges laissées au-dessus de la borne, les enfants
+  hors de la nouvelle période (ils ne suivent pas). Tenir la barre près d'un bord fait défiler la frise, puis change
+  de période. Échap, un relâcher à la place d'origine ou hors de la ligne n'écrivent rien ; un mouvement de moins de
+  4 px reste un clic (fiche). Au clavier, sur une ligne : D (ou Maj+F10, « Déplacer les dates ») entre dans le mode,
+  ←/→ d'un pas (Maj : un jour), Retour arrière revient aux dates d'origine, Entrée enregistre, Échap annule ; les
+  étapes sont annoncées. Une écriture par geste, relue avant l'envoi (dates changées entre-temps : rien n'est
+  envoyé) ; « Annuler » remet dates et charges ensemble. Ne se déplacent pas : projets, catégories, « (sans
+  chantier) », barres déduites (période des enfants), lignes sans leurs dates (« Ajouter des dates » ouvre la fiche ;
+  un jalon n'a besoin que de son échéance), échéance avant le début, lignes hors périmètre ISD ou en lecture seule ;
+  D annonce la raison.
 - **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
   le total portent sur les profils DE, DA, DS et PO seulement.
 

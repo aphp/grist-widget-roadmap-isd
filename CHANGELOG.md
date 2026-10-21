@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- Gantt: tasks, subtasks, milestones and chantiers move in time by dragging their bar (mouse, pen; finger after a
+  400 ms long press), duration kept. Steps follow the scale (day in Week, week in Month and Year, month in 2 years,
+  day with Shift) and never pass 31 December of next year. A ghost and the tooltip show the new dates, the shift, the
+  rescaled hours (the ETP holds), charges kept above the bound and children left outside (they do not follow);
+  nothing is repainted during the gesture. Holding near an edge scrolls the timeline, then the period. Escape, a drop
+  at the origin or off the row, or a move under 4 px (a click) write nothing. Keyboard: D on a row (or Shift+F10,
+  "Déplacer les dates") enters a date mode, arrows step (Shift: one day), Backspace returns to the original dates,
+  Enter saves, Escape cancels; steps are announced in a persistent live region (`#gantt-live`, grouped at 300 ms).
+  One write per gesture through the editor (`saveDates` → `runDates`): row re-read and conflict check, rights
+  re-read (`datesRight`), "Enregistrement…" on the bar until the answer, toast with "Annuler" (dates and charges are
+  undone together or not at all) and "Voir les charges" when charges stay above the bound; focus returns to the row.
+  A milestone with only its due date is drawn and dragged on that date. Not movable: projects, categories, "(sans
+  chantier)", deduced bars, rows missing a date ("Ajouter des dates" opens the form), due date before start, rows out
+  of the ISD scope or read-only; D announces why. Shared pointer controller `ui/drag.js` (the label column handle
+  uses it; Escape now restores its width).
 - Charges are typed in ETP or in hours per week ("h/semaine", the quotité: 35 h/week = 1 ETP) instead of total
   hours. Total hours = ETP × standard capacity of the period (leave, public holidays and slowdowns deducted), rounded
   to 0.5 h; storage unchanged (`Tasks.charges` keeps total hours). A typed value (ETP or h/week) stays shown as typed
