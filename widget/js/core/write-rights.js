@@ -1,7 +1,7 @@
 /**
  * Droits relus au moment d'agir (pas seulement au rendu) : boutons et menus des formulaires, envoi des fenêtres,
- * statut rapide, suppression. Fonctions pures sur le writer (core/grist-writer.js : mode, can, canAdd, canRemove) ;
- * aucune écriture ici.
+ * statut rapide, dates du Gantt, suppression. Fonctions pures sur le writer (core/grist-writer.js : mode, can,
+ * canAdd, canRemove) ; aucune écriture ici.
  * Le writer refait de toute façon son contrôle strict avant l'envoi : ces relectures évitent qu'un bouton resté
  * affiché après un passage en lecture modifie la saisie ou lance un envoi voué au refus.
  */
@@ -55,6 +55,18 @@ export function personDialogRight(writer, kind) {
 export function quickStatusRight(writer, table) {
   if (!usable(writer)) return OFF;
   return writer.can(table, table === 'Chantiers' ? 'Statut' : 'statut');
+}
+
+/**
+ * Dates glissées dans le Gantt : chaque colonne de dates de la cible (début et fin, ou la seule échéance d'un jalon).
+ * @param {object|null} writer
+ * @param {'Tasks'|'Chantiers'} table
+ * @param {string[]} cols voir dragTarget
+ * @returns {{ok:boolean, reason:string}}
+ */
+export function datesRight(writer, table, cols) {
+  if (!usable(writer)) return OFF;
+  return cols.map((c) => writer.can(table, c)).find((r) => !r.ok) ?? { ok: true, reason: 'ok' };
 }
 
 /** Suppression depuis la fiche (tâche avec ses sous-tâches, chantier vide) : droit de suppression du writer. */

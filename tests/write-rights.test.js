@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { moveChangesProjet } from '../widget/js/core/create-form.js';
 import {
   createDialogRight,
+  datesRight,
   deleteRight,
   draftChangeRight,
   personDialogRight,
@@ -102,4 +103,17 @@ test('refus relu avant l’envoi : un message propre à chaque raison', () => {
   assert.deepEqual(rightFailure('colonne'), { kind: 'refused', message: 'colonne' });
   for (const r of ['absente', 'formule', 'vide', 'type', 'meta'])
     assert.deepEqual(rightFailure(r), { kind: 'refused', message: 'colonne-retiree' });
+});
+
+test('datesRight : écriture coupée → off ; colonne retirée → sa raison ; une ou deux colonnes permises → ok', () => {
+  assert.deepEqual(datesRight(fakeWriter({ mode: 'off' }), 'Tasks', ['dateDebut', 'dateEcheance']), {
+    ok: false,
+    reason: 'off',
+  });
+  assert.equal(datesRight(null, 'Tasks', ['dateEcheance']).reason, 'off');
+  const w = fakeWriter({ cols: { 'Tasks.dateEcheance': 'absente', 'Chantiers.Debut': 'acl' } });
+  assert.deepEqual(datesRight(w, 'Tasks', ['dateDebut', 'dateEcheance']), { ok: false, reason: 'absente' });
+  assert.deepEqual(datesRight(w, 'Chantiers', ['Debut', 'Fin']), { ok: false, reason: 'acl' });
+  assert.deepEqual(datesRight(fakeWriter(), 'Tasks', ['dateEcheance']), OK);
+  assert.deepEqual(datesRight(fakeWriter(), 'Chantiers', ['Debut', 'Fin']), OK);
 });
