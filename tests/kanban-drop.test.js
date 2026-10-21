@@ -85,3 +85,30 @@ test('dropChanges priorité : valeur déclarée, vide permis, inherited', () => 
   assert.deepEqual(dropChanges(m, 2, 'priority', 'Priorité 1', 0), { changes: {}, inherited: false });
   assert.deepEqual(dropChanges(m, 2, 'chantier', 'C1', 0), { error: 'kind' });
 });
+
+test('dropTargets priorité : « Sans priorité » refusé quand la tâche a sa priorité ET une priorité en amont', () => {
+  const m = mk([task(1, { priorite: '1', chantierId: 5 })], { chantiers: [{ id: 5, priorite: '2' }] });
+  assert.deepEqual(dropTargets(m, 1, 'priority', [col('')]).get(''), { ok: false, reason: 'inherited' });
+  assert.deepEqual(dropChanges(m, 1, 'priority', '', 0), { error: 'inherited' });
+});
+
+test('dropTargets priorité : sous-tâche qui hérite du chantier par sa tâche parente', () => {
+  const m = mk([task(1, { chantierId: 5 }), task(2, { parentId: 1 })], { chantiers: [{ id: 5, priorite: '2' }] });
+  const t = dropTargets(m, 2, 'priority', ['Priorité 2', 'Priorité 1', ''].map(col));
+  assert.deepEqual(t.get('Priorité 2'), { ok: false, reason: 'same' });
+  assert.deepEqual(t.get('Priorité 1'), { ok: true });
+  assert.deepEqual(t.get(''), { ok: false, reason: 'inherited' });
+  assert.deepEqual(dropChanges(m, 2, 'priority', 'Priorité 1', 0), { changes: { priorite: '1' }, inherited: true });
+});
+
+test('dropChanges statut : tâche sans statut déposée sur « Sans statut » → same, rien à écrire', () => {
+  const m = mk([task(1, { status: '' })]);
+  assert.deepEqual(dropTargets(m, 1, 'status', [col('')]).get(''), { ok: false, reason: 'same' });
+  assert.deepEqual(dropChanges(m, 1, 'status', '', 0), { changes: {}, inherited: false });
+});
+
+test('priorityValueFor : une seule valeur du libellé → sans parcourir les tâches', () => {
+  const m = mk([]);
+  m.tasks = { values: () => assert.fail('parcours des tâches') };
+  assert.equal(priorityValueFor(m, 'Priorité 2'), '2');
+});

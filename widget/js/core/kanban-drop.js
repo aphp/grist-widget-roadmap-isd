@@ -16,10 +16,11 @@ const declaredPriorities = (model) =>
  */
 export function priorityValueFor(model, columnKey) {
   const matches = declaredPriorities(model).filter((v) => priorityText(v) === columnKey);
-  if (!matches.length) return null;
-  const count = (v) => [...model.tasks.values()].filter((t) => t.priorite === v).length;
+  if (matches.length < 2) return matches[0] ?? null;
+  const n = new Map(matches.map((v) => [v, 0]));
+  for (const t of model.tasks.values()) if (n.has(t.priorite)) n.set(t.priorite, n.get(t.priorite) + 1);
   let best = matches[0];
-  for (const v of matches) if (count(v) > count(best)) best = v;
+  for (const v of matches) if (n.get(v) > n.get(best)) best = v;
   return best;
 }
 
@@ -42,7 +43,8 @@ export function dropTargets(model, taskId, groupBy, columns) {
   const task = model.tasks.get(taskId);
   if (!task) return out;
   const refuse = (reason) => ({ ok: false, reason });
-  const current = groupBy === 'status' ? task.status : priorityText(taskPriority(model, task));
+  const current =
+    groupBy === 'status' ? task.status : groupBy === 'priority' ? priorityText(taskPriority(model, task)) : null;
   for (const { key } of columns) {
     if (groupBy === 'status') {
       if (key === current) out.set(key, refuse('same'));
