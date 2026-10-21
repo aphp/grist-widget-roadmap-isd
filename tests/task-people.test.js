@@ -161,3 +161,19 @@ test('lineInput rend l’ETP saisi', () => {
   const r3 = lineInput({ assignees: [40], charges: null }, 40, '14', 'hsem', 140);
   assert.deepEqual([r3.heures, r3.etp], [56, 0.4]);
 });
+
+test('h/semaine : une nouvelle saisie au même total arrondi met quand même à jour l’ETP de référence', () => {
+  // 14 h/semaine sur 1 ETP de 52 h = 21 h ; 14,2 h/semaine donnent aussi 21 h (21,1 arrondi)
+  const draft = { assignees: [40], charges: '[{"teamId":40,"heures":21}]' };
+  const r = lineInput(draft, 40, '14,2', 'hsem', 52, { shown: 14 });
+  assert.deepEqual(r, { charges: draft.charges, heures: 21, etp: 14.2 / 35 });
+  // La valeur affichée (référence ou déduite des heures) ressaisie : rien ne change, ni la référence
+  assert.deepEqual(lineInput(draft, 40, '14', 'hsem', 52, { shown: 14 }), {
+    charges: draft.charges,
+    heures: 21,
+    etp: null,
+  });
+  assert.equal(lineInput(draft, 40, '14,1', 'hsem', 52, { shown: 14 }).etp, null);
+  // Même règle en ETP : 0,41 ETP donne aussi 21 h (21,3 arrondi)
+  assert.equal(lineInput(draft, 40, '0,41', 'etp', 52, { shown: 0.4 }).etp, 0.41);
+});

@@ -1,7 +1,7 @@
 /**
  * Formulaire d'une tâche ou sous-tâche dans la fiche (lot 2a) : rendu seul (fragments h``), à partir de l'état
  * tenu par ui/task-editor.js. Liste courte de champs, le reste sous « Plus de champs » ; pied fixe
- * Enregistrer / Annuler. Bloc « Personnes » : assignés et charges en ETP ou en heures réunis ; rattachement en
+ * Enregistrer / Annuler. Bloc « Personnes » : assignés et charges en ETP ou en h/semaine réunis ; rattachement en
  * lecture (« Changer » ouvre sa fenêtre) ; tags affectés et retirés (lot 2e, views/tags-field.js).
  */
 import {
@@ -321,7 +321,7 @@ function personLineHtml(st, model, l, ctx) {
   </li>`;
 }
 
-/** Raison de l'absence de période (periodState) : message de la saisie en ETP, erreur d'une saisie en ETP. */
+/** Raison de l'absence de période (periodState) : message du bloc, erreur d'une saisie (ETP ou h/semaine). */
 const NO_PERIOD_NOTICE = Object.freeze({
   order: 'form.charges.dateOrder',
   noWorkday: 'form.charges.noWorkdays',

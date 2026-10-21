@@ -72,7 +72,7 @@ export const peopleHelp = (st) =>
 
 /**
  * Corps de « Nouvelle tâche » ou « Sous-tâche ». Bloc « Personnes » de la fiche (views/task-form.js) juste après
- * les dates : assignés et charges en ETP ou en heures, ETP recalculés quand les dates changent.
+ * les dates : assignés et charges en ETP ou en h/semaine, heures recalculées (ETP gardé) quand les dates changent.
  */
 export function newTaskBody(st, model) {
   const d = st.draft;

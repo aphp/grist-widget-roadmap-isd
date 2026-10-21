@@ -18,6 +18,7 @@ import {
   chargeRows,
   hoursFromInput,
   inputEtp,
+  inputValue,
   readChargesCell,
   removePerson,
   setPersonHours,
@@ -90,8 +91,8 @@ export function removePersonLine(draft, teamId) {
  * @param {{estimation?:boolean, shown?:number|null}} [opts] estimation : la personne est la personne estimation (pas
  *   de borne de 1 ETP) ; shown : valeur affichée dans la case (ressaisie sans effet)
  * @returns {{charges:string, heures:number|null, etp:number|null}|{error:{error:string, max?:number}}} heures
- *   null : charge vidée ; etp : ETP saisi, exact (en h/semaine : h/semaine ÷ 35) quand les heures changent, sinon
- *   null ; il fait foi si les dates changent ensuite
+ *   null : charge vidée ; etp : ETP saisi, exact (en h/semaine : h/semaine ÷ 35), null si la valeur affichée est
+ *   ressaisie ; il fait foi si les dates changent ensuite (cellule inchangée quand le total arrondi est le même)
  */
 export function lineInput(draft, teamId, text, unit, fte, { estimation = false, shown = null } = {}) {
   const cell = readChargesCell(draft.charges);
@@ -103,9 +104,13 @@ export function lineInput(draft, teamId, text, unit, fte, { estimation = false, 
   }
   const r = hoursFromInput(text, unit, fte, current?.heures ?? null, { estimation, shown });
   if (r.error) return { error: r };
-  // Valeur déjà affichée ressaisie : rien ne change (pas de dérive des heures stockées, ni de l'ETP de référence,
-  // déduit alors des heures)
-  if (current && r.heures === current.heures) return { charges: draft.charges, heures: r.heures, etp: null };
+  // Mêmes heures : la cellule ne change pas. Valeur affichée ressaisie : la référence non plus ; autre valeur au même
+  // total arrondi (14,2 au lieu de 14 h/semaine) : son ETP devient la référence (il fait foi si les dates changent)
+  if (current && r.heures === current.heures) {
+    const n = parseNumberFr(text);
+    const same = n === shown || n === inputValue(current.heures, unit, fte);
+    return { charges: draft.charges, heures: r.heures, etp: same ? null : inputEtp(n, unit) };
+  }
   try {
     const etp = inputEtp(parseNumberFr(text), unit);
     return { charges: setPersonHours(draft.charges, teamId, r.heures), heures: r.heures, etp };

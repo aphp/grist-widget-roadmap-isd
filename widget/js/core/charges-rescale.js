@@ -43,7 +43,8 @@ export function chargeRefs(raw, fte) {
 }
 
 /**
- * Référence d'une saisie : en ETP, l'ETP saisi fait foi (exact) ; en heures, l'ETP est déduit de la période.
+ * Référence d'une saisie : l'ETP saisi fait foi (exact ; en h/semaine, h/semaine ÷ 35) ; sans ETP (heures venues
+ * d'ailleurs), il est déduit de la période.
  * @param {{heures:number, etp?:number|null, fte:number|null}} input
  * @returns {ChargeRef}
  */

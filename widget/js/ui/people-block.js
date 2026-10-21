@@ -228,6 +228,9 @@ export function createPeopleBlock(deps) {
         else s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, fte }));
         s.chargesTyped.add(teamId);
         s.chargesKeptOver.delete(teamId);
+      } else if (r.etp !== null && r.heures !== null) {
+        // Autre valeur au même total arrondi : cellule inchangée, mais son ETP devient la référence de la ligne
+        s.chargeRefs.set(teamId, refFromInput({ heures: r.heures, etp: r.etp, fte }));
       }
       t.removeAttribute('aria-invalid');
     }

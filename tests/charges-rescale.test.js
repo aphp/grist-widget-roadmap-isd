@@ -8,7 +8,7 @@ import {
   rescaleCharges,
   rescaledHours,
 } from '../widget/js/core/charges-rescale.js';
-import { periodFte, roundHours } from '../widget/js/core/charges-edit.js';
+import { hoursFromInput, periodFte, roundHours } from '../widget/js/core/charges-edit.js';
 import { dayOfIso } from '../widget/js/core/dates.js';
 
 const base = '[{"teamId":40,"heures":70}, {"teamId":41,"heures":35,"note":"x"}]'; // 1 ETP de 70 h : 1 ETP et 0,5 ETP
@@ -131,4 +131,12 @@ test('valeur affichée : celle de la référence tant que les heures sont celles
   assert.equal(displayValue(21, 'hsem', 52, null), 14.1);
   assert.equal(displayValue(21, 'hsem', 52, { etp: null, heures: 21, fte: null }), 14.1);
   assert.equal(displayValue(21, 'hsem', null, ref), null);
+  // Référence née d'une saisie en h/semaine (10 h/semaine), affichée en ETP après un changement de période : son ETP
+  // exact (10 / 35 = 0,29) ; ressaisi, il garde les heures
+  const hsemRef = refFromInput({ heures: 15, etp: 10 / 35, fte: 52 });
+  const after = rescaledHours(hsemRef, 80.888889);
+  assert.equal(after, 23);
+  assert.equal(displayValue(after, 'etp', 80.888889, hsemRef), 0.29);
+  assert.equal(displayValue(after, 'hsem', 80.888889, hsemRef), 10);
+  assert.deepEqual(hoursFromInput('0,29', 'etp', 80.888889, after, { shown: 0.29 }), { heures: after });
 });

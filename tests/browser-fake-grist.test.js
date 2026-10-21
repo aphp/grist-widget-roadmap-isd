@@ -496,7 +496,7 @@ test(
 );
 
 test(
-  'charges (2b) : ajout en ETP, passage en heures, dates changées (ETP gardé), fusion avec une saisie concurrente',
+  'charges (2b) : ajout en ETP, passage en h/semaine, dates changées (ETP gardé), fusion avec une saisie concurrente',
   { skip: SKIP },
   async () => {
     await open('?edition=1&doc=doc-dev-local&ecritures=memoire');
@@ -553,14 +553,24 @@ test(
       await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`),
       '= 21 h au total (congés et fériés déduits)',
     );
-    // Dates changées : l'ETP fait foi (0,4 ETP du 2 au 21 novembre = 32,5 h), écart d'heures signalé ; la saisie
-    // reste affichée telle quelle (14, et non 14,1 déduit des heures arrondies)
+    // 14,2 h/semaine : même total arrondi (21,1 → 21 h), cellule inchangée, mais l'ETP saisi devient la référence
+    await type(`tf-ch-${person}`, '14,2');
+    assert.equal(etpHours(14.2 / 35, '2026-11-02', '2026-11-15'), 21);
+    assert.equal(
+      await w(`return D.getElementById('tf-ch-${person}-eq').textContent.trim();`),
+      '= 21 h au total (congés et fériés déduits)',
+    );
+    // Dates changées : l'ETP fait foi, recalculé depuis 14,2 (et non 14) : 14,2 / 35 × 80,9 h = 32,8 h → 33 h ; la
+    // saisie reste affichée telle quelle
     await setDate('dateEcheance', '2026-11-21');
-    assert.equal(etpHours(0.4, '2026-11-02', '2026-11-21'), 32.5);
-    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '14');
+    assert.deepEqual(
+      [etpHours(14.2 / 35, '2026-11-02', '2026-11-21'), etpHours(0.4, '2026-11-02', '2026-11-21')],
+      [33, 32.5],
+    );
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '14,2');
     assert.match(
       await w(`return D.getElementById('tf-ch-${person}-msg').textContent;`),
-      /Dates modifiées : 21 h → 32,5 h \(ETP conservé\)/,
+      /Dates modifiées : 21 h → 33 h \(ETP conservé\)/,
     );
     // Sans début : ni ETP ni h/semaine saisissables, les heures restent montrées
     await w(`const r = D.getElementById('tf-charges-unit-etp'); r.checked = true;
@@ -596,7 +606,7 @@ test(
     await until(`W.__writes.length === 2`);
     const cells = await w(`return W.__writes[1].args[0][0][3];`);
     assert.equal(await w(`return W.__writes[1].args[0][0][2];`), id);
-    assert.equal(cells.charges, `[${[...theirs, JSON.stringify({ teamId: person, heures: 32.5 })].join(',')}]`);
+    assert.equal(cells.charges, `[${[...theirs, JSON.stringify({ teamId: person, heures: 33 })].join(',')}]`);
     assert.ok(cells.assignees.includes(person));
     assert.equal(cells.dateDebut, Date.UTC(2026, 10, 2) / 1000);
     assert.equal(cells.dateEcheance, Date.UTC(2026, 10, 21) / 1000);
@@ -916,8 +926,11 @@ test('fiche : valeur affichée ressaisie, puis charges relues : la ligne suit la
  * Fiche de openCharged14 ; typed : ETP saisi d'abord ; dates raccourcies à 7 jours ; ailleurs, échéance au
  * 29 novembre ; enregistrer ouvre la fenêtre, « la leur » choisie pour l'échéance. Rend { id, person }.
  */
-async function shortenAgainstTheirs(typed = null) {
+async function shortenAgainstTheirs(typed = null, unit = 'etp') {
   const { id, person } = await openCharged14();
+  if (unit === 'hsem')
+    await w(`const r = D.getElementById('tf-charges-unit-hsem'); r.checked = true;
+      r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
   if (typed) await type(`tf-ch-${person}`, typed);
   await setFormDate('dateEcheance', '2026-11-08');
   await w(
@@ -950,6 +963,42 @@ test(
       charges: JSON.stringify([{ teamId: person, heures: etpHours(0.8, '2026-11-02', '2026-11-29') }]),
     });
     assert.equal(etpHours(0.8, '2026-11-02', '2026-11-29'), 88);
+  },
+);
+
+test(
+  'fiche : h/semaine saisies, dates raccourcies, échéance changée ailleurs, « la leur » : comme en ETP, recalcul sur les dates envoyées',
+  { skip: SKIP },
+  async () => {
+    // 28 h/semaine = 0,8 ETP (41,5 h du 2 au 15), 23 h jusqu'au 8 ici ; « la leur » : jusqu'au 29, 0,8 ETP = 88 h
+    const { id, person } = await shortenAgainstTheirs('28', 'hsem');
+    await until(`W.__writes.length === 1`);
+    const [, , rowId, cells] = (await writes())[0][0];
+    assert.equal(rowId, id);
+    assert.deepEqual(cells, {
+      charges: JSON.stringify([{ teamId: person, heures: etpHours(0.8, '2026-11-02', '2026-11-29') }]),
+    });
+  },
+);
+
+test(
+  'fiche : h/semaine saisies, charge changée ailleurs pour la même personne : fenêtre de conflit, saisie gardée',
+  { skip: SKIP },
+  async () => {
+    const typeHsem = async (person) => {
+      await w(`const r = D.getElementById('tf-charges-unit-hsem'); r.checked = true;
+        r.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`);
+      await type(`tf-ch-${person}`, '17,5');
+      await until(`D.getElementById('tf-ch-${person}-eq').textContent.trim().startsWith('= 26 h au total')`);
+    };
+    const { person } = await openRebased36({ before: typeHsem, expect: '= 26 h au total (congés et fériés déduits)' });
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '17,5');
+    await w(`D.getElementById('btn-form-save').click(); return true;`);
+    await until(`D.querySelector('.tf-conflict')`);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+    assert.ok(await w(`return Boolean(D.getElementById('tf-cf-charges-mine'));`));
+    assert.match(await w(`return D.querySelector('.tf-conflict').textContent;`), /36/);
+    assert.equal(await w(`return D.getElementById('tf-ch-${person}').value;`), '17,5');
   },
 );
 
