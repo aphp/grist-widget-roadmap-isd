@@ -42,12 +42,14 @@ function place(root, anchor) {
 }
 
 /**
- * Ouvre le menu de statut d'une tâche.
- * @param {{anchor:HTMLElement, returnFocus?:HTMLElement, title:string, items:{value:string, current:boolean}[],
- *   onPick(value:string):void}} opts anchor : contrôle visible (aria-expanded) ; returnFocus : élément rendu
- *   focalisé à la fermeture (la carte au clavier), l'ancre par défaut
+ * Ouvre le menu de statut d'une tâche, ou un menu d'actions (menu de ligne du Gantt : items avec text, sans
+ * statut courant, entrées menuitem).
+ * @param {{anchor:HTMLElement, returnFocus?:HTMLElement, title:string, items:{value:string, current?:boolean,
+ *   text?:string}[], onPick(value:string):void, menuLabel?:string, heading?:string}} opts anchor : contrôle visible
+ *   (aria-expanded) ; returnFocus : élément rendu focalisé à la fermeture (la carte au clavier), l'ancre par
+ *   défaut ; menuLabel / heading : nom et titre du menu (statut par défaut)
  */
-export function openStatusPopover({ anchor, returnFocus = anchor, title, items, onPick }) {
+export function openStatusPopover({ anchor, returnFocus = anchor, title, items, onPick, menuLabel, heading }) {
   const again = current?.anchor === anchor;
   closeStatusPopover(false);
   if (again) {
@@ -59,11 +61,12 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
   root.id = ID;
   root.setAttribute('role', 'menu');
   root.tabIndex = -1;
-  root.setAttribute('aria-label', label('quickStatus.menu', { titre: title }));
-  root.innerHTML = h`<p class="qs-menu__title" aria-hidden="true">${label('quickStatus.menu.title')}</p>
-    ${items.map(
-      (it) =>
-        h`<button type="button" class="qs-menu__item" role="menuitemradio" tabindex="-1" aria-checked="${it.current ? 'true' : 'false'}" data-qs-value="${it.value}">${statusLabel(it.value)}${it.current ? h`<span class="fr-sr-only"> ${label('quickStatus.current')}</span>` : ''}</button>`,
+  root.setAttribute('aria-label', menuLabel ?? label('quickStatus.menu', { titre: title }));
+  root.innerHTML = h`<p class="qs-menu__title" aria-hidden="true">${heading ?? label('quickStatus.menu.title')}</p>
+    ${items.map((it) =>
+      it.text !== undefined
+        ? h`<button type="button" class="qs-menu__item" role="menuitem" tabindex="-1" data-qs-value="${it.value}">${it.text}</button>`
+        : h`<button type="button" class="qs-menu__item" role="menuitemradio" tabindex="-1" aria-checked="${it.current ? 'true' : 'false'}" data-qs-value="${it.value}">${statusLabel(it.value)}${it.current ? h`<span class="fr-sr-only"> ${label('quickStatus.current')}</span>` : ''}</button>`,
     )}`.toString();
   document.body.append(root);
   anchor.setAttribute('aria-expanded', 'true');

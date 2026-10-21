@@ -4379,13 +4379,14 @@ async function openGanttEdit(extra = '', scale = 'year') {
   await until(`D.querySelector('[data-drag]')`);
 }
 
-/** Première tâche glissable (barre pleine) qui a des personnes assignées : id et première personne. */
-async function draggableTaskWithPeople() {
+/** Première tâche glissable (barre pleine) qui a des personnes assignées (leaf : sans sous-tâche) : id, personne. */
+async function draggableTaskWithPeople({ leaf = false } = {}) {
   return w(`const t = await W.grist.docApi.fetchTable('Tasks');
     for (const b of D.querySelectorAll('.gbar[data-drag]')) {
       const id = Number(b.closest('.grow').id.match(/T(\\d+)$/)?.[1]);
       const i = t.id.indexOf(id);
       const a = t.assignees[i];
+      if (${leaf} && t.parentTask.includes(id)) continue;
       if (i >= 0 && Array.isArray(a) && a.length > 1 && t.type[i] !== 'jalon') return { id, person: a[1] };
     }
     return null;`);
@@ -4600,5 +4601,325 @@ test(
     assert.equal(await top(focused), 'close');
     await top(`window.__t2.hide(); return true;`);
     await send('Emulation.setFocusEmulationEnabled', { enabled: false });
+  },
+);
+
+// ---------- Gantt : clavier « D », menu de ligne, doigt, essai, lecture, bord, défilements (lot A) ----------
+
+/** Touche réelle (CDP) sur l'élément focalisé. */
+async function hit(k, { shift = false } = {}) {
+  const codes = { d: 68, ArrowRight: 39, ArrowLeft: 37, Enter: 13, Escape: 27, Backspace: 8, F10: 121 };
+  const base = {
+    key: k,
+    code: k.length === 1 ? `Key${k.toUpperCase()}` : k,
+    windowsVirtualKeyCode: codes[k],
+    modifiers: shift ? 8 : 0,
+  };
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+  if (k.length === 1 || k === 'Enter')
+    await send('Input.dispatchKeyEvent', { type: 'char', text: k === 'Enter' ? '\r' : k, ...base });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+  await sleep(40);
+}
+
+/** Ligne de la tâche focalisée (focus itinérant de l'arbre). */
+const focusTaskRow = (id) =>
+  w(
+    `const r = [...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${id}')); r.scrollIntoView({ block: 'center' }); r.focus(); return r.id;`,
+  );
+const taskCells = (id) =>
+  w(
+    `const t = await W.grist.docApi.fetchTable('Tasks'); const i = t.id.indexOf(${id}); return { dateDebut: t.dateDebut[i], dateEcheance: t.dateEcheance[i] };`,
+  );
+
+test(
+  'gantt : clavier D, →, Entrée → une écriture, focus sur la ligne ; D, →, Échap → aucune',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    const before = await taskCells(task.id);
+    const rowId = await focusTaskRow(task.id);
+    assert.equal(await w(`return D.getElementById(${JSON.stringify(rowId)}).getAttribute('aria-keyshortcuts');`), 'D');
+    await hit('d');
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    await until(`/saisie\\. Du /.test(D.getElementById('gantt-live').textContent)`);
+    await hit('ArrowRight');
+    await until(`/plus 7 jour/.test(D.getElementById('gantt-live').textContent)`);
+    await hit('Enter');
+    await until(`W.__writes.length === 1`);
+    const cells = await w(`return W.__writes[0].args[0][0][3];`);
+    assert.deepEqual(
+      [cells.dateDebut, cells.dateEcheance],
+      [before.dateDebut + 7 * SEC, before.dateEcheance + 7 * SEC],
+    );
+    await until(`D.activeElement?.id === ${JSON.stringify(rowId)}`, 8000);
+    // D, →, Échap : rien
+    await hit('d');
+    await until(`!D.getElementById('gantt-ghost').hidden`);
+    await hit('ArrowRight');
+    await hit('Escape');
+    await until(`D.getElementById('gantt-ghost').hidden`);
+    await until(`/annulé/.test(D.getElementById('gantt-live').textContent)`);
+    await sleep(200);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+    assert.equal(await w(`return D.activeElement?.id;`), rowId);
+  },
+);
+
+test(
+  'gantt : D sur une ligne non glissable annonce pourquoi ; Maj+F10 ouvre le menu de ligne',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    await w(`const r = D.querySelector('.grow--projet'); r.focus(); return true;`);
+    assert.equal(await w(`return D.activeElement.hasAttribute('aria-keyshortcuts');`), false);
+    await hit('d');
+    await until(`/projet ou une catégorie ne se déplace pas/.test(D.getElementById('gantt-live').textContent)`);
+    assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), true);
+    // Menu de ligne : « Déplacer les dates » entre dans le mode clavier
+    const task = await draggableTaskWithPeople();
+    const rowId = await focusTaskRow(task.id);
+    await hit('F10', { shift: true });
+    await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+    assert.deepEqual(
+      await w(`return [...D.querySelectorAll('#qs-menu [role="menuitem"]')].map((b) => b.textContent.trim());`),
+      ['Déplacer les dates', 'Ouvrir la fiche'],
+    );
+    await hit('Enter');
+    await until(`!D.getElementById('gantt-ghost').hidden && D.activeElement?.id === ${JSON.stringify(rowId)}`);
+    await hit('Escape');
+    await until(`D.getElementById('gantt-ghost').hidden`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
+  'gantt : Échap, retour à l’origine, mouvement de 3 px (= fiche ouverte) → aucune écriture',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    let at = await dragMark(task.id);
+    await mouseDrag(at, 80, { release: false });
+    await hit('Escape');
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + 80,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    // Aller-retour : relâché à la place d'origine
+    at = await dragMark(task.id);
+    await mouseDrag(at, 80, { release: false });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'left', buttons: 1 });
+    await sleep(50);
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    // 3 px : un clic, la fiche s'ouvre
+    at = await dragMark(task.id);
+    await mouseDrag(at, 3);
+    await until(`D.getElementById('app-detail').dataset.open === 'true'`);
+    await sleep(200);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
+
+test(
+  'gantt : jalon à deux dates déplacé → deux dates égales ; chantier déplacé (Debut, Fin)',
+  { skip: SKIP },
+  async () => {
+    // Jalon à la seule échéance : voir « jalon à la seule échéance glissé » (lot A6)
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    await remoteChange([
+      'UpdateRecord',
+      'Tasks',
+      task.id,
+      { type: 'jalon', dateDebut: secOf('2026-06-10'), dateEcheance: secOf('2026-06-10'), charges: null },
+    ]);
+    await until(
+      `[...D.querySelectorAll('.grow')].find((r) => r.id.endsWith('/T${task.id}'))?.querySelector('.gms[data-drag]')`,
+    );
+    await mouseDrag(await dragMark(task.id), 60);
+    await until(`W.__writes.length === 1`);
+    const ms = await w(`return W.__writes[0].args[0][0][3];`);
+    assert.equal(ms.dateDebut, ms.dateEcheance);
+    assert.ok(ms.dateDebut > secOf('2026-06-10'));
+    // Chantier : sa barre se déplace sur Debut et Fin
+    const at = await w(`const b = D.querySelector('.grow--chantier [data-drag]'); b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + Math.min(8, r.width / 2), y: f.top + r.top + r.height / 2 };`);
+    await mouseDrag(at, 60);
+    await until(`W.__writes.length === 2`);
+    const [action] = await w(`return W.__writes[1].args[0];`);
+    assert.equal(action[1], 'Chantiers');
+    assert.deepEqual(Object.keys(action[3]).sort(), ['Debut', 'Fin']);
+  },
+);
+
+test(
+  'gantt : barre déduite et tâche à une seule date non saisissables, « Ajouter des dates » ouvre la fiche',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    assert.equal(
+      await w(`return D.querySelectorAll('.gbar--deduced[data-drag], .gbar--deduced.gbar--draggable').length;`),
+      0,
+    );
+    assert.ok(
+      await w(`return D.querySelectorAll('.gbar--deduced').length > 0;`),
+      'jeu synthétique : une barre déduite',
+    );
+    const task = await draggableTaskWithPeople({ leaf: true });
+    await remoteChange(['UpdateRecord', 'Tasks', task.id, { dateDebut: null, charges: null }]);
+    const row = `[...D.querySelectorAll('.grow')].find((r) => r.id.endsWith('/T${task.id}'))`;
+    await until(`${row}?.querySelector('[data-add-dates]')`);
+    assert.equal(await w(`return Boolean(${row}.querySelector('[data-drag]'));`), false);
+    await w(`${row}.querySelector('[data-add-dates]').click(); return true;`);
+    await until(`D.activeElement?.id === 'tf-dateDebut'`);
+  },
+);
+
+test(
+  'gantt : doigt, appui court qui glisse → aucune écriture ; appui long puis glisser → écriture',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    const touch = async (type, x, y) =>
+      send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    let at = await dragMark(task.id);
+    await touch('touchStart', at.x, at.y);
+    for (let k = 1; k <= 5; k += 1) await touch('touchMove', at.x + k * 18, at.y);
+    await touch('touchEnd');
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    at = await dragMark(task.id);
+    await touch('touchStart', at.x, at.y);
+    await sleep(550);
+    for (let k = 1; k <= 5; k += 1) {
+      await touch('touchMove', at.x + k * 18, at.y);
+      await sleep(30);
+    }
+    await touch('touchEnd');
+    await until(`W.__writes.length === 1`);
+  },
+);
+
+test(
+  'gantt : relecture pendant le glisser → le geste continue ; ligne changée sans relecture → conflit, rien d’envoyé',
+  { skip: SKIP },
+  async () => {
+    await openGanttEdit();
+    const task = await draggableTaskWithPeople();
+    let at = await dragMark(task.id);
+    await mouseDrag(at, 60, { release: false });
+    await w(
+      `await W.grist.__simulateChange(['UpdateRecord', 'Tasks', (await W.grist.docApi.fetchTable('Tasks')).id.find((i) => i !== ${task.id}), { description: 'Modifiée ailleurs' }]); return true;`,
+    );
+    await sleep(800);
+    assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), false);
+    // La ligne a pu bouger à l'écran au nouveau rendu : le pointeur la suit (même abscisse)
+    const y =
+      await w(`const r = [...D.querySelectorAll('.grow')].find((x) => x.id.endsWith('/T${task.id}')).getBoundingClientRect();
+      return W.frameElement.getBoundingClientRect().top + r.top + r.height / 2;`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + 70, y, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x + 70, y, button: 'left', clickCount: 1 });
+    await until(`W.__writes.length === 1`);
+    // Conflit : la ligne change dans la Feuille sans prévenir le widget, entre l'appui et le relâcher
+    await until(`!D.querySelector('.is-saving')`, 8000);
+    await sleep(500);
+    at = await dragMark(task.id);
+    await mouseDrag(at, 60, { release: false });
+    const end = (await taskCells(task.id)).dateEcheance;
+    await w(
+      `await W.grist.__simulateChange(['UpdateRecord', 'Tasks', ${task.id}, { dateEcheance: ${end + SEC} }], { silencieux: true }); return true;`,
+    );
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x + 60,
+      y: at.y,
+      button: 'left',
+      clickCount: 1,
+    });
+    await until(`/Les dates ont changé entre-temps/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);
+
+test('gantt : bord droit tenu → période suivante, dépôt après le bord de départ', { skip: SKIP }, async () => {
+  await openGanttEdit('', 'month');
+  const task = await draggableTaskWithPeople();
+  const before = await taskCells(task.id);
+  const period = await w(`return D.querySelector('.gantt__period').textContent;`);
+  const at = await dragMark(task.id);
+  const right = await w(
+    `const r = D.querySelector('.gantt__scroll').getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect(); return f.left + r.right - 12;`,
+  );
+  await mouseDrag(at, 20, { release: false });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: right, y: at.y, button: 'left', buttons: 1 });
+  await until(`D.querySelector('.gantt__period').textContent !== ${JSON.stringify(period)}`, 4000);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: right - 40, y: at.y, button: 'left', buttons: 1 });
+  await sleep(50);
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: right - 40,
+    y: at.y,
+    button: 'left',
+    clickCount: 1,
+  });
+  await until(`W.__writes.length === 1`);
+  const cells = await w(`return W.__writes[0].args[0][0][3];`);
+  assert.ok(
+    cells.dateDebut - before.dateDebut >= 90 * SEC,
+    `décalage de ${(cells.dateDebut - before.dateDebut) / SEC} j`,
+  );
+});
+
+test('gantt : défilements (frise, page) et focus sur la ligne identiques après le dépôt', { skip: SKIP }, async () => {
+  await openGanttEdit();
+  const task = await draggableTaskWithPeople();
+  const rowId = await focusTaskRow(task.id);
+  await w(`D.querySelector('.gantt__scroll').scrollTop += 40; W.scrollTo(0, 120); return true;`);
+  await sleep(100);
+  const scrolls = `const s = D.querySelector('.gantt__scroll'); return { top: s.scrollTop, left: s.scrollLeft, page: W.scrollY };`;
+  const before = await w(scrolls);
+  const at = await w(`const b = D.getElementById(${JSON.stringify(rowId)}).querySelector('[data-drag]');
+    const r = b.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + Math.min(8, r.width / 2), y: f.top + r.top + r.height / 2 };`);
+  await mouseDrag(at, 60);
+  await until(`W.__writes.length === 1`);
+  await until(`D.activeElement?.id === ${JSON.stringify(rowId)}`, 8000);
+  await sleep(600); // relecture et rendu
+  assert.deepEqual(await w(scrolls), before);
+  assert.equal(await w(`return D.activeElement?.id;`), rowId);
+});
+
+test(
+  'gantt : ?edition=essai → rien n’est envoyé ; sans édition → ni curseur « grab » ni raccourci D',
+  { skip: SKIP },
+  async () => {
+    await open('?edition=essai');
+    await clickOn('#tab-gantt');
+    await until(`D.getElementById('gantt-level-tache')`);
+    await clickOn('#gantt-level-tache');
+    await clickOn('#gantt-scale-year');
+    await until(`D.querySelector('[data-drag]')`);
+    const task = await draggableTaskWithPeople();
+    await mouseDrag(await dragMark(task.id), 60);
+    await until(`/Mode essai/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    // Lecture seule
+    await open('');
+    await clickOn('#tab-gantt');
+    await until(`D.querySelector('.gbar')`);
+    assert.equal(await w(`return D.querySelectorAll('[data-drag], [aria-keyshortcuts], .gbar--draggable').length;`), 0);
+    assert.notEqual(await w(`return getComputedStyle(D.querySelector('.gbar')).cursor;`), 'grab');
+    await w(`D.querySelector('.grow').focus(); return true;`);
+    await hit('d');
+    await sleep(400);
+    assert.equal(await w(`return D.getElementById('gantt-live').textContent;`), '');
+    assert.equal(await w(`return D.getElementById('gantt-ghost').hidden;`), true);
   },
 );

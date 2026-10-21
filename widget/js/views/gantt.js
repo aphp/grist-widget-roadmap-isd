@@ -10,6 +10,7 @@ import {
   clampShift,
   dragContext,
   dragSummary,
+  keyMode,
   movedDates,
   periodOf,
   reattachDrag,
@@ -56,6 +57,8 @@ import { viewHeading } from '../ui/heading.js';
 import { label, statusLabel } from '../labels.js';
 import { VIZ_PRINT } from '../ui/viz-palette.js';
 import { trackPointer } from '../ui/drag.js';
+import { isStatusPopoverOpen, openStatusPopover } from '../ui/status-popover.js';
+import { isStatusShortcut } from '../core/quick-status.js';
 
 export const id = 'gantt';
 
@@ -73,6 +76,8 @@ const TIP_MAX = 360;
 const TIP_ROOM = 140;
 /** Marge verticale (px) autour de la frise de la ligne où un dépôt compte encore. */
 const DROP_SLACK = ROW_PX / 2;
+/** Délai de regroupement des annonces (ms). */
+const LIVE_DELAY = 300;
 /**
  * État conservé entre deux rendus de la vue (rechargement des données) : période affichée, génération, poignée de
  * largeur (drag, applyWidth), glisser d'une barre (gesture, saving) et fonctions du dernier rendu (dragView).
@@ -88,6 +93,7 @@ const memory = {
   gesture: null,
   saving: null,
   dragView: null,
+  liveTimer: null,
 };
 /** Écouteurs focusin / focusout par conteneur, pour ne jamais les empiler. */
 const listeners = new WeakMap();
@@ -280,7 +286,8 @@ function rowHtml(ctx, r, i, scale, colorBy, focusIndex, slots, dragOf) {
   const chip = tone && n.kind === 'chantier' ? chipHtml(tone) : '';
   const cls = tone ? ` grow--ch ${toneClass(tone)}` : '';
   const drag = dragOf(r);
-  return h`<div class="grow grow--${n.kind}${cls}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}" aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy, tone)}">
+  const keys = drag?.target.ok ? raw(' aria-keyshortcuts="D"') : '';
+  return h`<div class="grow grow--${n.kind}${cls}" role="row" id="gr-${r.key}" data-i="${i}" data-row="${i}" tabindex="${i === focusIndex ? 0 : -1}"${keys} aria-level="${r.depth + 1}" aria-posinset="${r.posinset}" aria-setsize="${r.setsize}" ${raw(r.hasChildren ? `aria-expanded="${r.expanded}"` : '')} aria-label="${describe(ctx, r, colorBy, tone)}">
     <div class="grow__label" role="gridcell" style="--depth:${r.depth}">${toggle}${chip}${name}${empty}</div>
     <div class="grow__track" role="gridcell">${trackHtml(ctx, r, i, scale, colorBy, tone, drag)}</div>
   </div>`;
@@ -445,6 +452,8 @@ export function render(el, ctx) {
   };
   let rows = [];
   let items = [];
+  /** Rendu en cours : le focus perdu au remplacement du contenu n'annule pas le mode clavier. */
+  let painting = false;
   let scale = null;
   /** Teintes des chantiers (mode « chantier »), recalculées à chaque rendu, jamais par ligne. */
   let slots = null;
@@ -487,6 +496,15 @@ export function render(el, ctx) {
   }
 
   function paint() {
+    painting = true;
+    try {
+      paintNow();
+    } finally {
+      painting = false;
+    }
+  }
+
+  function paintNow() {
     const box = el.querySelector('.gantt__scroll');
     const top = box?.scrollTop ?? 0;
     const left = box?.scrollLeft ?? 0;
@@ -505,8 +523,7 @@ export function render(el, ctx) {
     if (resume && !resume.ok) {
       // Liste chronologique (fenêtre étroite) : pas de barres, geste annulé sans message
       if (resume.reason !== 'list') st.notice = label('gantt.drag.changed');
-      stopGesture();
-      g.handle?.cancel(resume.reason);
+      abortGesture(resume.reason);
     }
     const n = isList ? items.length : rows.length;
     const count = isList
@@ -616,22 +633,31 @@ export function render(el, ctx) {
       nb.scrollLeft = left;
     }
     if (resume?.ok && memory.gesture === g) {
-      guard(() => {
-        if (!measure(g, resume.index)) throw new Error('Gantt : ligne du glisser introuvable après le rendu');
-        // Données relues : résumé de l'infobulle sur le nouveau modèle
-        g.model = ctx.model;
-        g.dctx = dragContext(ctx.model, g.target, g.from);
-        dragUpdate(g, true);
-      });
-      if (memory.gesture === g) return;
-      // Geste perdu au rattachement : même message qu'une ligne disparue (un rendu de plus, sans geste)
-      st.notice = label('gantt.drag.changed');
-      paint();
+      // Géométrie relue après la fin du rendu complet : main.js rend le défilement de la page juste après
+      queueMicrotask(() => resumeGesture(g));
       return;
     }
     // Le focus rendu par keepFocus garde son infobulle
     const act = document.activeElement;
     if (act && el.contains(act) && act.dataset.i !== undefined) showTip(act);
+  }
+
+  /** Geste rattaché après un rendu : géométrie relue, résumé sur le modèle relu ; ligne perdue → message. */
+  function resumeGesture(g) {
+    if (memory.gesture !== g || gen !== memory.generation || !el.isConnected) return;
+    const index = rows.findIndex((r) => r.key === g.key);
+    const ok = guard(() => {
+      if (index < 0 || !measure(g, index)) return false;
+      g.model = ctx.model;
+      g.dctx = dragContext(ctx.model, g.target, g.from);
+      refresh(g);
+      return true;
+    });
+    if (ok === false) abortGesture('gone');
+    if (memory.gesture === g) return;
+    // Geste perdu au rattachement : même message qu'une ligne disparue (un rendu de plus, sans geste)
+    st.notice = label('gantt.drag.changed');
+    paint();
   }
 
   // ---------- Infobulle (survol et focus) ----------
@@ -694,7 +720,13 @@ export function render(el, ctx) {
   el.addEventListener(
     'focusout',
     (e) => {
-      if (memory.gesture) return;
+      // Focus sorti de la ligne pendant le mode clavier (clic ailleurs, autre fenêtre) : déplacement annulé
+      const g = memory.gesture;
+      if (g?.keyboard && !painting && !e.relatedTarget?.closest?.(`[id="gr-${CSS.escape(g.key)}"]`)) {
+        memory.dragView?.key({ key: 'Escape' });
+        return;
+      }
+      if (g) return;
       if (!e.relatedTarget || !el.contains(e.relatedTarget)) hideTip();
     },
     { signal: off.signal },
@@ -849,11 +881,28 @@ export function render(el, ctx) {
       applyWidth(next, true);
       return;
     }
+    // Mode clavier « D » : ses touches ne vont ni à l'arbre, ni au panneau, ni à la page
+    if (memory.gesture?.keyboard) {
+      if (memory.dragView?.key(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
     const row = e.target.closest?.('[data-row]');
     if (!row || e.altKey || e.ctrlKey || e.metaKey) return;
     const i = Number(row.dataset.row);
     const r = rows[i];
     if (!r) return;
+    if (e.target === row && ctx.dates && !e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      e.preventDefault();
+      memory.dragView?.keyStart(i);
+      return;
+    }
+    if (e.target === row && isStatusShortcut(e) && e.key !== 's' && e.key !== 'S' && openRowMenu(i)) {
+      e.preventDefault();
+      return;
+    }
     const focusRow = (j) => document.getElementById(`gr-${rows[j]?.key}`)?.focus();
     if ((e.key === 'Enter' || e.key === ' ') && e.target === row) {
       e.preventDefault();
@@ -882,14 +931,14 @@ export function render(el, ctx) {
     }
   };
 
-  // ---------- Glisser une barre (tâche, sous-tâche, jalon, chantier) ----------
+  // ---------- Glisser une barre (tâche, sous-tâche, jalon, chantier), à la souris, au doigt ou au clavier (D) ----------
   // Le geste vit dans memory et ses écouteurs sur la fenêtre (ui/drag.js) : un nouveau rendu le poursuit
   // (memory.dragView = fonctions du dernier rendu). Pendant le geste, rien n'est redessiné : seuls le fantôme
   // (#gantt-ghost) et l'infobulle bougent, d'après la géométrie lue au début, après un rendu, et corrigée à chaque
-  // défilement de la frise (écouteur passif posé pour la durée du geste).
+  // défilement de la frise ou de la page (écouteurs passifs posés pour la durée du geste).
   const maxDay = maxPlanDay(ctx.today);
 
-  /** Géométrie de la ligne du geste (lue une fois) ; barre d'origine en pointillés ; suivi du défilement. */
+  /** Géométrie de la ligne du geste (lue une fois) ; barre d'origine en pointillés ; suivi des défilements. */
   function measure(g, index) {
     const rowEl = el.querySelector(`[data-row="${index}"]`);
     const track = rowEl?.querySelector('.grow__track');
@@ -903,21 +952,41 @@ export function render(el, ctx) {
     g.rowTop = tr.top;
     g.rowBottom = tr.bottom;
     g.scaleStart = scale.start;
+    g.scaleEnd = scale.end;
     g.colPx = tr.width / scale.columns.length;
-    g.box = { left: inner + widthInfo().value, right: inner + sc.clientWidth, top: sr.top, bottom: sr.bottom };
+    // Même objet d'un rendu à l'autre : ui/drag.js garde la boîte du bord lue au début du geste
+    g.box = Object.assign(g.box ?? {}, {
+      left: inner + widthInfo().value,
+      right: inner + sc.clientWidth,
+      top: sr.top,
+      bottom: sr.bottom,
+    });
     g.anchor = st.anchor;
     g.scrollLeft = sc.scrollLeft;
     g.scrollTop = sc.scrollTop;
+    g.winX = window.scrollX;
+    g.winY = window.scrollY;
     // Même jour sous le pointeur qu'au début du geste
     g.startX = g.trackLeft + (g.grabDay - g.scaleStart) * g.pxPerDay;
     rowEl.querySelector('[data-drag]')?.classList.add(g.target.milestone ? 'gms--origin' : 'gbar--origin');
     g.watch?.abort();
     g.watch = new AbortController();
-    sc.addEventListener('scroll', () => guard(() => followScroll(g, sc)), { passive: true, signal: g.watch.signal });
+    const opts = { passive: true, signal: g.watch.signal };
+    sc.addEventListener('scroll', () => guard(() => followScroll(g, sc)), opts);
+    window.addEventListener('scroll', () => guard(() => followPage(g)), opts);
     return true;
   }
 
-  /** Frise défilée pendant le geste (molette, pavé, bord) : géométrie décalée, même jour sous le pointeur. */
+  /** Géométrie décalée de (dx, dy) : la ligne a bougé à l'écran, même jour sous le pointeur. */
+  function shiftGeometry(g, dx, dy) {
+    g.trackLeft -= dx;
+    g.startX -= dx;
+    g.rowTop -= dy;
+    g.rowBottom -= dy;
+    refresh(g);
+  }
+
+  /** Frise défilée pendant le geste (molette, pavé, bord). */
   function followScroll(g, sc) {
     if (memory.gesture !== g) return;
     const dx = sc.scrollLeft - g.scrollLeft;
@@ -925,14 +994,21 @@ export function render(el, ctx) {
     if (!dx && !dy) return;
     g.scrollLeft += dx;
     g.scrollTop += dy;
-    g.trackLeft -= dx;
-    g.startX -= dx;
-    g.rowTop -= dy;
-    g.rowBottom -= dy;
-    dragUpdate(g, true);
+    shiftGeometry(g, dx, dy);
   }
 
-  /** Fantôme à la période alignée g.now, coupé à la frise visible (transform et largeur, aucune lecture). */
+  /**
+   * Page (ou cadre du widget) défilée pendant le geste, y compris quand main.js rend le défilement après un
+   * nouveau rendu : géométrie relue (hors de la boucle des mouvements), même jour sous le pointeur.
+   */
+  function followPage(g) {
+    if (memory.gesture !== g || (window.scrollX === g.winX && window.scrollY === g.winY)) return;
+    const index = rows.findIndex((r) => r.key === g.key);
+    if (index < 0 || !measure(g, index)) return void abortGesture('gone');
+    refresh(g);
+  }
+
+  /** Fantôme à la période g.now, coupé à la frise visible (transform et largeur, aucune lecture). */
   function placeGhost(g) {
     const ghost = el.querySelector('#gantt-ghost');
     if (!ghost) return;
@@ -950,16 +1026,18 @@ export function render(el, ctx) {
     ghost.hidden = x + w < g.box.left || x > g.box.right;
     ghost.className = `gghost${g.target.milestone ? ' gghost--ms' : ''}${g.off ? ' gghost--off' : ''}`;
     ghost.style.cssText = `width:${w}px;height:${g.barHeight}px;transform:translate(${x}px,${g.rowTop + g.barOffset}px);--g-fill:${g.fill}`;
-    g.ghostX = x;
+    g.ghostX = Math.min(Math.max(x, g.box.left), g.box.right);
   }
 
-  /** Infobulle du geste : nouvelles dates, écart, heures, alertes (dragSummary, recalculé si g.now change). */
+  /** Résumé du geste (dragSummary, mémorisé par période). */
+  const summaryOf = (g) => dragSummary(g.model, g.target, g.from, g.now, ctx.today, g.dctx);
+
+  /** Infobulle du geste : nouvelles dates, écart, heures, alertes. */
   function placeTip(g) {
     const tip = el.querySelector('#gantt-tip');
     if (!tip) return;
-    const summary = dragSummary(g.model, g.target, g.from, g.now, ctx.today, g.dctx);
     tip.innerHTML = h`<strong class="gtip__title">${g.title}</strong>
-      ${summaryText(summary, 'move').map((line) => h`<span class="gtip__line">${line}</span>`)}`.toString();
+      ${summaryText(summaryOf(g), 'move').map((line) => h`<span class="gtip__line">${line}</span>`)}`.toString();
     tip.hidden = false;
     tip.style.left = `${Math.max(8, Math.min(g.ghostX, g.vw - TIP_MAX - 8))}px`;
     if (g.tipAbove) {
@@ -991,6 +1069,13 @@ export function render(el, ctx) {
     if (moved || force) placeTip(g);
   }
 
+  /** Fantôme et infobulle redessinés : au pointeur (dragUpdate), ou à la période choisie au clavier. */
+  function refresh(g) {
+    if (!g.keyboard) return dragUpdate(g, true);
+    placeGhost(g);
+    placeTip(g);
+  }
+
   /** Fantôme et infobulle masqués (positions de l'infobulle remises), barre d'origine rendue. */
   function dragClear() {
     const ghost = el.querySelector('#gantt-ghost');
@@ -1002,7 +1087,7 @@ export function render(el, ctx) {
       b.classList.remove('gbar--origin', 'gms--origin');
   }
 
-  /** Fin du geste (dépôt, annulation, erreur) : plus de geste en mémoire, suivi du défilement retiré. */
+  /** Fin du geste (dépôt, annulation, erreur) : plus de geste en mémoire, suivi des défilements retiré. */
   function stopGesture() {
     const g = memory.gesture;
     memory.gesture = null;
@@ -1012,13 +1097,19 @@ export function render(el, ctx) {
     return g;
   }
 
+  /** Geste interrompu par une situation attendue (vue retirée, ligne perdue) : annulé sans erreur. */
+  function abortGesture(why) {
+    const g = stopGesture();
+    g?.handle?.cancel(why);
+    return g;
+  }
+
   /** Une erreur pendant le geste ne laisse jamais un geste en mémoire : il est annulé, la vue reste utilisable. */
   function guard(run) {
     try {
       return run();
     } catch (err) {
-      const g = stopGesture();
-      g?.handle?.cancel('error');
+      abortGesture('error');
       console.error(err);
       return undefined;
     }
@@ -1031,47 +1122,119 @@ export function render(el, ctx) {
     return empty || bar.matches('.gbar--hollow, .gms--hollow') ? 'var(--viz-neutral)' : bg;
   }
 
+  // ---------- Annonces (#gantt-live, hors de la vue redessinée), regroupées à 300 ms ----------
+  function announce(text) {
+    clearTimeout(memory.liveTimer);
+    memory.liveTimer = setTimeout(() => {
+      const live = document.getElementById('gantt-live');
+      if (live) live.textContent = text;
+    }, LIVE_DELAY);
+  }
+  const fullDate = (d) => formatDateFr(d);
+  /** Période et écart dits (« Du 17 novembre au 12 décembre, plus 14 jours. »), puis l'alerte des charges. */
+  function stepText(g) {
+    const s = summaryOf(g);
+    const delta = s.start - g.from.start;
+    const ecart = delta
+      ? label(delta > 0 ? 'gantt.key.delta.plus' : 'gantt.key.delta.minus', { n: Math.abs(delta) })
+      : label('gantt.key.delta.none');
+    const text = label('gantt.key.step', { debut: fullDate(s.start), fin: fullDate(s.end), ecart });
+    return s.keptOver.length ? `${text} ${label('gantt.key.over', { n: s.keptOver.length })}` : text;
+  }
+
+  /**
+   * Geste préparé sur une ligne : cible relue (ctx.dates.target), dates vues, contexte du résumé, géométrie.
+   * @returns {object|null} null si la ligne n'est pas glissable (ou la géométrie introuvable)
+   */
+  function prepare(index, extra) {
+    const r = rows[index];
+    const target = r ? ctx.dates.target(r.node) : null;
+    if (!target?.ok) return null;
+    const bar = el.querySelector(`[data-row="${index}"] [data-drag]`);
+    const seen = { start: r.node.start, end: r.node.end };
+    const from = periodOf(seen);
+    const ms = target.milestone;
+    const g = {
+      key: r.key,
+      target,
+      seen,
+      from,
+      now: null,
+      unit: snapUnit(st.scale, false),
+      startX: 0,
+      pxPerDay: 0,
+      anchor: st.anchor,
+      handle: null,
+      model: ctx.model,
+      dctx: dragContext(ctx.model, target, from),
+      title: r.node.title || label('common.untitled'),
+      // Barre hors de la période affichée (mode clavier) : géométrie par défaut du CSS
+      fill: bar ? ghostFill(bar) : 'var(--viz-neutral)',
+      barOffset: bar ? bar.offsetTop : ms ? 9 : 7,
+      barHeight: bar ? bar.offsetHeight : ms ? 14 : 18,
+      vw: document.documentElement.clientWidth,
+      vh: document.documentElement.clientHeight,
+      grabDay: 0,
+      lastX: 0,
+      lastY: 0,
+      shift: false,
+      off: false,
+      watch: null,
+      keyboard: false,
+      ...extra,
+    };
+    const rowBottom = el.querySelector(`[data-row="${index}"]`)?.getBoundingClientRect().bottom ?? 0;
+    g.tipAbove = rowBottom + TIP_ROOM > g.vh;
+    return measure(g, index) ? g : null;
+  }
+
+  /** Enregistrement d'une période choisie (dépôt ou Entrée) : barre à sa place, « Enregistrement… », réponse. */
+  function commit(g) {
+    if (!ctx.dates || (g.now.start === g.from.start && g.now.end === g.from.end)) return;
+    const saving = { key: g.key, now: g.now };
+    memory.saving = saving;
+    let pending;
+    try {
+      paint();
+      pending = Promise.resolve(ctx.dates.save({ target: g.target, seen: g.seen, next: g.now, key: g.key }));
+    } catch (err) {
+      pending = Promise.reject(err);
+    }
+    pending
+      .catch((err) => console.error(err))
+      .finally(() => {
+        if (memory.saving === saving) memory.saving = null;
+        memory.dragView?.repaint();
+      });
+  }
+
+  /** Mode clavier : la période suit les pas ; hors de la période affichée, celle-ci suit (un pas de navigation). */
+  function keyStep(g, next) {
+    g.now = next.now;
+    g.limit = next.limit;
+    let anchor = st.anchor;
+    for (let k = 0; k < 24; k += 1) {
+      const sc = timeScale(st.scale, anchor);
+      if (g.now.end < sc.start) anchor = shiftAnchor(st.scale, anchor, -1);
+      else if (g.now.start > sc.end) anchor = shiftAnchor(st.scale, anchor, 1);
+      else break;
+    }
+    if (anchor !== st.anchor) {
+      st.anchor = anchor;
+      paint(); // rattache le geste (measure, refresh)
+    } else refresh(g);
+    announce(g.limit ? label('gantt.key.limit', { date: fullDate(maxDay) }) : stepText(g));
+  }
+
   const dragView = {
     begin(key, down, handle) {
       if (!ctx.dates || memory.gesture || memory.saving || !el.isConnected) return false;
       const index = rows.findIndex((r) => r.key === key);
-      const r = rows[index];
-      const target = r ? ctx.dates.target(r.node) : null;
-      if (!target?.ok) return false;
-      const bar = el.querySelector(`[data-row="${index}"] [data-drag]`);
-      if (!bar) return false;
-      const seen = { start: r.node.start, end: r.node.end };
-      const from = periodOf(seen);
+      if (!el.querySelector(`[data-row="${index}"] [data-drag]`)) return false;
       let g = null;
       try {
-        g = {
-          key,
-          target,
-          seen,
-          from,
-          now: null,
-          unit: snapUnit(st.scale, false),
-          startX: down.clientX,
-          pxPerDay: 0,
-          anchor: st.anchor,
-          handle,
-          model: ctx.model,
-          dctx: dragContext(ctx.model, target, from),
-          title: r.node.title || label('common.untitled'),
-          fill: ghostFill(bar),
-          barOffset: bar.offsetTop,
-          barHeight: bar.offsetHeight,
-          vw: document.documentElement.clientWidth,
-          vh: document.documentElement.clientHeight,
-          grabDay: 0,
-          lastX: down.clientX,
-          lastY: down.clientY,
-          shift: Boolean(down.shiftKey),
-          off: false,
-          watch: null,
-        };
-        g.tipAbove = bar.getBoundingClientRect().bottom + TIP_ROOM > g.vh;
-        if (!measure(g, index)) return false;
+        g = prepare(index, { handle, lastX: down.clientX, lastY: down.clientY, shift: Boolean(down.shiftKey) });
+        if (!g) return false;
         g.grabDay = g.scaleStart + (down.clientX - g.trackLeft) / g.pxPerDay;
         g.startX = down.clientX;
         dragUpdate(g, true);
@@ -1085,13 +1248,14 @@ export function render(el, ctx) {
       }
       tipFor = null;
       document.documentElement.classList.add('is-grabbing');
+      announce(label('gantt.drag.grab', { titre: g.title }));
       return true;
     },
     move(m) {
+      if (memory.gesture && !el.isConnected) return void abortGesture('gone');
       guard(() => {
         const g = memory.gesture;
         if (!g) return;
-        if (!el.isConnected) throw new Error('Gantt : vue retirée pendant le glisser');
         g.lastX = m.clientX;
         g.lastY = m.clientY;
         g.shift = Boolean(m.shiftKey);
@@ -1099,11 +1263,11 @@ export function render(el, ctx) {
       });
     },
     edge(side) {
+      const sc = el.querySelector('.gantt__scroll');
+      if (memory.gesture && (!el.isConnected || !sc)) return void abortGesture('gone');
       guard(() => {
         const g = memory.gesture;
-        const sc = el.querySelector('.gantt__scroll');
         if (!g) return;
-        if (!el.isConnected || !sc) throw new Error('Gantt : vue retirée pendant le glisser');
         const before = sc.scrollLeft;
         const room = side > 0 ? sc.scrollWidth - sc.clientWidth - before : before;
         if (room >= 1) {
@@ -1117,38 +1281,65 @@ export function render(el, ctx) {
       });
     },
     drop(m) {
+      if (memory.gesture && !el.isConnected) return void abortGesture('gone');
       const g = guard(() => {
         const cur = memory.gesture;
         if (!cur) return null;
-        if (!el.isConnected) throw new Error('Gantt : vue retirée pendant le glisser');
         cur.lastX = m.clientX;
         cur.lastY = m.clientY;
         cur.shift = Boolean(m.shiftKey);
         dragUpdate(cur);
         return stopGesture();
       });
-      if (!g || g.off || (g.now.start === g.from.start && g.now.end === g.from.end) || !ctx.dates) return;
-      const saving = { key: g.key, now: g.now };
-      memory.saving = saving;
-      let pending;
-      try {
-        paint();
-        pending = Promise.resolve(ctx.dates.save({ target: g.target, seen: g.seen, next: g.now, key: g.key }));
-      } catch (err) {
-        pending = Promise.reject(err);
-      }
-      pending
-        .catch((err) => console.error(err))
-        .finally(() => {
-          if (memory.saving === saving) memory.saving = null;
-          memory.dragView?.repaint();
-        });
+      if (g && !g.off) commit(g);
     },
     cancel() {
       stopGesture();
     },
     repaint() {
       if (gen === memory.generation && el.isConnected) paint();
+    },
+    /** Touche D (ou menu « Déplacer les dates ») sur une ligne : mode clavier, ou la raison du refus. */
+    keyStart(index) {
+      if (!ctx.dates || memory.gesture || memory.saving) return;
+      const r = rows[index];
+      const why = r ? ctx.dates.target(r.node) : null;
+      if (!why?.ok) {
+        if (why) announce(label(`gantt.key.no.${why.reason}`));
+        return;
+      }
+      const g = guard(() => prepare(index, { keyboard: true }));
+      if (!g) return;
+      g.now = g.from;
+      g.limit = false;
+      guard(() => refresh(g));
+      memory.gesture = g;
+      tipFor = null;
+      const s = summaryOf(g);
+      announce(
+        `${label('gantt.drag.grab', { titre: g.title })}. ${label('gantt.key.enter', {
+          debut: fullDate(s.start),
+          fin: fullDate(s.end),
+          pas: label(`gantt.key.unit.${g.unit}`),
+        })}`,
+      );
+    },
+    /** Touche pendant le mode clavier : vrai si elle lui appartient (rien d'autre ne la traite). */
+    key(e) {
+      const g = memory.gesture;
+      if (!g?.keyboard) return false;
+      if (['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) return true;
+      const r = keyMode(
+        { target: g.target, seen: g.seen, now: g.now, edge: 'move', unit: g.unit, max: maxDay, limit: g.limit },
+        e,
+      );
+      if (r.action === 'none') return ['Tab', ' '].includes(e.key);
+      if (r.action === 'cancel') {
+        stopGesture();
+        announce(label('gantt.key.cancel'));
+      } else if (r.action === 'save') commit(stopGesture());
+      else guard(() => keyStep(g, r.state));
+      return true;
     },
   };
   memory.dragView = dragView;
@@ -1208,6 +1399,40 @@ export function render(el, ctx) {
     const bar = e.target.closest?.('[data-drag]');
     if (bar && !e.ctrlKey && !e.metaKey && !e.altKey) startBarDrag(e, bar);
   };
+  // ---------- Menu de ligne (Maj+F10, touche Menu, clic droit sur une ligne glissable) ----------
+  /** Ouvre le menu d'une ligne glissable : « Déplacer les dates », « Ouvrir la fiche ». Faux si non glissable. */
+  function openRowMenu(i) {
+    const r = rows[i];
+    const rowEl = el.querySelector(`[data-row="${i}"]`);
+    const anchor = rowEl?.querySelector('[data-drag]');
+    if (!r || !anchor || !ctx.dates || memory.gesture || !ctx.dates.target(r.node)?.ok) return false;
+    const title = r.node.title || label('common.untitled');
+    openStatusPopover({
+      anchor,
+      returnFocus: rowEl,
+      title,
+      menuLabel: label('gantt.menu', { titre: title }),
+      heading: label('gantt.menu.title'),
+      items: [
+        { value: 'dates', text: label('gantt.menu.dates'), current: true },
+        { value: 'open', text: label('gantt.menu.open') },
+      ],
+      onPick: (v) => {
+        if (v === 'open') ctx.openDetail(r.node.ref);
+        else memory.dragView?.keyStart(i);
+      },
+    });
+    return true;
+  }
+  el.oncontextmenu = (e) => {
+    const row = e.target.closest?.('[data-row]');
+    if (!row || !ctx.dates || memory.gesture || isStatusPopoverOpen()) {
+      if (row && isStatusPopoverOpen()) e.preventDefault(); // « contextmenu » qui suit Maj+F10 : menu déjà ouvert
+      return;
+    }
+    if (openRowMenu(Number(row.dataset.row))) e.preventDefault();
+  };
+
   el.ondblclick = (e) => {
     if (e.target.closest?.('[data-resizer]')) applyWidth(null, true);
   };

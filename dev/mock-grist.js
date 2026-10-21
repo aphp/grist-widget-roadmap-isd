@@ -23,7 +23,8 @@
 //                     inactive (non exemptée). Sans cette option : formule vide.
 //   aph-entier      : comme aph-donnee, mais colonne Int (ce que Grist devine après une saisie de chiffres dans la
 //                     colonne vide) : APH en nombres, 0 = vide (la personne n° 2 du jeu synthétique).
-// grist.__simulateChange([action]) simule onRecords (modification faite ailleurs), avec ou sans donnée changée.
+// grist.__simulateChange([action]) simule onRecords (modification faite ailleurs), avec ou sans donnée changée ;
+// grist.__simulateChange([action], { silencieux: true }) change la donnée sans prévenir le widget.
 // window.__accesRefuse = true : les tables de la Feuille sont refusées pour niveau d'accès (écran « accès »).
 // En cours de session, window.__lectureEchoue = true fait échouer toute lecture de table (relecture avant l'envoi).
 // Les options se combinent par des virgules : ?ecritures=memoire,lent. Le document s'appelle « doc-dev-local ».
@@ -239,12 +240,13 @@
     },
     // Modification faite ailleurs (autre utilisateur) : sans argument, onRecords seul (aucune donnée changée) ;
     // avec ['UpdateRecord', table, id, champs] (ou une liste de ces actions), la copie en mémoire change d'abord.
-    __simulateChange: async (actions) => {
+    // { silencieux: true } : la donnée change sans onRecords (conflit découvert seulement à la relecture d'un envoi).
+    __simulateChange: async (actions, { silencieux = false } = {}) => {
       if (actions) {
         await load();
         (Array.isArray(actions[0]) ? actions : [actions]).forEach(applyOne);
       }
-      if (recordsCb) recordsCb([]);
+      if (recordsCb && !silencieux) recordsCb([]);
     },
   };
 })();

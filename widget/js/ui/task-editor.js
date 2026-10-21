@@ -578,11 +578,6 @@ export function createTaskEditor(deps) {
   }
 
   /**
-   * Statut rapide (fiche en lecture ou formulaire, carte ou ligne d'une vue : P-UX-6) : choisi dans un menu,
-   * enregistré tout de suite. Le formulaire ouvert ne suit que s'il porte sur la même ligne.
-   * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'unknown', 'busy', échec…)
-   */
-  /**
    * Garde commune des envois rapides (statut, dates) : writer présent, un seul envoi à la fois, droit relu au
    * moment d'agir (le contrôle a pu être affiché avant un passage en lecture) ; rien n'est lu ni envoyé sinon.
    * @param {(w:object) => {ok:boolean, reason:string}} rightOf
@@ -613,6 +608,11 @@ export function createTaskEditor(deps) {
     return kind;
   }
 
+  /**
+   * Statut rapide (fiche en lecture ou formulaire, carte ou ligne d'une vue : P-UX-6) : choisi dans un menu,
+   * enregistré tout de suite. Le formulaire ouvert ne suit que s'il porte sur la même ligne.
+   * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'unknown', 'busy', échec…)
+   */
   async function quickStatus(ref, status) {
     const gate = quickGate((w) => quickStatusRight(w, ref.table));
     if (gate) return gate;
