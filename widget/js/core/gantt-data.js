@@ -163,6 +163,33 @@ export function chronoItems(tree, scale) {
   );
 }
 
+const sortCollator = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+
+/**
+ * Arbre du Gantt trié par date, à tous les niveaux : début de la barre (période propre ou déduite), puis fin,
+ * puis titre, puis clé. Les nœuds sans barre passent en dernier, par titre. Renvoie de NOUVEAUX tableaux
+ * d'enfants (nœuds copiés en surface, mêmes champs, même clé) : l'arbre du modèle, partagé avec les autres
+ * vues, n'est jamais modifié.
+ * @param {object[]} tree
+ * @returns {object[]}
+ */
+export function sortTreeByDate(tree) {
+  const entry = (n) => ({ n, bar: nodeBar(n), title: String(n.title ?? ''), key: String(n.key ?? '') });
+  const cmp = (a, b) => {
+    if (a.bar && b.bar) {
+      const d = a.bar.start - b.bar.start || a.bar.end - b.bar.end;
+      if (d) return d;
+    } else if (a.bar || b.bar) return a.bar ? -1 : 1;
+    return sortCollator.compare(a.title, b.title) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  };
+  const sortLevel = (nodes) =>
+    nodes
+      .map(entry)
+      .sort(cmp)
+      .map(({ n }) => (n.children?.length ? { ...n, children: sortLevel(n.children) } : n));
+  return sortLevel(tree);
+}
+
 /** Clés de tous les nœuds ayant des enfants (pour « Tout déplier »). */
 export function expandableKeys(tree) {
   const out = [];

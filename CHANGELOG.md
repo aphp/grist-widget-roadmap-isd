@@ -34,6 +34,9 @@
   and week (Statistics, load plan, Portfolio, My tasks); a period with no working day keeps the calendar spread. Info
   tooltips are now shifted with `translate`, so a tooltip anchored to the right stays in
   its panel.
+- Gantt: rows are now ordered by start date at every level (bar start, then end, then title, undated ones last)
+  instead of alphabetically (`sortTreeByDate`, copies, the model tree is untouched); chantier colours are unchanged
+  and the PDF export follows the displayed order.
 - Filters: the "ISD seulement" help moves from a hint under the checkbox to an "i" button with a tooltip (hover
   and keyboard focus, kept inside the window), so the filter row no longer wraps. Reusable `infoTip` in the UI kit.
 - Delete from the edit form: a "Supprimer" button (tertiary, left of the form footer, task and chantier forms, shown

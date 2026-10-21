@@ -3973,6 +3973,34 @@ test(
   },
 );
 
+test('Gantt : lignes classées par date de début à chaque niveau', { skip: SKIP }, async () => {
+  await open('');
+  await w(`D.getElementById('tab-gantt').click(); return true;`);
+  await until(`D.querySelector('.gantt__scroll')`);
+  await w(`D.getElementById('gantt-level-sous-tache').click(); return true;`);
+  const rows = await w(`return [...D.querySelectorAll('.gantt__body .grow')].map((r) => {
+    const b = r.querySelector('.gbar');
+    return { depth: Number(r.getAttribute('aria-level')), title: r.querySelector('.grow__title').textContent.trim(),
+      left: b ? parseFloat(b.parentElement.style.left || b.style.left) : null };
+  });`);
+  assert.ok(rows.length > 3);
+  const last = [];
+  let checked = 0;
+  for (const r of rows) {
+    last.length = r.depth;
+    const prev = last[r.depth - 1];
+    // Lignes sans barre dans la fenêtre : ignorées (le rejet « sans barre en dernier » est testé en unitaire)
+    if (r.left === null) continue;
+    if (prev) {
+      assert.ok(prev.left <= r.left + 1e-6, `${prev.title} avant ${r.title}`);
+      checked++;
+    }
+    last[r.depth - 1] = r;
+  }
+  assert.ok(checked > 3);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+});
+
 // ---------- Fiche tâche : mise en page des lignes « Date de clôture » et « Rattachement » ----------
 
 test(

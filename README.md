@@ -93,6 +93,10 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), et dans le Portfolio (onglets Projets
   et Chantiers), avec « Tout » ou « Mes chantiers » et sans filtre de tâche. Kanban, Tableau, Statistiques (dont le
   plan de charge), Synthèse et l'onglet Mes tâches ne montrent que des tâches. L'onglet Équipe n'est pas filtré.
+- **Ordre du Gantt** : à chaque niveau (catégories, projets, chantiers, tâches, sous-tâches, « (sans chantier) »
+  compris), les lignes sont classées par début de barre (période propre, sinon déduite), puis fin, puis titre ; sans
+  période, elles passent en dernier, par titre. Les teintes des chantiers ne changent pas avec l'ordre ; l'export
+  PDF suit l'ordre affiché.
 - **Couleur du Gantt** (« Couleur par » : Étape, Statut ou **Chantier**, par défaut ; un choix enregistré est
   gardé) : en mode Chantier, chaque chantier prend une des 7 teintes `--viz-ch-1` à `--viz-ch-7`, attribuées par
   projet sur tous ses chantiers triés par titre (au-delà de 7, les teintes se recyclent ; un filtre ne change jamais

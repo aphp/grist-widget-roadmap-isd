@@ -36,6 +36,7 @@ import {
   phaseOf,
   prunedExpanded,
   shiftAnchor,
+  sortTreeByDate,
   timeScale,
   todayAnchor,
 } from '../core/gantt-data.js';
@@ -329,7 +330,8 @@ function linesHtml(scale, today) {
 export function render(el, ctx) {
   const gen = ++memory.generation;
   const saved = ctx.prefs ?? {};
-  const tree = ctx.view.tree;
+  // Arbre affiché : toujours trié par date, une fois par rendu (copies : l'arbre du modèle reste intact)
+  const tree = sortTreeByDate(ctx.view.tree);
   const searching = Boolean(saved.filters?.search);
   const scaleMode = SCALES.includes(saved.ganttScale) ? saved.ganttScale : 'month';
   const level =
