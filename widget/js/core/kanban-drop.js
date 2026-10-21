@@ -4,6 +4,7 @@
  * relève du lot D. L'écriture elle-même passe par le writer (relecture, conflits, droits y sont traités).
  */
 import { priorityText, taskPriority } from './kanban-data.js';
+import { label } from '../labels.js';
 import { statusChanges } from './task-form.js';
 
 const declaredPriorities = (model) =>
@@ -77,4 +78,85 @@ export function dropChanges(model, taskId, groupBy, columnKey, today) {
     };
   const value = columnKey === '' ? '' : priorityValueFor(model, columnKey);
   return { changes: verdict.ok ? { priorite: value } : {}, inherited };
+}
+
+/**
+ * Colonnes qui peuvent recevoir une carte quelle qu'elle soit (calculé une fois par rendu) : statuts déclarés non
+ * vides ; priorités déclarées et « Sans priorité ». Le regroupement par chantier n'en a aucune (lot D).
+ * @returns {Set<string>}
+ */
+export function dropColumns(model, groupBy, columns) {
+  const out = new Set();
+  for (const { key } of columns) {
+    if (groupBy === 'status' && key !== '' && model.statuses.tasks.includes(key)) out.add(key);
+    else if (groupBy === 'priority' && (key === '' || priorityValueFor(model, key) !== null)) out.add(key);
+  }
+  return out;
+}
+
+/**
+ * Vrai si la carte peut être déposée dans au moins une colonne (même verdict que dropTargets, sans le calculer pour
+ * chaque colonne) : une colonne de `open` autre que la sienne, « Sans priorité » seulement sans priorité en amont.
+ * @param {Set<string>} open voir dropColumns
+ */
+export function hasDropTarget(model, taskId, groupBy, open) {
+  const task = model.tasks.get(taskId);
+  if (!task || (groupBy !== 'status' && groupBy !== 'priority')) return false;
+  const current = groupBy === 'status' ? task.status : priorityText(taskPriority(model, task));
+  let upstream = null;
+  for (const key of open) {
+    if (key === current) continue;
+    if (groupBy === 'priority' && key === '') {
+      upstream ??= upstreamPriority(model, task);
+      if (upstream) continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Entrées du menu de priorité d'une tâche : libellés des priorités déclarées (une fois chacun, dans l'ordre
+ * déclaré), la priorité affichée si elle n'en est pas, puis « Sans priorité ». Verdict de chaque entrée comme un
+ * dépôt dans la colonne de ce libellé (dropTargets) : le choix passe par le même chemin que le glisser.
+ * @returns {{value:string, text:string, current:boolean, ok:boolean, reason:string}[]} vide si la tâche est inconnue
+ */
+export function priorityMenuItems(model, taskId) {
+  const task = model.tasks.get(taskId);
+  if (!task) return [];
+  const current = priorityText(taskPriority(model, task));
+  const keys = [...new Set(declaredPriorities(model).map((v) => priorityText(v)))];
+  if (current && !keys.includes(current)) keys.push(current);
+  keys.push('');
+  const verdicts = dropTargets(
+    model,
+    taskId,
+    'priority',
+    keys.map((key) => ({ key })),
+  );
+  return keys.map((key) => {
+    const v = verdicts.get(key);
+    return {
+      value: key,
+      text: key || label('kanban.noPriority'),
+      current: key === current,
+      ok: v.ok,
+      reason: v.ok ? '' : v.reason,
+    };
+  });
+}
+
+/**
+ * Modèle où la tâche porte déjà le statut ou la priorité déposés (carte affichée à sa nouvelle place pendant
+ * l'enregistrement, Q11) ; les autres tâches et le reste du modèle sont partagés, le modèle d'origine intact.
+ * @param {{statut?:string, dateCloture?:number, priorite?:string}} changes voir dropChanges
+ */
+export function pendingModel(model, taskId, changes) {
+  const task = model.tasks.get(taskId);
+  if (!task) return model;
+  const next = { ...task };
+  if ('statut' in changes) next.status = changes.statut;
+  if ('dateCloture' in changes) next.closed = changes.dateCloture;
+  if ('priorite' in changes) next.priorite = changes.priorite;
+  return { ...model, tasks: new Map(model.tasks).set(taskId, next) };
 }

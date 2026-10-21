@@ -16,6 +16,8 @@
 //   lent            : 1,5 s de latence avant la réponse ;
 //   coupe           : flags.json répond { "edition": false } (arrêt d'urgence ; window.__coupe = true en cours de session) ;
 //   statut-vide     : la tâche n° 1 n'a pas de statut (menu de statut sans entrée cochée) ;
+//   priorites       : Tasks.priorite déclare « 1 », « 2 » et « 3 » (colonnes « Priorité 1 » et « Priorité 2 » du Kanban
+//                     par priorité ouvertes au dépôt) ;
 //   capacite-donnee : Team.capaciteHebdo devient une colonne de données (comme après sa conversion dans Grist par un
 //                     responsable) ; sans cette option, elle reste la colonne vide de la Feuille, non modifiable.
 //   aph-donnee      : Team.aph devient une colonne de données ; avec le jeu synthétique, des APH inventés et des
@@ -50,6 +52,13 @@
     if (has('statut-vide')) {
       const i = data.Tasks.id.indexOf(1);
       if (i >= 0) data.Tasks.statut[i] = '';
+    }
+    if (has('priorites')) {
+      const t = data._grist_Tables;
+      const tasks = t.id[t.tableId.indexOf('Tasks')];
+      const c = data._grist_Tables_column;
+      const i = c.id.findIndex((_, k) => c.parentId[k] === tasks && c.colId[k] === 'priorite');
+      if (i >= 0) c.widgetOptions[i] = JSON.stringify({ choices: ['1', '2', '3'] });
     }
     if (has('capacite-donnee')) {
       const t = data._grist_Tables;

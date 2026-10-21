@@ -1034,6 +1034,19 @@
   outline: 2px solid var(--color-focus);
   outline-offset: -2px;
 }
+/* Entrée refusée (priorité héritée vers « Sans priorité ») : focalisable, grisée, raison dessous */
+.qs-menu__item[aria-disabled='true'] {
+  flex-wrap: wrap;
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+.qs-menu__note {
+  flex: 1 0 100%;
+  padding-left: calc(1em + var(--space-1));
+  font-size: var(--font-size-xs);
+  font-style: italic;
+  max-width: 18rem;
+}
 
 /* Kanban : bouton ⋯ en haut à droite de la carte, hors du focus itinérant */
 .kcard-item--qs {

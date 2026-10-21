@@ -23,7 +23,7 @@ import { estimationIdsOfTable } from './core/estimation.js';
 import { applyFilters, choosePerson, DEFAULT_FILTERS, loadPrefs, savePrefs, validFilters } from './core/filters.js';
 import { dayInZone, maxPlanDay, monthKey, monthsFrom } from './core/dates.js';
 import { initialView, sanitizeHomeView } from './core/home-view.js';
-import { label } from './labels.js';
+import { label, statusLabel } from './labels.js';
 import { createChrome } from './ui/chrome.js';
 import { TABS, THEMES } from './ui/kit.js';
 import { emptyFiltersHtml, emptyPeopleHtml, screenHtml, skeletonHtml, viewErrorHtml } from './ui/states.js';
@@ -39,8 +39,9 @@ import * as team from './views/team.js';
 import { detailContent, detailExists, detailTitle } from './views/detail.js';
 import { editPanelHtml } from './ui/edit-panel.js';
 import { createTaskEditor } from './ui/task-editor.js';
-import { closeStatusPopover, openStatusPopover, statusPopoverKey } from './ui/status-popover.js';
-import { canQuickStatus, focusOrder, statusMenuItems } from './core/quick-status.js';
+import { closeStatusPopover, openChoicePopover, openStatusPopover, statusPopoverKey } from './ui/status-popover.js';
+import { canQuickStatus, focusOrder, quickFields, statusMenuItems } from './core/quick-status.js';
+import { dropChanges, dropTargets, priorityMenuItems } from './core/kanban-drop.js';
 import { createCreateDialog } from './ui/create-dialog.js';
 import { prefillFromFilters } from './core/create-form.js';
 import { createToast } from './ui/toast.js';
@@ -246,6 +247,9 @@ function buildCtx(view) {
     today,
     team: teamCtx(),
     quickStatus: quickStatusCtx(),
+    drop: dropCtx(),
+    /** Message bref d'une vue (geste annulé par une relecture). */
+    notify: (text) => toast.show(text),
     dates: datesCtx(),
     reveal: viewFocus?.reveal ?? null,
   };
@@ -265,7 +269,103 @@ let lastQuick = null;
 function quickStatusCtx() {
   const m = state.model;
   if (!m || !writer || writer.mode === 'off' || !editState.canEdit) return null;
-  return { can: (id) => canQuickStatus(m, id, editState, writer), open: openQuickStatus };
+  return {
+    can: (id) => canQuickStatus(m, id, editState, writer),
+    /** Statut et priorité modifiables pour cette tâche (une seule évaluation de l'édition). */
+    fields: (id) => quickFields(m, id, editState, writer),
+    open: openQuickStatus,
+  };
+}
+
+/**
+ * Glisser et menus des cartes du Kanban : null en lecture seule. targets : verdict de chaque colonne (dropTargets) ;
+ * drop : dépôt d'une carte dans une colonne (statut ou priorité rapides, refus annoncé) ; openPriority : menu de
+ * priorité ; openActions : menu ⋯ (« Statut… », « Priorité… »).
+ */
+function dropCtx() {
+  const m = state.model;
+  if (!m || !writer || writer.mode === 'off' || !editState.canEdit) return null;
+  return {
+    targets: (id, group, columns) => dropTargets(m, id, group, columns),
+    drop: dropOnColumn,
+    openPriority: openQuickPriority,
+    openActions: openCardActions,
+  };
+}
+
+/** Nom d'une colonne du Kanban pour les messages : statut ou libellé de priorité. */
+const columnName = (group, key) => (group === 'status' ? statusLabel(key) : key || label('kanban.noPriority'));
+
+/**
+ * Carte déposée dans une colonne (glisser, menu de priorité) : même chemin que les menus de statut et de priorité.
+ * Colonne de la carte : rien, sans message ; colonne refusée : sa raison dite, rien n'est lu ni envoyé.
+ * @param {number} taskId
+ * @param {'status'|'priority'} group
+ * @param {string} key clé de la colonne (statut ou libellé de priorité)
+ * @param {HTMLElement} focusEl carte (ses voisines servent de repli du focus)
+ * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'refused:…', 'busy'…)
+ */
+async function dropOnColumn(taskId, group, key, focusEl) {
+  const r = dropChanges(state.model, taskId, group, key, todayDay());
+  if (r.error) {
+    toast.show(
+      label('kanban.drop.refused', { colonne: columnName(group, key), raison: label(`kanban.drop.no.${r.error}`) }),
+      { tone: 'error' },
+    );
+    return `refused:${r.error}`;
+  }
+  if (!Object.keys(r.changes).length) return 'nothing';
+  if (group === 'status') return changeStatusFromView(taskId, key, focusEl);
+  const value = r.changes.priorite;
+  return changeFromView(taskId, focusEl, 'kanban.drop.busy', () =>
+    editor.quickPriority({ table: 'Tasks', id: taskId }, value, { inherited: r.inherited }),
+  );
+}
+
+/** Menu de priorité d'une carte (touche P, « Priorité… ») : un choix vaut un dépôt dans la colonne de ce libellé. */
+function openQuickPriority(anchor, taskId, focusEl = anchor) {
+  const m = state.model;
+  const t = m?.tasks.get(taskId);
+  if (!t || !quickFields(m, taskId, editState, writer).priorite) return;
+  const title = t.title || label('common.untitled');
+  openChoicePopover({
+    anchor,
+    returnFocus: focusEl,
+    menuLabel: label('quickPriority.menu', { titre: title }),
+    heading: label('quickPriority.menu.title'),
+    items: priorityMenuItems(m, taskId).map((it) => {
+      const refused = !it.ok && it.reason !== 'same';
+      return { ...it, disabled: refused, note: refused ? label(`kanban.drop.no.${it.reason}`) : undefined };
+    }),
+    onPick: (key) => dropOnColumn(taskId, 'priority', key, focusEl),
+  });
+}
+
+/**
+ * Menu ⋯ d'une carte (clic, Maj+F10, touche Menu, clic droit) : « Statut… » et « Priorité… » selon les droits ; une
+ * seule entrée possible : son menu s'ouvre directement.
+ */
+function openCardActions(anchor, taskId, focusEl = anchor) {
+  const m = state.model;
+  const t = m?.tasks.get(taskId);
+  if (!t) return;
+  const f = quickFields(m, taskId, editState, writer);
+  const open = {
+    status: () => openQuickStatus(anchor, taskId, focusEl),
+    priority: () => openQuickPriority(anchor, taskId, focusEl),
+  };
+  const entries = [f.statut && 'status', f.priorite && 'priority'].filter(Boolean);
+  if (entries.length < 2) return entries.length ? open[entries[0]]() : undefined;
+  const title = t.title || label('common.untitled');
+  openChoicePopover({
+    anchor,
+    returnFocus: focusEl,
+    menuLabel: label('kanban.actions', { titre: title }),
+    heading: label('kanban.actions.title'),
+    items: entries.map((v) => ({ value: v, text: label(`kanban.actions.${v}`) })),
+    start: 0,
+    onPick: (v) => open[v](),
+  });
 }
 
 /**
@@ -330,15 +430,28 @@ function datesCtx() {
 }
 
 /** Changement choisi dans le menu : statut rapide de la fiche (relecture, clôture, refus, mode essai). */
-async function changeStatusFromView(taskId, status, focusEl) {
+function changeStatusFromView(taskId, status, focusEl) {
+  return changeFromView(taskId, focusEl, 'quickStatus.busy', () =>
+    editor.quickStatus({ table: 'Tasks', id: taskId }, status),
+  );
+}
+
+/**
+ * Écriture rapide depuis une vue (statut, priorité) : focus gardé sur l'élément de la tâche (puis ses voisines)
+ * jusqu'après la relecture, tâche gardée visible ; « Annuler » y ramène le focus.
+ * @param {string} busyKey message quand un autre envoi est en cours
+ * @returns {Promise<string>} genre du résultat
+ */
+async function changeFromView(taskId, focusEl, busyKey, run) {
   const list = focusEl.closest('ul, tbody');
   const keys = list ? [...list.querySelectorAll('[data-qs-focus]')].map((x) => x.dataset.qsFocus) : [];
   const focus = { keys: focusOrder(keys, String(taskId)), reveal: taskId, untilReload: false };
-  const kind = await withViewFocus(focus, () => editor.quickStatus({ table: 'Tasks', id: taskId }, status));
+  const kind = await withViewFocus(focus, run);
   // Autre envoi en cours (statut rapide ou formulaire) : le choix n'est pas perdu en silence
-  if (kind === 'busy') toast.show(label('quickStatus.busy'), { tone: 'error' });
+  if (kind === 'busy') toast.show(label(busyKey), { tone: 'error' });
   if (kind === 'saved')
     lastQuick = { entry: writer?.lastUndoable() ?? null, focus: { keys: [String(taskId)], reveal: taskId } };
+  return kind;
 }
 
 const qsSelector = (k) => `[data-qs-focus="${CSS.escape(k)}"]`;

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- Kanban: cards move between status or priority columns by dragging (mouse, pen; finger after a 400 ms long press),
+  through the shared `ui/drag.js` controller. During the gesture nothing is repainted: a ghost on `<body>`, allowed
+  columns outlined (`.kcol--target`), refused ones greyed with their reason in a tooltip and on the ghost
+  (`.kcol--refused`), the hovered column found by `elementFromPoint`; a collapsed column header is a target, holding
+  near the board edge scrolls one column. A drop writes the status (closure date on "Terminé") or the declared
+  priority of that label through the quick status and priority paths (row re-read, rights, dry run, "Annuler"
+  refocusing the card); the card stays in its new column, "Enregistrement…", until the answer. Escape or a drop on
+  its own column or off the board write nothing; "Sans priorité" over an inherited priority is refused with a
+  message. A data reload keeps the gesture unless the card changed elsewhere (cancelled, toast). Alternatives: the ⋯
+  menu becomes "Statut…" / "Priorité…" (click, Shift+F10, Menu key, right click), S opens the status menu and P the
+  priority menu (`aria-keyshortcuts="S P Shift+F10"`). Announcements in `#kanban-live` (`liveAnnouncer`, shared with
+  `#gantt-live`). `openChoicePopover` generalises the status menu (radio, action and disabled entries). No drag when
+  grouped by chantier. Priority toast reads "Priorité changée en « … »"; a timed-out priority write shows the
+  re-read value. Dev: `?ecritures=…,priorites` declares priorities 1, 2 and 3.
 - Gantt: tasks, subtasks and chantiers stretch from either edge. 6 px handles (`.gbar__grip--start` / `--end`,
   ew-resize cursor) show on hover and focus; by finger, a long press selects the bar (frame, handles, no scrolling
   on it), then a press within 24 px of an edge stretches it and elsewhere moves it. Only that edge moves, in steps of

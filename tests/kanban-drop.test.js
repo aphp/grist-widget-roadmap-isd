@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dropChanges, dropTargets, priorityValueFor } from '../widget/js/core/kanban-drop.js';
+import {
+  dropChanges,
+  dropColumns,
+  dropTargets,
+  hasDropTarget,
+  pendingModel,
+  priorityMenuItems,
+  priorityValueFor,
+} from '../widget/js/core/kanban-drop.js';
 
 const task = (id, o = {}) => ({
   id,
@@ -111,4 +119,81 @@ test('priorityValueFor : une seule valeur du libellé → sans parcourir les tâ
   const m = mk([]);
   m.tasks = { values: () => assert.fail('parcours des tâches') };
   assert.equal(priorityValueFor(m, 'Priorité 2'), '2');
+});
+
+test('hasDropTarget : vrai exactement quand dropTargets donne une colonne permise', () => {
+  const m = mk(
+    [
+      task(1),
+      task(2, { status: 'done' }),
+      task(3, { priorite: '1', chantierId: 5 }),
+      task(4, { chantierId: 5 }),
+      task(5, { status: '' }),
+      task(6, { priorite: '1' }),
+    ],
+    { chantiers: [{ id: 5, priorite: '2' }] },
+  );
+  const groups = {
+    status: ['todo', 'inprogress', 'done', '', 'ancien'].map(col),
+    priority: ['Priorité 1', 'Priorité 2', 'P5', ''].map(col),
+    chantier: [col('C5'), col('')],
+  };
+  for (const [group, columns] of Object.entries(groups)) {
+    const open = dropColumns(m, group, columns);
+    for (const id of [1, 2, 3, 4, 5, 6, 99]) {
+      const any = [...dropTargets(m, id, group, columns).values()].some((v) => v.ok);
+      assert.equal(hasDropTarget(m, id, group, open), any, `${group} ${id}`);
+    }
+  }
+  // Seule colonne : celle de la carte → rien ; priorité héritée et seule « Sans priorité » → rien
+  assert.equal(hasDropTarget(m, 1, 'status', dropColumns(m, 'status', [col('todo')])), false);
+  assert.equal(hasDropTarget(m, 4, 'priority', dropColumns(m, 'priority', [col('Priorité 2'), col('')])), false);
+  assert.equal(hasDropTarget(m, 6, 'priority', dropColumns(m, 'priority', [col('Priorité 1'), col('')])), true);
+});
+
+test('priorityMenuItems : libellés déclarés une fois, valeur actuelle cochée, « Sans priorité » en dernier', () => {
+  const m = mk([task(1, { priorite: '2' }), task(2, { chantierId: 5 }), task(3, { priorite: 'P9' })], {
+    chantiers: [{ id: 5, priorite: '1' }],
+  });
+  assert.deepEqual(priorityMenuItems(m, 1), [
+    { value: 'Priorité 1', text: 'Priorité 1', current: false, ok: true, reason: '' },
+    { value: 'Priorité 2', text: 'Priorité 2', current: true, ok: false, reason: 'same' },
+    { value: '', text: 'Sans priorité', current: false, ok: true, reason: '' },
+  ]);
+  // Priorité héritée du chantier : cochée, « Sans priorité » refusé (raison inherited)
+  const inherited = priorityMenuItems(m, 2);
+  assert.deepEqual(
+    inherited.map((it) => [it.value, it.current, it.reason]),
+    [
+      ['Priorité 1', true, 'same'],
+      ['Priorité 2', false, ''],
+      ['', false, 'inherited'],
+    ],
+  );
+  // Valeur non déclarée de la tâche : ajoutée, cochée
+  assert.deepEqual(
+    priorityMenuItems(m, 3).map((it) => [it.value, it.current]),
+    [
+      ['Priorité 1', false],
+      ['Priorité 2', false],
+      ['Priorité 9', true],
+      ['', false],
+    ],
+  );
+  // Sans priorité : « Sans priorité » coché
+  assert.equal(priorityMenuItems(mk([task(4)]), 4).at(-1).current, true);
+  assert.deepEqual(priorityMenuItems(m, 99), []);
+});
+
+test('pendingModel : la tâche porte le statut ou la priorité déposés, le reste du modèle inchangé', () => {
+  const m = mk([task(1), task(2)]);
+  const p = pendingModel(m, 1, { statut: 'done', dateCloture: 20500 });
+  assert.equal(p.tasks.get(1).status, 'done');
+  assert.equal(p.tasks.get(1).closed, 20500);
+  assert.equal(p.tasks.get(2), m.tasks.get(2));
+  assert.equal(m.tasks.get(1).status, 'todo', 'modèle d’origine intact');
+  assert.equal(p.statuses, m.statuses);
+  assert.equal(pendingModel(m, 2, { priorite: '2' }).tasks.get(2).priorite, '2');
+  assert.equal(pendingModel(m, 2, { priorite: '' }).tasks.get(2).priorite, '');
+  assert.equal(pendingModel(m, 99, { statut: 'done' }), m);
 });

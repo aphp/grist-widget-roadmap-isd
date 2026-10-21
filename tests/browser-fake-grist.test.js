@@ -2387,6 +2387,12 @@ const pickStatus = (value) =>
   w(`const items = [...D.querySelectorAll('#qs-menu [data-qs-value]')];
     const b = ${value ? `items.find((x) => x.dataset.qsValue === ${JSON.stringify(value)})` : `items.find((x) => x.getAttribute('aria-checked') !== 'true')`};
     b.focus(); b.click(); return b.dataset.qsValue;`);
+/** Menu ⋯ d'une carte ouvert : « Statut… », puis attend le menu de statut. */
+async function statusViaActions() {
+  await until(`D.querySelector('#qs-menu [data-qs-value="status"]')`);
+  await pickStatus('status');
+  await until(`D.querySelector('#qs-menu [aria-checked]')`);
+}
 const key = (k, extra = {}) =>
   w(
     `D.activeElement.dispatchEvent(new W.KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true, cancelable: true, ...${JSON.stringify(extra)} })); return true;`,
@@ -2410,9 +2416,14 @@ test(
     await key('Escape');
     await until(`!D.getElementById('qs-menu') && D.activeElement.id === 'kc-${id}'`);
     assert.equal(await w(`return W.__writes.length;`), 0);
-    // Maj+F10 rouvre le même menu ; choix « En revue »
+    // Maj+F10 ouvre le menu ⋯ (« Statut… », « Priorité… ») ; « Statut… » puis « En revue »
     await key('F10', { shiftKey: true });
     await until(`D.getElementById('qs-menu')`);
+    assert.deepEqual(await w(`return [...D.querySelectorAll('#qs-menu [data-qs-value]')].map((b) => b.textContent);`), [
+      'Statut…',
+      'Priorité…',
+    ]);
+    await statusViaActions();
     assert.equal(await pickStatus('review'), 'review');
     await until(`W.__writes.length === 1 && D.querySelector('.kcol[data-col="status:review"] #kc-${id}')`);
     assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { statut: 'review' }]]);
@@ -2440,6 +2451,7 @@ test(
     await w(`D.querySelector('[data-qs-open="${id}"]').click(); return true;`);
     await until(`D.getElementById('qs-menu')`);
     assert.equal(await w(`return D.querySelector('[data-qs-open="${id}"]').getAttribute('aria-expanded');`), 'true');
+    await statusViaActions();
     await pickStatus('done');
     await until(`W.__writes.length === 1 && D.activeElement?.id === 'kc-${id}'`);
     const cells = (await writes())[0][0][3];
@@ -2651,7 +2663,7 @@ test(
 );
 
 test(
-  'statut depuis la carte (P-UX-6) : le clic droit ouvre le menu de statut ; choix pendant un envoi signalé',
+  'statut depuis la carte (P-UX-6) : le clic droit ouvre le menu ⋯ ; choix pendant un envoi signalé',
   { skip: SKIP },
   async () => {
     await open(`${EDIT},lent`);
@@ -2659,7 +2671,7 @@ test(
       w(`const e = new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
       D.querySelector(${JSON.stringify(sel)}).dispatchEvent(e); return e.defaultPrevented;`);
     const id = await w(`return Number(D.querySelector('.kcard[data-qs-focus]').dataset.task);`);
-    // Clic droit sur la carte : menu de statut (pas celui du navigateur), ancré sur son ⋯
+    // Clic droit sur la carte : menu ⋯ (pas celui du navigateur), ancré sur son ⋯
     assert.equal(await ctxMenu(`#kc-${id}`), true);
     await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
     assert.equal(await w(`return D.querySelector('[data-qs-open="${id}"]').getAttribute('aria-expanded');`), 'true');
@@ -2679,12 +2691,12 @@ test(
       `const c = [...D.querySelectorAll('.kcol[data-col="status:todo"] .kcard[data-qs-focus]')]; return [Number(c[0].dataset.task), Number(c[1].dataset.task)];`,
     );
     await w(`D.querySelector('[data-qs-open="${a}"]').click(); return true;`);
-    await until(`D.getElementById('qs-menu')`);
+    await statusViaActions();
     await pickStatus('review');
     await until(`W.__writes.length === 1`);
     // Premier envoi encore en cours (1,5 s) : le second choix est refusé avec un message, rien n'est envoyé
     await w(`D.querySelector('[data-qs-open="${b}"]').click(); return true;`);
-    await until(`D.getElementById('qs-menu')`);
+    await statusViaActions();
     await pickStatus('review');
     await until(`/en cours d’envoi/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
     await sleep(2000);
@@ -5305,3 +5317,326 @@ test(
     }
   },
 );
+
+// ---------- Kanban : glisser les cartes entre colonnes de statut et de priorité (lot C3) ----------
+
+/** Kanban en édition (mémoire), regroupé par `group`. */
+async function openKanban(extra = '', group = 'status', query = EDIT) {
+  await open(`${query}${extra}`);
+  if (group !== 'status') {
+    await w(
+      `const s = D.getElementById('kanban-group'); s.value = '${group}'; s.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
+    );
+    await until(`D.querySelector('.kcol[data-col^="${group}:"]')`);
+  }
+}
+
+/** Point de saisie (page hôte) d'une carte : son identifiant, 40 px du bord gauche, 20 px du haut. */
+const cardPoint = (sel) =>
+  w(`const c = D.querySelector(${JSON.stringify(sel)}); if (!c) return null;
+    c.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const r = c.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { id: Number(c.dataset.task), x: f.left + r.left + 40, y: f.top + r.top + 20 };`);
+
+/** Point (page hôte) dans une colonne, à dy px de son haut. */
+const colPoint = (col, dy = 120) =>
+  w(`const c = D.querySelector('.kcol[data-col="${col}"]'); const r = c.getBoundingClientRect();
+    const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + Math.min(r.width / 2, 100), y: f.top + r.top + ${dy} };`);
+
+/** Glisser à la souris de `from` à `to` (bouton tenu pendant le geste). */
+async function mouseTo(from, to, { release = true, steps = 8 } = {}) {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: from.x,
+    y: from.y,
+    button: 'left',
+    clickCount: 1,
+    buttons: 1,
+  });
+  for (let k = 1; k <= steps; k += 1) {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: from.x + ((to.x - from.x) * k) / steps,
+      y: from.y + ((to.y - from.y) * k) / steps,
+      button: 'left',
+      buttons: 1,
+    });
+    await sleep(20);
+  }
+  if (release) await mouseUp(to);
+}
+const mouseUp = (at) =>
+  send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+
+test(
+  'kanban statut : glisser une carte vers « En revue » → une écriture statut, carte focalisée dans sa colonne',
+  { skip: SKIP },
+  async () => {
+    await openKanban(',lent');
+    const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+    assert.ok(at, 'jeu synthétique : une carte glissable dans « À faire »');
+    assert.equal(await w(`return D.getElementById('kc-${at.id}').getAttribute('aria-keyshortcuts');`), 'S P Shift+F10');
+    await mouseTo(at, await colPoint('status:review'), { release: false });
+    // Pendant le geste : fantôme, colonnes permises soulignées, colonne visée, aucun rendu de la vue
+    await until(`D.querySelector('.kghost') && D.querySelector('.kcol--over[data-col="status:review"]')`);
+    assert.equal(
+      await w(`return D.querySelector('.kcol[data-col="status:todo"]').classList.contains('kcol--target');`),
+      false,
+    );
+    assert.ok(await w(`return D.querySelectorAll('.kcol--target').length >= 3;`));
+    await w(`D.getElementById('view-panel').dataset.probe = '1'; return true;`);
+    await mouseUp(await colPoint('status:review'));
+    // Carte à sa nouvelle place, « Enregistrement… », jusqu'à la réponse (écriture lente)
+    await until(`D.querySelector('.kcol[data-col="status:review"] #kc-${at.id}.kcard--saving[aria-busy="true"]')`);
+    assert.equal(await w(`return D.querySelectorAll('.kghost').length;`), 0);
+    await until(`W.__writes.length === 1 && !D.querySelector('.kcard--saving')`, 8000);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', at.id, { statut: 'review' }]]);
+    await until(
+      `D.querySelector('.kcol[data-col="status:review"] #kc-${at.id}') && D.activeElement?.id === 'kc-${at.id}'`,
+    );
+    assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /En revue/);
+    // « Annuler » : la carte revient et reprend le focus
+    await clickOn('.toast [data-toast-action]');
+    await until(`W.__writes.length === 2 && D.querySelector('.kcol[data-col="status:todo"] #kc-${at.id}')`, 8000);
+    await until(`D.activeElement?.id === 'kc-${at.id}'`, 8000);
+  },
+);
+
+test('kanban statut : vers « Terminé » → statut et dateCloture', { skip: SKIP }, async () => {
+  await openKanban();
+  await w(`const b = D.querySelector('.kanban__board'); b.scrollLeft = b.scrollWidth; return true;`);
+  await sleep(200);
+  const at = await cardPoint('.kcol[data-col="status:inprogress"] .kcard[data-drag-card]');
+  await mouseTo(at, await colPoint('status:done'));
+  await until(`W.__writes.length === 1`);
+  const cells = (await writes())[0][0][3];
+  assert.equal(cells.statut, 'done');
+  assert.equal(typeof cells.dateCloture, 'number');
+});
+
+test('kanban priorité : glisser vers « Priorité 2 » → priorite = valeur déclarée', { skip: SKIP }, async () => {
+  await openKanban(',priorites', 'priority');
+  const at = await cardPoint('.kcol[data-col="priority:Priorité 3"] .kcard[data-drag-card]');
+  assert.ok(at);
+  await mouseTo(at, await colPoint('priority:Priorité 2'));
+  await until(`W.__writes.length === 1`);
+  assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', at.id, { priorite: '2' }]]);
+  await until(
+    `D.querySelector('.kcol[data-col="priority:Priorité 2"] #kc-${at.id}') && D.activeElement?.id === 'kc-${at.id}'`,
+  );
+  assert.match(await w(`return D.querySelector('.toast__text').textContent;`), /Priorité changée en « Priorité 2 »/);
+});
+
+test(
+  'kanban priorité : « Sans priorité » avec priorité héritée → refus et message, aucune écriture',
+  { skip: SKIP },
+  async () => {
+    await openKanban(',priorites', 'priority');
+    // « Priorité 1 » : priorité venue du projet (les tâches n'en portent pas)
+    const at = await cardPoint('.kcol[data-col="priority:Priorité 1"] .kcard[data-drag-card]');
+    await mouseTo(at, await colPoint('priority:'), { release: false });
+    await until(`D.querySelector('.kcol--over.kcol--refused[data-col="priority:"]')`);
+    assert.match(await w(`return D.querySelector('.kcol[data-col="priority:"]').title;`), /chantier ou du projet/);
+    assert.match(await w(`return D.querySelector('.kghost__note').textContent;`), /Dépôt impossible/);
+    await mouseUp(await colPoint('priority:'));
+    await until(`/Dépôt impossible dans « Sans priorité »/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+    assert.equal(
+      await w(`return Boolean(D.querySelector('.kcol[data-col="priority:Priorité 1"] #kc-${at.id}'));`),
+      true,
+    );
+  },
+);
+
+test('kanban : dépôt sur l’en-tête d’une colonne repliée', { skip: SKIP }, async () => {
+  await openKanban();
+  assert.equal(
+    await w(`return D.querySelector('.kcol[data-col="status:Bloqué"]').classList.contains('kcol--collapsed');`),
+    true,
+  );
+  const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+  await mouseTo(at, await colPoint('status:Bloqué', 30));
+  await until(`W.__writes.length === 1`);
+  assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', at.id, { statut: 'Bloqué' }]]);
+});
+
+test('kanban : bord du plateau → défilement, dépôt hors champ', { skip: SKIP }, async () => {
+  await openKanban();
+  const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+  const right = await w(
+    `const r = D.querySelector('.kanban__board').getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect(); return f.left + r.right - 10;`,
+  );
+  await mouseTo(at, { x: at.x + 200, y: at.y + 60 }, { release: false });
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: right, y: at.y + 60, button: 'left', buttons: 1 });
+  await until(`D.querySelector('.kanban__board').scrollLeft > 0`, 4000);
+  // « Terminé », hors champ au départ, est maintenant à l'écran
+  const done = await colPoint('status:done');
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: done.x, y: done.y, button: 'left', buttons: 1 });
+  await until(`D.querySelector('.kcol--over[data-col="status:done"]')`);
+  await mouseUp(done);
+  await until(`W.__writes.length === 1`);
+  assert.equal((await writes())[0][0][3].statut, 'done');
+});
+
+test('kanban : Échap et dépôt dans sa colonne → aucune écriture', { skip: SKIP }, async () => {
+  await openKanban();
+  const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+  await mouseTo(at, await colPoint('status:review'), { release: false });
+  await until(`D.querySelector('.kghost')`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await until(`!D.querySelector('.kghost') && !D.querySelector('.kcol--target')`);
+  await mouseUp(await colPoint('status:review'));
+  // Dans sa propre colonne : rien, sans message
+  const again = await cardPoint(`#kc-${at.id}`);
+  await mouseTo(again, { x: again.x + 30, y: again.y + 140 });
+  await sleep(500);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  assert.equal(await w(`return Boolean(D.querySelector('.toast__text'));`), false);
+  assert.equal(await w(`return Boolean(D.querySelector('.kcol[data-col="status:todo"] #kc-${at.id}'));`), true);
+  // Aucune fiche ouverte par le clic qui suit un glisser
+  assert.notEqual(await w(`return D.getElementById('app-detail').dataset.open;`), 'true');
+});
+
+test('kanban : touche P puis choix → une écriture', { skip: SKIP }, async () => {
+  await openKanban(',priorites');
+  const id = await w(
+    `const c = D.querySelector('.kcol[data-col="status:todo"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+  );
+  await key('p');
+  await until(`D.getElementById('qs-menu') && D.activeElement.closest('#qs-menu')`);
+  assert.match(await w(`return D.getElementById('qs-menu').getAttribute('aria-label');`), /Priorité de/);
+  const items = await w(`return [...D.querySelectorAll('#qs-menu [data-qs-value]')].map((b) => b.dataset.qsValue);`);
+  assert.deepEqual(items, ['Priorité 1', 'Priorité 2', 'Priorité 3', '']);
+  // Flèches et Entrée maintenue : rien n'est écrit (règles du menu)
+  await press('ArrowDown');
+  await press('Enter', { repeat: true });
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  const value = await w(
+    `const b = [...D.querySelectorAll('#qs-menu [data-qs-value]')].find((x) => x.getAttribute('aria-checked') !== 'true' && x.getAttribute('aria-disabled') !== 'true' && x.dataset.qsValue === 'Priorité 2'); b.focus(); return b.dataset.qsValue;`,
+  );
+  assert.equal(value, 'Priorité 2');
+  await press('Enter');
+  await until(`W.__writes.length === 1`);
+  assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', id, { priorite: '2' }]]);
+  await until(`D.activeElement?.id === 'kc-${id}'`);
+});
+
+test('kanban : menu de priorité, « Sans priorité » héritée refusée avec sa raison', { skip: SKIP }, async () => {
+  await openKanban(',priorites', 'priority');
+  const id = await w(
+    `const c = D.querySelector('.kcol[data-col="priority:Priorité 1"] .kcard[data-qs-focus]'); c.focus(); return Number(c.dataset.task);`,
+  );
+  await key('p');
+  await until(`D.getElementById('qs-menu')`);
+  const none = `D.querySelector('#qs-menu [data-qs-value=""]')`;
+  assert.equal(await w(`return ${none}.getAttribute('aria-disabled');`), 'true');
+  assert.match(await w(`return ${none}.textContent;`), /chantier ou du projet/);
+  await w(`${none}.click(); return true;`);
+  await sleep(300);
+  assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), true, 'menu resté ouvert');
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  await key('Escape');
+  await until(`!D.getElementById('qs-menu') && D.activeElement?.id === 'kc-${id}'`);
+});
+
+test('kanban : défilement du plateau et de la page identiques après le dépôt', { skip: SKIP }, async () => {
+  await openKanban();
+  await w(`D.querySelector('.kanban__board').scrollLeft = 120; W.scrollTo(0, 60); return true;`);
+  await sleep(200);
+  const scrolls = `return { left: D.querySelector('.kanban__board').scrollLeft, page: W.scrollY };`;
+  const before = await w(scrolls);
+  const at = await w(`const c = D.querySelector('.kcol[data-col="status:inprogress"] .kcard[data-drag-card]');
+    const r = c.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { id: Number(c.dataset.task), x: f.left + r.left + 40, y: f.top + r.top + 20 };`);
+  await mouseTo(at, await colPoint('status:review', 100));
+  await until(`W.__writes.length === 1`);
+  await until(`D.activeElement?.id === 'kc-${at.id}'`, 8000);
+  await sleep(600); // relecture et rendu
+  assert.deepEqual(await w(scrolls), before);
+});
+
+test('kanban : doigt, appui long puis glisser', { skip: SKIP }, async () => {
+  await openKanban();
+  const touch = async (type, x, y) =>
+    send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+  const to = await colPoint('status:review');
+  // Appui court qui glisse (vers le haut : un glisser horizontal au bord reviendrait en arrière dans
+  // l'historique) : le navigateur fait défiler, rien n'est écrit
+  await touch('touchStart', at.x, at.y);
+  for (let k = 1; k <= 5; k += 1) await touch('touchMove', at.x, at.y - k * 15);
+  await touch('touchEnd');
+  await sleep(300);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+  const again = await cardPoint(`#kc-${at.id}`);
+  await touch('touchStart', again.x, again.y);
+  await sleep(550);
+  for (let k = 1; k <= 6; k += 1) {
+    await touch('touchMove', again.x + ((to.x - again.x) * k) / 6, again.y + ((to.y - again.y) * k) / 6);
+    await sleep(30);
+  }
+  await touch('touchEnd');
+  await until(`W.__writes.length === 1`);
+  assert.equal((await writes())[0][0][3].statut, 'review');
+  assert.equal(await w(`return Boolean(D.getElementById('qs-menu'));`), false, 'appui long : pas de menu');
+});
+
+test('kanban : ?edition=essai → rien d’envoyé', { skip: SKIP }, async () => {
+  await openKanban('', 'status', '?edition=essai');
+  const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+  assert.ok(at, 'mode essai : cartes glissables');
+  await mouseTo(at, await colPoint('status:review'));
+  await until(`/Mode essai/.test(D.querySelector('.toast__text')?.textContent ?? '')`);
+  await sleep(300);
+  assert.equal(await w(`return W.__writes.length;`), 0);
+});
+
+test(
+  'kanban : relecture pendant le glisser → le geste continue ; carte changée ailleurs → annulé avec un message',
+  { skip: SKIP },
+  async () => {
+    await openKanban();
+    const at = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+    const to = await colPoint('status:review');
+    await mouseTo(at, to, { release: false });
+    await until(`D.querySelector('.kcol--over[data-col="status:review"]')`);
+    const other = await w(`return Number(D.querySelector('.kcol[data-col="status:inprogress"] .kcard').dataset.task);`);
+    await w(
+      `await W.grist.__simulateChange(['UpdateRecord', 'Tasks', ${other}, { description: 'Modifiée ailleurs' }]); return true;`,
+    );
+    await sleep(800);
+    assert.equal(
+      await w(`return Boolean(D.querySelector('.kghost')) && Boolean(D.querySelector('.kcol--target'));`),
+      true,
+    );
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: to.x + 5, y: to.y, button: 'left', buttons: 1 });
+    await mouseUp({ x: to.x + 5, y: to.y });
+    await until(`W.__writes.length === 1`);
+    assert.deepEqual((await writes())[0], [['UpdateRecord', 'Tasks', at.id, { statut: 'review' }]]);
+    // Statut changé ailleurs pendant le geste : annulé, message, rien d'écrit au relâcher
+    await until(`!D.querySelector('.kcard--saving')`, 8000);
+    await sleep(500);
+    const b = await cardPoint('.kcol[data-col="status:todo"] .kcard[data-drag-card]');
+    await mouseTo(b, to, { release: false });
+    await until(`D.querySelector('.kghost')`);
+    await w(
+      `await W.grist.__simulateChange(['UpdateRecord', 'Tasks', ${b.id}, { statut: 'inprogress' }]); return true;`,
+    );
+    await until(
+      `!D.querySelector('.kghost') && /a changé pendant le déplacement/.test(D.querySelector('.toast__text')?.textContent ?? '')`,
+    );
+    await mouseUp(to);
+    await sleep(300);
+    assert.equal(await w(`return W.__writes.length;`), 1);
+  },
+);
+
+test('kanban regroupé par chantier : aucune carte glissable (lot D)', { skip: SKIP }, async () => {
+  await openKanban('', 'chantier');
+  assert.equal(await w(`return D.querySelectorAll('[data-drag-card]').length;`), 0);
+  assert.ok(await w(`return D.querySelectorAll('.kcard[data-qs-focus]').length > 0;`));
+});

@@ -396,3 +396,82 @@
   background: transparent;
   border: 1px dashed var(--color-accent-text);
 }
+
+/* ---- Glisser une carte (lot C) : carte saisissable, colonnes permises soulignées, refusées grisées, fantôme ---- */
+.kcard[data-drag-card] {
+  cursor: grab;
+}
+/* Pendant le geste : colonnes à la hauteur du plateau (dépôt sous la dernière carte d'une colonne courte) */
+.kanban__board--dragging {
+  align-items: stretch;
+}
+.kcol--target {
+  outline: 2px dashed var(--color-focus);
+  outline-offset: -2px;
+}
+.kcol--target.kcol--over {
+  outline-style: solid;
+  outline-width: 3px;
+  background: color-mix(in srgb, var(--color-focus) 10%, var(--color-surface-2));
+}
+.kcol--refused {
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+.kcol--refused.kcol--over {
+  cursor: not-allowed;
+  outline: 2px solid var(--border-plain-error);
+  outline-offset: -2px;
+}
+.kcard--origin {
+  opacity: 0.4;
+}
+.kcard--saving {
+  cursor: progress;
+}
+.kghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  pointer-events: none;
+  will-change: transform;
+}
+.kghost__card {
+  box-shadow: var(--shadow-3);
+  transform: rotate(2deg);
+  cursor: grabbing;
+}
+.kghost__note {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md, 6px);
+  background: var(--badge-error-bg);
+  color: var(--badge-error-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+.kghost__note[hidden] {
+  display: none;
+}
+.kghost--refused .kghost__card {
+  border-color: var(--border-plain-error);
+}
+@media (forced-colors: active) {
+  .kcol--target {
+    outline-color: Highlight;
+  }
+  .kcol--refused {
+    outline: 2px dotted GrayText;
+    outline-offset: -2px;
+  }
+  .kcol--refused.kcol--over {
+    outline-color: Mark;
+  }
+  .kghost__card {
+    border: 2px solid Highlight;
+  }
+  .kghost__note {
+    border: 1px solid CanvasText;
+  }
+}

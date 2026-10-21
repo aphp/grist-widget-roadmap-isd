@@ -60,9 +60,12 @@ import { h, icon, keepFocus, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
 import { label, statusLabel } from '../labels.js';
 import { VIZ_PRINT } from '../ui/viz-palette.js';
-import { trackPointer } from '../ui/drag.js';
-import { closeStatusPopover, isStatusPopoverOpen, openStatusPopover } from '../ui/status-popover.js';
-import { isStatusShortcut } from '../core/quick-status.js';
+import { liveAnnouncer, trackPointer } from '../ui/drag.js';
+import { closeStatusPopover, isStatusPopoverOpen, openChoicePopover } from '../ui/status-popover.js';
+import { isMenuShortcut } from '../core/quick-status.js';
+
+/** Annonces du Gantt : une seule région et un seul regroupement pour tous les rendus. */
+const announce = liveAnnouncer('gantt-live');
 
 export const id = 'gantt';
 
@@ -80,10 +83,6 @@ const TIP_MAX = 360;
 const TIP_ROOM = 140;
 /** Marge verticale (px) autour de la frise de la ligne où un dépôt compte encore. */
 const DROP_SLACK = ROW_PX / 2;
-/** Délai de regroupement des annonces (ms). */
-const LIVE_DELAY = 300;
-/** Délai entre la région vidée et le même texte reposé (ms). */
-const REPEAT_DELAY = 60;
 /**
  * État conservé entre deux rendus de la vue (rechargement des données) : période affichée, génération, poignée de
  * largeur (drag, applyWidth), glisser d'une barre (gesture, saving), barre choisie au doigt par un appui long
@@ -100,7 +99,6 @@ const memory = {
   gesture: null,
   saving: null,
   dragView: null,
-  liveTimer: null,
   notice: null,
   touchSel: null,
 };
@@ -965,7 +963,7 @@ export function render(el, ctx) {
       memory.dragView?.keyStart(i);
       return;
     }
-    if (e.target === row && isStatusShortcut(e) && e.key !== 's' && e.key !== 'S' && openRowMenu(i)) {
+    if (e.target === row && isMenuShortcut(e) && openRowMenu(i)) {
       e.preventDefault();
       return;
     }
@@ -1223,19 +1221,6 @@ export function render(el, ctx) {
   }
 
   // ---------- Annonces (#gantt-live, hors de la vue redessinée), regroupées à 300 ms ----------
-  function announce(text) {
-    clearTimeout(memory.liveTimer);
-    memory.liveTimer = setTimeout(() => {
-      const live = document.getElementById('gantt-live');
-      if (!live) return;
-      // Même texte qu'avant (pas refusé deux fois, même raison) : vidé d'abord pour être relu
-      if (live.textContent !== text) live.textContent = text;
-      else {
-        live.textContent = '';
-        memory.liveTimer = setTimeout(() => (live.textContent = text), REPEAT_DELAY);
-      }
-    }, LIVE_DELAY);
-  }
   const fullDate = (d) => formatDateFr(d);
   /**
    * Période et écart dits (« Du 17 novembre au 12 décembre, plus 14 jours. » ; sur un bord : « …, échéance plus
@@ -1631,10 +1616,9 @@ export function render(el, ctx) {
     if (!target?.ok) return false;
     const { key } = r;
     const title = r.node.title || label('common.untitled');
-    openStatusPopover({
+    openChoicePopover({
       anchor,
       returnFocus: rowEl,
-      title,
       menuLabel: label('gantt.menu', { titre: title }),
       heading: label('gantt.menu.title'),
       items: [

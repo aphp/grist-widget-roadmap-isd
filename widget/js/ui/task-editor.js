@@ -134,6 +134,14 @@ const SPECS = Object.freeze({
 const spec = (s) => SPECS[s.ref.table];
 const MORE_KEY = 'roadmap-isd.formMore';
 
+/** Messages d'échec communs aux statut et priorité rapides (quickFail). */
+const QUICK_FAIL_TEXTS = Object.freeze({
+  reread: 'quickStatus.fail.reread',
+  acl: 'form.fail.acl',
+  missing: 'form.fail.missing',
+  other: 'form.fail.other',
+});
+
 /**
  * @param {{root:HTMLElement, chrome:object, getModel():object, getBase(table:string, id:number):object|null,
  *   getWriter():object|null, fetchRow(table:string, id:number):Promise<object|null>, today():number,
@@ -657,12 +665,7 @@ export function createTaskEditor(deps) {
       }
       return 'unknown';
     }
-    const kind = quickFail(result, {
-      reread: 'quickStatus.fail.reread',
-      acl: 'form.fail.acl',
-      missing: 'form.fail.missing',
-      other: 'form.fail.other',
-    });
+    const kind = quickFail(result, QUICK_FAIL_TEXTS);
     if (cur && st === cur) render('btn-status-menu');
     return kind;
   }
@@ -675,7 +678,9 @@ export function createTaskEditor(deps) {
    * @param {string} value valeur déclarée de Tasks.priorite ('' : sans priorité)
    * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'unknown', 'busy', échec…)
    */
-  async function quickPriority(ref, value, { inherited = false } = {}) {
+  async function quickPriority(task, value, { inherited = false } = {}) {
+    // Toujours Tasks.priorite : jamais Chantiers.Priorite, quelle que soit la référence reçue
+    const ref = { table: 'Tasks', id: task.id };
     const gate = quickGate((w) => quickFieldRight(w, ref.table, 'priorite'));
     if (gate) return gate;
     const w = writer();
@@ -711,15 +716,13 @@ export function createTaskEditor(deps) {
         rebaseOnto(cur, result.stored);
         render();
       }
-      deps.toast.show(label('toast.unknownPriority'), { tone: 'error' });
+      const now = result.stored ? priorityText(result.stored.priorite) || label('kanban.noPriority') : null;
+      deps.toast.show(now ? label('toast.unknownPriorityNow', { priorite: now }) : label('toast.unknownPriority'), {
+        tone: 'error',
+      });
       return 'unknown';
     }
-    return quickFail(result, {
-      reread: 'quickStatus.fail.reread',
-      acl: 'form.fail.acl',
-      missing: 'form.fail.missing',
-      other: 'form.fail.other',
-    });
+    return quickFail(result, QUICK_FAIL_TEXTS);
   }
 
   /**

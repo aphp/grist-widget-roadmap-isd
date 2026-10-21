@@ -6,6 +6,12 @@
  * de la carte (souris), hors du focus itinérant (tabindex -1) pour garder un seul arrêt par colonne ; au clavier,
  * « S », Maj+F10 ou la touche Menu sur la carte focalisée ouvre le même menu. Après le changement, le focus reste
  * sur la carte, y compris quand elle change de colonne (Kanban groupé par statut).
+ * Glisser (lot C) : une carte modifiable se dépose dans une autre colonne du Kanban groupé par statut ou par
+ * priorité (souris, stylet ; doigt après un appui long). Colonnes permises soulignées, les autres grisées avec leur
+ * raison ; aucun rendu pendant le geste (fantôme posé sur <body>, colonne visée par elementFromPoint) ; bord du
+ * plateau tenu → défilement d'une colonne. Le dépôt passe par les statut et priorité rapides (ctx.drop.drop) ; la
+ * carte reste à sa nouvelle place, « Enregistrement… », jusqu'à la réponse. Alternatives : menu ⋯ (« Statut… »,
+ * « Priorité… »), touches S et P. Regroupement par chantier : pas de glisser (lot D).
  */
 import { raw } from '../core/sanitize.js';
 import { formatDateFr } from '../core/dates.js';
@@ -28,10 +34,12 @@ import {
   toggleColumn,
 } from '../core/kanban-data.js';
 import { displayRole } from '../core/team-directory.js';
-import { isStatusShortcut, limitToReveal } from '../core/quick-status.js';
+import { isMenuShortcut, isPriorityShortcut, isStatusShortcut, limitToReveal } from '../core/quick-status.js';
+import { dropChanges, dropColumns, hasDropTarget, pendingModel } from '../core/kanban-drop.js';
 import { h, icon, keepFocus, roleFullText, statusBadge } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
 import { statusContextMenu } from '../ui/status-popover.js';
+import { liveAnnouncer, trackPointer } from '../ui/drag.js';
 import { etpLabel, label, statusLabel } from '../labels.js';
 
 export const id = 'kanban';
@@ -39,11 +47,23 @@ export const id = 'kanban';
 /** Cartes affichées d'emblée par colonne ; « Afficher plus » ajoute un lot. */
 const PAGE = 40;
 const SEP = ' › ';
+const NO_FIELDS = Object.freeze({ statut: false, priorite: false });
 /** Éléments du focus itinérant d'une colonne, dans l'ordre : bouton de repli, cartes, « Afficher plus ». */
 const ITEMS = '.kcol__toggle, .kcard, .kcol__more';
 
 /** Écouteurs de fenêtre (défilement, redimensionnement) par conteneur, retirés au rendu suivant. */
 const listeners = new WeakMap();
+
+/**
+ * Glisser d'une carte, gardé d'un rendu à l'autre (une relecture pendant le geste le rattache) : gesture ({ taskId,
+ * group, fromKey, targets, ghost, over, … }), saving ({ taskId, group, changes } : carte affichée à sa nouvelle
+ * place jusqu'à la réponse) et fonctions du dernier rendu (view).
+ */
+const memory = { gesture: null, saving: null, view: null };
+/** Annonces du glisser (#kanban-live, hors de la vue redessinée). */
+const announce = liveAnnouncer('kanban-live');
+/** Nom d'une colonne dans les annonces. */
+const columnName = (group, key) => (group === 'status' ? statusLabel(key) : key || label('kanban.noPriority'));
 
 /**
  * « Afficher plus » et carte d'entrée de chaque colonne, gardés d'un rendu à l'autre tant que la vue montre la même
@@ -126,16 +146,33 @@ function etpBreakdown(model, task) {
 /** Attributs du focus itinérant : seul l'élément d'entrée de la colonne est un arrêt de tabulation. */
 const roving = (entry) => raw(entry ? 'tabindex="0" aria-describedby="kanban-help"' : 'tabindex="-1"');
 
-/** Bouton ⋯ du statut (P-UX-6) : à côté de la carte (une carte est déjà un bouton), hors du focus itinérant. */
-function statusButton(task) {
+/** Bouton ⋯ (P-UX-6, lot C) : menu « Statut… », « Priorité… », à côté de la carte, hors du focus itinérant. */
+function actionsButton(task) {
   const title = task.title || label('common.untitled');
-  return h`<button type="button" class="kcard__qs" data-qs-open="${task.id}" tabindex="-1" aria-haspopup="menu" aria-expanded="false" aria-label="${label('quickStatus.open', { titre: title, statut: statusLabel(task.status) })}" title="${label('quickStatus.menu.title')}"><span aria-hidden="true">⋯</span></button>`;
+  return h`<button type="button" class="kcard__qs" data-qs-open="${task.id}" tabindex="-1" aria-haspopup="menu" aria-expanded="false" aria-label="${label('kanban.actions.open', { titre: title, statut: statusLabel(task.status) })}" title="${label('kanban.actions.title')}"><span aria-hidden="true">⋯</span></button>`;
 }
 
-function cardHtml(ctx, taskId, paths, showStatus, entry) {
-  const model = ctx.model;
+/** Attributs d'édition de la carte : clé de focus, raccourcis, glisser, état « Enregistrement… ». */
+function cardEditAttrs(taskId, fields, drag, saving) {
+  if (!fields.statut && !fields.priorite) return '';
+  const keys = [fields.statut && 'S', fields.priorite && 'P', 'Shift+F10'].filter(Boolean).join(' ');
+  return raw(
+    ` data-qs-focus="${taskId}" aria-keyshortcuts="${keys}"${drag ? ' data-drag-card' : ''}${saving ? ' aria-busy="true"' : ''}`,
+  );
+}
+
+/**
+ * @param {{model:object, group:string, open:Set<string>|null}} board modèle affiché (avec la carte en cours
+ *   d'enregistrement à sa nouvelle place), regroupement, colonnes ouvertes au dépôt (null : pas de glisser)
+ */
+function cardHtml(ctx, board, taskId, paths, showStatus, entry) {
+  const { model } = board;
   const task = model.tasks.get(taskId);
-  const qs = Boolean(ctx.quickStatus?.can(taskId));
+  const fields = ctx.quickStatus?.fields?.(taskId) ?? NO_FIELDS;
+  const qs = fields.statut || fields.priorite;
+  const saving = memory.saving?.taskId === taskId;
+  const right = board.group === 'status' ? fields.statut : board.group === 'priority' && fields.priorite;
+  const drag = Boolean(board.open && right && !saving && hasDropTarget(model, taskId, board.group, board.open));
   const path = (paths.get(taskId)?.path ?? []).join(SEP);
   const late = task.end !== null && task.end < ctx.today && !task.done;
   const etp = taskEtp(task) || null; // 0 (aucune charge) : rien à afficher
@@ -145,10 +182,11 @@ function cardHtml(ctx, taskId, paths, showStatus, entry) {
     .filter((r) => r.person)
     .map((r) => ({ ...r, role: displayRole(model, r.person) }));
   return h`<li class="kcard-item${qs ? ' kcard-item--qs' : ''}">
-    <button type="button" class="kcard${late ? ' kcard--late' : ''}" id="kc-${taskId}" data-task="${taskId}" ${roving(entry)}${raw(qs ? ` data-qs-focus="${taskId}" aria-keyshortcuts="S Shift+F10"` : '')}>
+    <button type="button" class="kcard${late ? ' kcard--late' : ''}${saving ? ' kcard--saving' : ''}" id="kc-${taskId}" data-task="${taskId}" ${roving(entry)}${cardEditAttrs(taskId, fields, drag, saving)}>
       ${path ? h`<span class="kcard__path" title="${path}">${path}</span>` : ''}
       <span class="kcard__title">${task.title || label('common.untitled')}</span>
       <span class="kcard__badges">
+        ${saving ? h`<span class="fr-badge fr-badge--sm fr-badge--no-icon kcard__saving">${label('kanban.drop.saving')}</span>` : ''}
         ${showStatus ? statusBadge(task.status) : ''}
         ${late ? h`<span class="fr-badge fr-badge--sm fr-badge--error">${label('kanban.late')}</span>` : ''}
         ${priority ? h`<span class="fr-badge fr-badge--sm fr-badge--no-icon fr-badge--purple-glycine">${priorityText(priority)}</span>` : ''}
@@ -171,11 +209,11 @@ function cardHtml(ctx, taskId, paths, showStatus, entry) {
           : ''
       }
     </button>
-    ${qs ? statusButton(task) : ''}
+    ${qs ? actionsButton(task) : ''}
   </li>`;
 }
 
-function columnHtml(ctx, col, st, paths) {
+function columnHtml(ctx, board, col, st, paths) {
   const ckey = `${st.group}:${col.key}`;
   const collapsed = isColumnCollapsed(st.collapsed, ckey, !col.tasks.length);
   const shown = Math.min(col.tasks.length, st.limits.get(ckey) ?? PAGE);
@@ -204,7 +242,7 @@ function columnHtml(ctx, col, st, paths) {
         : h`<div class="kcol__body" data-body="${ckey}">
           ${
             col.tasks.length
-              ? h`<ul class="list kcol__list">${visible.map((t) => cardHtml(ctx, t, paths, !byStatus, entry === `kc-${t}`))}</ul>`
+              ? h`<ul class="list kcol__list">${visible.map((t) => cardHtml(ctx, board, t, paths, !byStatus, entry === `kc-${t}`))}</ul>`
               : h`<p class="kcol__empty">${label('kanban.empty')}</p>`
           }
           ${rest > 0 ? h`<button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary kcol__more" id="km-${ckey}" ${roving(entry === `km-${ckey}`)} data-more="${ckey}">${label('kanban.more', { n: Math.min(rest, PAGE) })}</button>` : ''}
@@ -240,10 +278,18 @@ export function render(el, ctx) {
   const qsOn = Boolean(ctx.quickStatus);
   const paths = taskPaths(ctx.view.tree);
 
+  /** Colonnes du dernier rendu (verdicts du glisser au début du geste). */
+  let shownCols = [];
+
   function paint() {
     const board = el.querySelector('.kanban__board');
     const left = board?.scrollLeft ?? 0;
-    const cols = kanbanColumns(ctx.model, ctx.view.taskIds, st.group, st.sort);
+    // Carte en cours d'enregistrement : déjà dans sa nouvelle colonne (Q11)
+    const saving = memory.saving?.group === st.group ? memory.saving : null;
+    const model = saving ? pendingModel(ctx.model, saving.taskId, saving.changes) : ctx.model;
+    const cols = kanbanColumns(model, ctx.view.taskIds, st.group, st.sort);
+    shownCols = cols;
+    const dnd = { model, group: st.group, open: ctx.drop ? dropColumns(model, st.group, cols) : null };
     reveal(cols);
     keepFocus(
       el,
@@ -262,7 +308,7 @@ export function render(el, ctx) {
         </div>
         <div class="kanban__viewport">
           <div class="kanban__board" id="kanban-board" data-scroll-key="kanban" role="group" aria-label="${label('kanban.label')}" aria-describedby="kanban-help">
-            ${cols.map((c) => columnHtml(ctx, c, st, paths))}
+            ${cols.map((c) => columnHtml(ctx, dnd, c, st, paths))}
           </div>
         </div>
       </div>`.toString(),
@@ -270,6 +316,7 @@ export function render(el, ctx) {
     const nb = el.querySelector('.kanban__board');
     if (nb) nb.scrollLeft = left;
     layout();
+    if (memory.gesture) resumeGesture(memory.gesture, cols);
   }
 
   /**
@@ -406,23 +453,13 @@ export function render(el, ctx) {
       return;
     }
     const q = e.target.closest('[data-qs-open]');
-    if (q) {
-      const card = q.parentElement.querySelector('.kcard');
-      if (card) focusItem(card, false); // la carte devient l'entrée de sa colonne ; le focus y revient ensuite
-      ctx.quickStatus?.open(q, Number(q.dataset.qsOpen), card ?? q);
-      return;
-    }
+    if (q) return void openActions(q);
     const c = e.target.closest('[data-task]');
     if (c) ctx.openDetail({ table: 'Tasks', id: Number(c.dataset.task) });
   };
   el.onkeydown = (e) => {
     const card = e.target.closest?.('.kcard[data-qs-focus]');
-    if (card && el.contains(card) && isStatusShortcut(e)) {
-      e.preventDefault();
-      const q = card.parentElement.querySelector('[data-qs-open]');
-      if (q) ctx.quickStatus?.open(q, Number(card.dataset.qsFocus), card);
-      return;
-    }
+    if (card && el.contains(card) && cardShortcut(e, card)) return;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const item = e.target.closest?.(ITEMS);
     if (!item || !el.contains(item)) return;
@@ -463,20 +500,306 @@ export function render(el, ctx) {
     signal: off.signal,
   });
   el.addEventListener('focusin', (e) => e.target.classList?.remove('kcard--tipoff'), { signal: off.signal });
-  // Clic droit (ou Maj+F10 relâché) sur une carte modifiable ou son ⋯ : menu de statut, la carte en est le retour
+  // Clic droit (ou Maj+F10 relâché) sur une carte modifiable ou son ⋯ : menu ⋯, la carte en est le retour. Pendant
+  // un glisser ou au doigt (appui long qui saisit la carte) : ni ce menu ni celui du navigateur
   el.addEventListener(
     'contextmenu',
-    (e) =>
+    (e) => {
+      if (memory.gesture || e.pointerType === 'touch') return void e.preventDefault();
       statusContextMenu(
         e,
-        (t) => (ctx.quickStatus ? t.closest('.kcard-item')?.querySelector('[data-qs-open]') : null),
-        (q) => {
-          const card = q.parentElement.querySelector('.kcard');
-          if (card) focusItem(card, false);
-          ctx.quickStatus.open(q, Number(q.dataset.qsOpen), card ?? q);
-        },
-      ),
+        (t) => (ctx.drop ? t.closest('.kcard-item')?.querySelector('[data-qs-open]') : null),
+        (q) => openActions(q),
+      );
+    },
     { signal: off.signal },
   );
+
+  /** Menu ⋯ d'une carte : la carte devient l'entrée de sa colonne, le focus y revient ensuite. */
+  function openActions(q) {
+    const card = q.parentElement.querySelector('.kcard');
+    if (card) focusItem(card, false);
+    ctx.drop?.openActions(q, Number(q.dataset.qsOpen), card ?? q);
+  }
+
+  /** Raccourcis d'une carte modifiable : Maj+F10 ou Menu (menu ⋯), S (statut), P (priorité). Vrai si traité. */
+  function cardShortcut(e, card) {
+    const q = card.parentElement.querySelector('[data-qs-open]');
+    const id = Number(card.dataset.qsFocus);
+    const keys = (card.getAttribute('aria-keyshortcuts') ?? '').split(' ');
+    let open = null;
+    if (isMenuShortcut(e)) open = () => openActions(q);
+    else if (isStatusShortcut(e) && keys.includes('S')) open = () => ctx.quickStatus?.open(q, id, card);
+    else if (isPriorityShortcut(e) && keys.includes('P')) open = () => ctx.drop?.openPriority(q, id, card);
+    if (!open || !q || memory.gesture) return false;
+    e.preventDefault();
+    open();
+    return true;
+  }
+
+  // ---------- Glisser une carte (lot C) ----------
+  // Rien n'est redessiné pendant le geste : fantôme (sur <body>) déplacé par transform, classes posées une fois sur
+  // les colonnes au début, colonne visée lue par elementFromPoint. Un rendu complet (relecture) rattache le geste.
+
+  const colKey = (col) => col.dataset.col.slice(st.group.length + 1);
+
+  /** Classes du geste posées sur les colonnes et la carte d'origine (début du geste, ou après un rendu). */
+  function markBoard(g) {
+    for (const col of el.querySelectorAll('.kcol')) {
+      const key = colKey(col);
+      const v = g.targets.get(key);
+      if (key === g.fromKey) col.classList.add('kcol--origin');
+      else if (v?.ok) col.classList.add('kcol--target');
+      else {
+        col.classList.add('kcol--refused');
+        col.title = label('kanban.drop.ghostRefused', { raison: label(`kanban.drop.no.${v?.reason ?? 'undeclared'}`) });
+      }
+    }
+    el.querySelector(`#kc-${g.taskId}`)?.classList.add('kcard--origin');
+    el.querySelector('.kanban__board')?.classList.add('kanban__board--dragging');
+    g.box = el.querySelector('.kanban__board')?.getBoundingClientRect() ?? null;
+    g.over = undefined;
+  }
+
+  /** Classes du geste retirées (vue du geste, même si elle a été remplacée entre-temps). */
+  function unmarkBoard(view) {
+    for (const col of view.querySelectorAll('.kcol--target, .kcol--refused, .kcol--origin, .kcol--over')) {
+      col.classList.remove('kcol--target', 'kcol--refused', 'kcol--origin', 'kcol--over');
+      col.removeAttribute('title');
+    }
+    view.querySelector('.kcard--origin')?.classList.remove('kcard--origin');
+    view.querySelector('.kanban__board--dragging')?.classList.remove('kanban__board--dragging');
+  }
+
+  /** Fantôme : copie du contenu de la carte, de sa largeur, posée sur <body> (un rendu de la vue ne l'efface pas). */
+  function makeGhost(card, r) {
+    const ghost = document.createElement('div');
+    ghost.className = 'kghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.width = `${Math.round(r.width)}px`;
+    const inner = document.createElement('div');
+    inner.className = 'kcard kghost__card';
+    inner.innerHTML = card.innerHTML; // contenu déjà échappé de la carte, sans identifiant
+    const note = document.createElement('p');
+    note.className = 'kghost__note';
+    note.hidden = true;
+    ghost.append(inner, note);
+    document.body.append(ghost);
+    return ghost;
+  }
+
+  function placeGhost(g) {
+    g.ghost.style.transform = `translate(${Math.round(g.lastX - g.offX)}px, ${Math.round(g.lastY - g.offY)}px)`;
+  }
+
+  /** Colonne sous le pointeur : contour « visée », raison du refus sur le fantôme, annonce si elle change. */
+  function updateOver(g) {
+    const hit = document.elementFromPoint(g.lastX, g.lastY)?.closest?.('.kcol');
+    const col = hit && el.contains(hit) ? hit : null;
+    const key = col ? colKey(col) : null;
+    if (key === g.over) return;
+    el.querySelector('.kcol--over')?.classList.remove('kcol--over');
+    col?.classList.add('kcol--over');
+    g.over = key;
+    const v = key === null || key === g.fromKey ? null : g.targets.get(key);
+    const note = g.ghost.querySelector('.kghost__note');
+    const reason = v && !v.ok ? label(`kanban.drop.no.${v.reason}`) : '';
+    note.hidden = !reason;
+    note.textContent = reason ? label('kanban.drop.ghostRefused', { raison: reason }) : '';
+    g.ghost.classList.toggle('kghost--refused', Boolean(reason));
+    if (!v) return;
+    const colonne = columnName(g.group, key);
+    announce(
+      v.ok ? label('kanban.drop.over', { colonne }) : label('kanban.drop.overRefused', { colonne, raison: reason }),
+    );
+  }
+
+  /** Fin du geste (dépôt, annulation, erreur) : plus de geste en mémoire, fantôme et classes retirés. */
+  function stopGesture() {
+    const g = memory.gesture;
+    memory.gesture = null;
+    if (!g) return null;
+    g.ghost?.remove();
+    unmarkBoard(g.view);
+    document.documentElement.classList.remove('is-grabbing');
+    return g;
+  }
+
+  /** Geste interrompu (vue retirée, carte perdue, édition fermée) : annulé, message s'il y a lieu. */
+  function abortGesture(why, notice) {
+    const g = stopGesture();
+    g?.handle?.cancel(why);
+    if (notice) (ctx.notify ?? announce)(notice);
+  }
+
+  /** Une erreur pendant le geste ne laisse jamais un geste en mémoire : il est annulé, la vue reste utilisable. */
+  function guard(run) {
+    try {
+      return run();
+    } catch (err) {
+      abortGesture('error');
+      console.error(err);
+      return undefined;
+    }
+  }
+
+  /**
+   * Geste en cours au moment d'un rendu (relecture) : rattaché à la carte du même identifiant, colonnes relues ;
+   * carte disparue, déplacée ailleurs ou édition fermée → annulé avec un message.
+   */
+  function resumeGesture(g, cols) {
+    if (!ctx.drop) return abortGesture('edit', label('kanban.drop.off'));
+    const now = cols.find((c) => c.tasks.includes(g.taskId));
+    if (st.group !== g.group || (now && now.key !== g.fromKey))
+      return abortGesture('changed', label('kanban.drop.changed'));
+    if (!now || !el.querySelector(`#kc-${g.taskId}`)) return abortGesture('gone', label('kanban.drop.gone'));
+    guard(() => {
+      if (g.view !== el) unmarkBoard(g.view);
+      g.view = el;
+      g.targets = ctx.drop.targets(g.taskId, g.group, cols);
+      markBoard(g);
+      updateOver(g);
+    });
+  }
+
+  /** Dépôt dans une colonne permise : carte à sa nouvelle place, « Enregistrement… », puis réponse. */
+  function commit(g, key) {
+    const card = el.querySelector(`#kc-${g.taskId}`);
+    const r = dropChanges(ctx.model, g.taskId, g.group, key, ctx.today);
+    const saving = { taskId: g.taskId, group: g.group, changes: r.changes ?? {} };
+    memory.saving = saving;
+    let pending;
+    try {
+      // Appel d'abord : les voisines de la carte (repli du focus) sont lues sur le rendu d'avant
+      pending = Promise.resolve(ctx.drop.drop(g.taskId, g.group, key, card));
+      paint();
+    } catch (err) {
+      pending = Promise.reject(err);
+    }
+    pending
+      .catch((err) => console.error(err))
+      .finally(() => {
+        if (memory.saving === saving) memory.saving = null;
+        memory.view?.repaint();
+      });
+  }
+
+  const view = {
+    begin(taskId, down, m, handle) {
+      if (!ctx.drop || memory.gesture || memory.saving || !el.isConnected) return false;
+      const card = el.querySelector(`#kc-${taskId}[data-drag-card]`);
+      if (!card) return false;
+      let g = null;
+      try {
+        const targets = ctx.drop.targets(taskId, st.group, shownCols);
+        if (![...targets.values()].some((v) => v.ok)) return false;
+        const r = card.getBoundingClientRect(); // une lecture, au début du geste
+        const first = el.querySelector('.kcol');
+        const gap = parseFloat(getComputedStyle(el.querySelector('.kanban__board')).columnGap) || 0;
+        const task = ctx.model.tasks.get(taskId);
+        g = {
+          taskId,
+          group: st.group,
+          fromKey: colKey(card.closest('.kcol')),
+          title: task?.title || label('common.untitled'),
+          targets,
+          handle,
+          view: el,
+          offX: down.clientX - r.left,
+          offY: down.clientY - r.top,
+          lastX: m.clientX,
+          lastY: m.clientY,
+          step: (first?.getBoundingClientRect().width ?? 300) + gap,
+          ghost: makeGhost(card, r),
+          box: null,
+          over: undefined,
+        };
+        markBoard(g);
+        placeGhost(g);
+        memory.gesture = g;
+        updateOver(g);
+      } catch (err) {
+        g?.ghost?.remove();
+        if (g) unmarkBoard(el);
+        memory.gesture = null;
+        console.error(err);
+        return false;
+      }
+      document.documentElement.classList.add('is-grabbing');
+      const colonnes = [...g.targets]
+        .filter(([, v]) => v.ok)
+        .map(([k]) => columnName(g.group, k))
+        .join(', ');
+      announce(label('kanban.drop.grab', { titre: g.title, colonnes }));
+      return true;
+    },
+    move(m) {
+      if (memory.gesture && !el.isConnected) return void abortGesture('gone');
+      guard(() => {
+        const g = memory.gesture;
+        if (!g) return;
+        g.lastX = m.clientX;
+        g.lastY = m.clientY;
+        placeGhost(g);
+        updateOver(g);
+      });
+    },
+    edge(side) {
+      const board = el.querySelector('.kanban__board');
+      if (memory.gesture && (!el.isConnected || !board)) return void abortGesture('gone');
+      guard(() => {
+        const g = memory.gesture;
+        if (!g) return;
+        board.scrollLeft += side * g.step;
+        updateOver(g);
+      });
+    },
+    drop(m) {
+      if (memory.gesture && !el.isConnected) return void abortGesture('gone');
+      const g = guard(() => {
+        const cur = memory.gesture;
+        if (!cur) return null;
+        cur.lastX = m.clientX;
+        cur.lastY = m.clientY;
+        updateOver(cur);
+        return stopGesture();
+      });
+      if (!g) return;
+      const key = g.over;
+      // Hors du plateau ou dans sa colonne : rien, sans message
+      if (key === null || key === undefined || key === g.fromKey) return void announce(label('kanban.drop.cancel'));
+      if (g.targets.get(key)?.ok) return commit(g, key);
+      // Colonne refusée : la raison est dite (ctx.drop.drop n'écrit rien)
+      ctx.drop?.drop(g.taskId, g.group, key, el.querySelector(`#kc-${g.taskId}`));
+    },
+    cancel(why) {
+      if (stopGesture() && why === 'escape') announce(label('kanban.drop.cancel'));
+    },
+    repaint() {
+      if (el.isConnected) paint();
+    },
+  };
+  memory.view = view;
+
+  /** Appui sur une carte glissable : le contrôleur commun suit le geste (souris, stylet, doigt après appui long). */
+  function startCardDrag(e, card) {
+    if (!ctx.drop || memory.gesture || memory.saving) return;
+    const taskId = Number(card.dataset.task);
+    let handle = null;
+    handle = trackPointer(e, {
+      onStart: (m) => memory.view?.begin(taskId, e, m, handle) ?? false,
+      onMove: (m) => memory.view?.move(m),
+      onDrop: (m) => memory.view?.drop(m),
+      onCancel: (why) => memory.view?.cancel(why),
+      onEdge: (side) => memory.view?.edge(side),
+      edgeBox: () => memory.gesture?.box ?? null,
+    });
+  }
+  el.onpointerdown = (e) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const card = e.target.closest?.('.kcard[data-drag-card]');
+    if (card && el.contains(card)) startCardDrag(e, card);
+  };
+
   paint();
 }

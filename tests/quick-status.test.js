@@ -6,11 +6,14 @@ import { dayOfIso } from '../widget/js/core/dates.js';
 import {
   canQuickStatus,
   focusOrder,
+  isMenuShortcut,
+  isPriorityShortcut,
   isRepeatedChoice,
   isStatusShortcut,
   limitToReveal,
   menuMove,
   menuStartIndex,
+  quickFields,
   statusMenuItems,
 } from '../widget/js/core/quick-status.js';
 import { myTasksHtml } from '../widget/js/views/my-tasks.js';
@@ -94,6 +97,31 @@ test('isStatusShortcut : « s », Maj+F10 et touche Menu ; jamais avec Ctrl, Alt
   assert.equal(isStatusShortcut({ key: 's', metaKey: true }), false);
   assert.equal(isStatusShortcut({ key: 'F10', shiftKey: true, altKey: true }), false);
   for (const k of ['ArrowDown', 'Enter', ' ', 'd']) assert.equal(isStatusShortcut({ key: k }), false);
+});
+
+test('isPriorityShortcut : « p » seul ; jamais avec Maj, Ctrl, Alt ou Méta', () => {
+  assert.equal(isPriorityShortcut({ key: 'p' }), true);
+  assert.equal(isPriorityShortcut({ key: 'P' }), true);
+  for (const mod of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey'])
+    assert.equal(isPriorityShortcut({ key: 'p', [mod]: true }), false, mod);
+  for (const k of ['s', 'F10', 'ContextMenu', 'Enter']) assert.equal(isPriorityShortcut({ key: k }), false);
+});
+
+test('isMenuShortcut : Maj+F10 et touche Menu seulement', () => {
+  assert.equal(isMenuShortcut({ key: 'F10', shiftKey: true }), true);
+  assert.equal(isMenuShortcut({ key: 'ContextMenu' }), true);
+  assert.equal(isMenuShortcut({ key: 'F10' }), false);
+  assert.equal(isMenuShortcut({ key: 's' }), false);
+  assert.equal(isMenuShortcut({ key: 'ContextMenu', ctrlKey: true }), false);
+});
+
+test('quickFields : statut et priorité permis ensemble ou séparément, rien hors édition', () => {
+  const both = { mode: 'on', can: (t, c) => ({ ok: t === 'Tasks' && (c === 'statut' || c === 'priorite') }) };
+  assert.deepEqual(quickFields(model, 1001, ON, both), { statut: true, priorite: true });
+  assert.deepEqual(quickFields(model, 1001, ON, writerOf('on')), { statut: true, priorite: false });
+  assert.deepEqual(quickFields(model, 4001, ON, both), { statut: false, priorite: false }, 'hors périmètre');
+  assert.deepEqual(quickFields(model, 1001, ON, null), { statut: false, priorite: false });
+  assert.deepEqual(quickFields(model, 1001, ON, { ...both, mode: 'off' }), { statut: false, priorite: false });
 });
 
 test('focusOrder : la tâche, puis la voisine suivante et la précédente, en s’éloignant', () => {
@@ -180,18 +208,18 @@ function editorSetup({ mode = 'on', columns = {}, fetchRow, getBase = () => null
 }
 const T2000 = { table: 'Tasks', id: 2000 };
 
-test('quickPriority : valeur écrite seule, message « Priorité : … » avec « Annuler » (chemin commun)', async () => {
+test('quickPriority : valeur écrite seule, message « Priorité changée en … » avec « Annuler » (chemin commun)', async () => {
   const s = editorSetup();
   assert.equal(await s.editor.quickPriority(T2000, '1'), 'saved');
   assert.deepEqual(s.g.batches.at(-1), [['UpdateRecord', 'Tasks', 2000, { priorite: '1' }]]);
   assert.equal(s.written.length, 1);
-  assert.equal(s.toasts[0].text, 'Priorité : Priorité 1.');
+  assert.equal(s.toasts[0].text, 'Priorité changée en « Priorité 1 ».');
   s.toasts[0].onAction();
   assert.equal(s.undos, 1);
   assert.equal(await s.editor.quickPriority(T2000, '1'), 'nothing', 'déjà la valeur relue : rien envoyé');
   assert.equal(s.g.batches.length, 1);
   assert.equal(await s.editor.quickPriority(T2000, ''), 'saved');
-  assert.equal(s.toasts.at(-1).text, 'Priorité : Sans priorité.');
+  assert.equal(s.toasts.at(-1).text, 'Priorité changée en « Sans priorité ».');
 });
 
 test('quickPriority : priorité héritée → message qui dit que la tâche a maintenant sa propre priorité', async () => {
@@ -238,4 +266,45 @@ test('quickPriority : colonne non modifiable → refused:colonne, rien lu ni env
   assert.equal(await dry.editor.quickPriority(T2000, '1'), 'saved');
   assert.match(dry.toasts[0].text, /Mode essai/);
   assert.equal(dry.g.batches.length, 0);
+});
+
+test('quickPriority puis « Annuler » : valeur non déclarée remise à l’identique, null remis vide', async () => {
+  // Choice vide : la relecture (decodeValue) lit null comme '' ; « Annuler » écrit donc ''
+  for (const stored of [null, 'Urgent (ancien)']) {
+    const restored = stored ?? '';
+    const s = editorSetup();
+    const gw = createGateway(s.g);
+    s.g.otherUserSets('Tasks', 2000, { priorite: stored });
+    assert.equal(await s.editor.quickPriority(T2000, '1'), 'saved');
+    assert.deepEqual(s.g.batches.at(-1), [['UpdateRecord', 'Tasks', 2000, { priorite: '1' }]]);
+    const u = await s.writer.undoLast((table, id) => gw.fetchRow(table, id));
+    assert.ok(u.undoEntry, `annulation écrite (${stored})`);
+    assert.deepEqual(s.g.batches.at(-1), [['UpdateRecord', 'Tasks', 2000, { priorite: restored }]]);
+    assert.equal(s.g.data.Tasks.priorite[s.g.data.Tasks.id.indexOf(2000)], restored);
+  }
+});
+
+test('quickPriority : référence Chantiers → toujours Tasks.priorite, jamais Chantiers.Priorite', async () => {
+  const s = editorSetup();
+  assert.equal(await s.editor.quickPriority({ table: 'Chantiers', id: 2000 }, '2'), 'saved');
+  assert.deepEqual(s.g.batches.at(-1), [['UpdateRecord', 'Tasks', 2000, { priorite: '2' }]]);
+});
+
+test('quickPriority : pas de réponse → message avec la priorité relue', async () => {
+  let calls = 0;
+  const s = editorSetup({
+    fetchRow: async (table, id) => {
+      calls += 1;
+      const gw = createGateway(s.g);
+      return gw.fetchRow(table, id);
+    },
+  });
+  s.g.docApi.applyUserActions = () => new Promise(() => {});
+  s.g.otherUserSets('Tasks', 2000, { priorite: '3' });
+  assert.equal(await s.editor.quickPriority(T2000, '1'), 'unknown');
+  assert.ok(calls >= 1);
+  assert.equal(
+    s.toasts.at(-1).text,
+    'Pas de réponse de Grist dans le délai. Priorité actuellement enregistrée : « Priorité 3 ».',
+  );
 });

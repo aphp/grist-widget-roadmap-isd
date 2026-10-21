@@ -1,5 +1,5 @@
 /**
- * Menu de statut des vues (P-UX-6) : liste de boutons (role="menu", entrées menuitemradio) posée sur la page, à
+ * Menus de choix des vues (statut P-UX-6, priorité, actions) : liste de boutons (role="menu") posée sur la page, à
  * côté du contrôle qui l'ouvre (bouton ⋯ d'une carte, cellule Statut du Tableau, ligne de Mes tâches). Il n'est
  * jamais enfermé dans la carte ou la ligne (une carte est déjà un bouton, un groupe de Mes tâches coupe ce qui
  * déborde). Flèches, Début et Fin déplacent le focus sans rien écrire ; seul le choix (clic, Entrée, Espace)
@@ -8,6 +8,7 @@
  */
 import { isRepeatedChoice, menuMove, menuStartIndex } from '../core/quick-status.js';
 import { label, statusLabel } from '../labels.js';
+import { raw } from '../core/sanitize.js';
 import { h } from './kit.js';
 
 const ID = 'qs-menu';
@@ -42,15 +43,16 @@ function place(root, anchor) {
 }
 
 /**
- * Ouvre le menu de statut d'une tâche, ou un menu d'actions (menu de ligne du Gantt : items avec text, sans
- * statut courant, entrées menuitem).
- * @param {{anchor:HTMLElement, returnFocus?:HTMLElement, title:string, items:{value:string, current?:boolean,
- *   text?:string}[], onPick(value:string):void, menuLabel?:string, heading?:string}} opts anchor : contrôle visible
- *   (aria-expanded) ; returnFocus : élément rendu focalisé à la fermeture (la carte au clavier), l'ancre par
- *   défaut ; menuLabel / heading : nom et titre du menu (statut par défaut) ; start : entrée focalisée à l'ouverture
- *   (par défaut le statut courant)
+ * Ouvre un menu de choix à côté d'un contrôle : statut, priorité (entrées menuitemradio, `current` défini) ou
+ * actions (menu ⋯ du Kanban, menu de ligne du Gantt : entrées menuitem, sans `current`). Une entrée `disabled`
+ * reste focalisable, dit sa raison (`note`) et ne choisit rien.
+ * @param {{anchor:HTMLElement, returnFocus?:HTMLElement, title:string, items:{value:string, text:string,
+ *   current?:boolean, disabled?:boolean, note?:string}[], onPick(value:string):void, menuLabel:string,
+ *   heading:string, start?:number}} opts anchor : contrôle visible (aria-expanded) ; returnFocus : élément rendu
+ *   focalisé à la fermeture (la carte au clavier), l'ancre par défaut ; menuLabel / heading : nom et titre du menu ;
+ *   start : entrée focalisée à l'ouverture (par défaut l'entrée courante, sinon le menu lui-même)
  */
-export function openStatusPopover({ anchor, returnFocus = anchor, title, items, onPick, menuLabel, heading, start }) {
+export function openChoicePopover({ anchor, returnFocus = anchor, items, onPick, menuLabel, heading, start }) {
   const again = current?.anchor === anchor;
   closeStatusPopover(false);
   if (again) {
@@ -62,12 +64,14 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
   root.id = ID;
   root.setAttribute('role', 'menu');
   root.tabIndex = -1;
-  root.setAttribute('aria-label', menuLabel ?? label('quickStatus.menu', { titre: title }));
-  root.innerHTML = h`<p class="qs-menu__title" aria-hidden="true">${heading ?? label('quickStatus.menu.title')}</p>
+  root.setAttribute('aria-label', menuLabel);
+  const note = (it) => (it.note ? h`<span class="qs-menu__note">${it.note}</span>` : '');
+  const disabled = (it) => raw(it.disabled ? ' aria-disabled="true"' : '');
+  root.innerHTML = h`<p class="qs-menu__title" aria-hidden="true">${heading}</p>
     ${items.map((it) =>
-      it.text !== undefined
-        ? h`<button type="button" class="qs-menu__item" role="menuitem" tabindex="-1" data-qs-value="${it.value}">${it.text}</button>`
-        : h`<button type="button" class="qs-menu__item" role="menuitemradio" tabindex="-1" aria-checked="${it.current ? 'true' : 'false'}" data-qs-value="${it.value}">${statusLabel(it.value)}${it.current ? h`<span class="fr-sr-only"> ${label('quickStatus.current')}</span>` : ''}</button>`,
+      it.current === undefined
+        ? h`<button type="button" class="qs-menu__item" role="menuitem" tabindex="-1"${disabled(it)} data-qs-value="${it.value}">${it.text}${note(it)}</button>`
+        : h`<button type="button" class="qs-menu__item" role="menuitemradio" tabindex="-1"${disabled(it)} aria-checked="${it.current ? 'true' : 'false'}" data-qs-value="${it.value}">${it.text}${it.current ? h`<span class="fr-sr-only"> ${label('quickStatus.current')}</span>` : ''}${note(it)}</button>`,
     )}`.toString();
   document.body.append(root);
   anchor.setAttribute('aria-expanded', 'true');
@@ -78,6 +82,7 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
   const buttons = () => [...root.querySelectorAll('.qs-menu__item')];
 
   const pick = (b) => {
+    if (b.getAttribute('aria-disabled') === 'true') return; // raison dite dans l'entrée : rien n'est choisi
     const value = b.dataset.qsValue;
     closeStatusPopover(true);
     onPick(value);
@@ -116,6 +121,21 @@ export function openStatusPopover({ anchor, returnFocus = anchor, title, items, 
   window.addEventListener('resize', () => closeStatusPopover(false), { signal: off.signal });
   const first = start ?? menuStartIndex(items);
   (first >= 0 ? buttons()[first] : root).focus();
+}
+
+/**
+ * Menu de statut d'une tâche (P-UX-6) : cas de openChoicePopover, statuts nommés par statusLabel ; entrées avec
+ * `text` : menu d'actions.
+ * @param {{anchor:HTMLElement, returnFocus?:HTMLElement, title:string, items:{value:string, current?:boolean}[],
+ *   onPick(value:string):void}} opts
+ */
+export function openStatusPopover({ title, items, ...opts }) {
+  openChoicePopover({
+    ...opts,
+    menuLabel: label('quickStatus.menu', { titre: title }),
+    heading: label('quickStatus.menu.title'),
+    items: items.map((it) => ({ ...it, text: statusLabel(it.value) })),
+  });
 }
 
 /**

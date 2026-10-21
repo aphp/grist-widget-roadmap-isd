@@ -129,6 +129,18 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   D : Tab / Maj+Tab passent de « déplacer » au début puis à l'échéance (annoncés, rappelés dans l'infobulle) ; le
   menu de ligne propose aussi « Changer le début » et « Changer l'échéance » (pas pour un jalon). En couleurs
   forcées (contraste élevé de Windows), barres, poignées et focus ont des bordures en couleurs système.
+- **Glisser dans le Kanban** (édition ouverte, Kanban regroupé par statut ou par priorité) : une carte modifiable
+  se dépose dans une autre colonne (curseur « main ») ; au doigt, après un appui long (400 ms). Pendant le geste, les
+  colonnes permises sont soulignées, les autres grisées avec leur raison en infobulle et sur le fantôme (« Sans
+  statut » ; valeur absente des choix de la Feuille ; « Sans priorité » quand la priorité vient du chantier ou du
+  projet) ; l'en-tête d'une colonne repliée est une cible ; tenir la carte près d'un bord du plateau le fait défiler
+  d'une colonne. Le dépôt écrit le statut (« Terminé » pose la date de clôture) ou la priorité (valeur déclarée de
+  ce libellé ; une priorité héritée devient celle de la tâche), relus avant l'envoi ; la carte reste à sa nouvelle
+  place, « Enregistrement… », jusqu'à la réponse, garde le focus, et « Annuler » la ramène. Échap, un relâcher dans
+  sa colonne ou hors du plateau n'écrivent rien ; une relecture pendant le geste le garde, sauf si la carte a changé
+  ailleurs (geste annulé, message). Alternatives : menu ⋯ de la carte (clic, Maj+F10, touche Menu, clic droit :
+  « Statut… », « Priorité… »), touches S (statut) et P (priorité) sur la carte ; annonces dans `#kanban-live`.
+  Regroupé par chantier : pas de glisser (lot D).
 - **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
   le total portent sur les profils DE, DA, DS et PO seulement.
 

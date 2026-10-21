@@ -16,9 +16,22 @@ import { editAvailability } from './task-form.js';
  * @param {{mode:string, can(table:string, col:string):{ok:boolean}}|null} writer
  */
 export function canQuickStatus(model, taskId, edit, writer) {
-  if (!model || !writer || writer.mode === 'off' || !edit) return false;
-  if (!editAvailability(model, { table: 'Tasks', id: taskId }, edit).editable) return false;
-  return Boolean(writer.can('Tasks', 'statut')?.ok);
+  return quickFields(model, taskId, edit, writer).statut;
+}
+
+/**
+ * Colonnes d'une tâche modifiables depuis une vue (statut, priorité : menus et glisser du Kanban), mêmes conditions
+ * que canQuickStatus ; l'édition de la tâche n'est évaluée qu'une fois.
+ * @returns {{statut:boolean, priorite:boolean}}
+ */
+export function quickFields(model, taskId, edit, writer) {
+  const none = { statut: false, priorite: false };
+  if (!model || !writer || writer.mode === 'off' || !edit) return none;
+  if (!editAvailability(model, { table: 'Tasks', id: taskId }, edit).editable) return none;
+  return {
+    statut: Boolean(writer.can('Tasks', 'statut')?.ok),
+    priorite: Boolean(writer.can('Tasks', 'priorite')?.ok),
+  };
 }
 
 /**
@@ -70,10 +83,19 @@ export function menuMove(count, index, key) {
  * @param {{key:string, shiftKey?:boolean, altKey?:boolean, ctrlKey?:boolean, metaKey?:boolean}} e
  */
 export function isStatusShortcut(e) {
+  if (isMenuShortcut(e)) return true;
+  return !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 's' || e.key === 'S');
+}
+
+/** Raccourci du menu contextuel : Maj+F10 ou la touche Menu, sans Ctrl, Alt ni Méta. */
+export function isMenuShortcut(e) {
   if (e.altKey || e.ctrlKey || e.metaKey) return false;
-  if (e.key === 'F10') return Boolean(e.shiftKey);
-  if (e.key === 'ContextMenu') return true;
-  return !e.shiftKey && (e.key === 's' || e.key === 'S');
+  return e.key === 'ContextMenu' || (e.key === 'F10' && Boolean(e.shiftKey));
+}
+
+/** Raccourci du menu de priorité d'une carte du Kanban : « p » sans modificateur. */
+export function isPriorityShortcut(e) {
+  return !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'p' || e.key === 'P');
 }
 
 /**

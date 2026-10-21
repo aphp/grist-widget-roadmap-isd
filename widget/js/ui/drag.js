@@ -263,3 +263,30 @@ export function trackPointer(down, handlers) {
 
   return { cancel: (why) => cancel(why) };
 }
+
+/** Délai de regroupement des annonces (ms) et délai entre la région vidée et le même texte reposé. */
+const LIVE_DELAY = 300;
+const REPEAT_DELAY = 60;
+
+/**
+ * Annonces d'un glisser dans une région persistante hors de la vue redessinée (#gantt-live, #kanban-live) :
+ * regroupées à 300 ms (seule la dernière est lue) ; le même texte deux fois de suite est vidé puis reposé pour être
+ * relu.
+ * @param {string} id identifiant de la région (aria-live)
+ * @returns {(text:string) => void}
+ */
+export function liveAnnouncer(id) {
+  let timer = null;
+  return (text) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const live = document.getElementById(id);
+      if (!live) return;
+      if (live.textContent !== text) live.textContent = text;
+      else {
+        live.textContent = '';
+        timer = setTimeout(() => (live.textContent = text), REPEAT_DELAY);
+      }
+    }, LIVE_DELAY);
+  };
+}
