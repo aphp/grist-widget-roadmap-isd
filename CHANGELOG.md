@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+- 1 ETP now means the capacity of a standard full-time person over the period, everywhere (task charges, Kanban,
+  Table, Statistics, Portfolio, My tasks, load plan): 7 h per working day (weekends and French public holidays
+  excluded), minus 44 days of leave a year, at 80 % in May (new) and December, 60 % in July, 50 % in August
+  (`fteHours` in `core/capacity.js`, O(1) per call from cached per-year cumulative sums). It replaces "35 h per
+  calendar week of the task". `hoursToEtp` / `etpToHours` now take the hours of 1 ETP; `periodDays` becomes
+  `periodFte`; charge references carry `fte`. A period change is a capacity change: same-length moves that change
+  the capacity rescale the hours (the ETP is kept), equal capacity keeps the cell byte for byte (form, creation
+  dialog, `periodConflictCols`). A period with no working day is handled like a task without dates. Stored hours are
+  not rewritten: their displayed ETP rises (about ×1.2 outside summer); an entry now above 1 ETP is kept and flagged.
+  The May slowdown also applies to the load plan. "i" buttons explain the rule next to the charges unit (task form
+  and creation dialogs), the Statistics ETP chart title and the load plan; texts that said "35 h par semaine" for
+  the ETP are rewritten. Info tooltips are now shifted with `translate`, so a tooltip anchored to the right stays in
+  its panel.
 - Filters: the "ISD seulement" help moves from a hint under the checkbox to an "i" button with a tooltip (hover
   and keyboard focus, kept inside the window), so the filter row no longer wraps. Reusable `infoTip` in the UI kit.
 - Delete from the edit form: a "Supprimer" button (tertiary, left of the form footer, task and chantier forms, shown

@@ -1,11 +1,20 @@
 # Roadmap ISD — widget Grist
 
 Vue de pilotage de l'équipe ISD (avancement et charge) sur les tables de la Feuille de route EDS.
+
+**1 ETP** sur une période = la capacité d'une personne standard à temps plein sur cette période, partout dans le
+widget (charges des tâches, Kanban, Tableau, Statistiques, Portfolio, Mes tâches, plan de charge) :
+7 h par jour ouvré (hors week-ends et jours fériés), moins 44 jours de congés par an (au prorata des jours ouvrés de
+l'année), à 80 % en mai et en décembre, 60 % en juillet, 50 % en août (`core/capacity.js` : `fteHours`, `SLOWDOWN`).
+C'est la formule du plan de charge pour une personne à 35 h sans indisponibilité ; la quotité et les
+indisponibilités individuelles ne comptent que dans le plan de charge. Une période sans jour ouvré (un week-end) se
+traite comme une tâche sans dates (pas d'ETP, borne de 2 000 h). Les heures déjà stockées ne changent pas : leur ETP
+affiché suit la formule (une charge qui dépasse désormais 1 ETP est signalée, conservée telle quelle). Une pastille
+« i » rappelle la règle dans le bloc des charges, la charge par profil des Statistiques et le plan de charge.
 Par défaut, **lecture seule** : le widget ne modifie jamais le document. La phase 2 (lots 2a à 2d) permet de modifier
 une tâche depuis sa fiche, dont le bloc « Personnes » (assignés et charges réunis ; charge facultative en ETP ou en
-heures, 1 ETP = 35 h par semaine sur les jours calendaires de la tâche, heures stockées à 0,5 h près ; si la
-période change, l'ETP de chaque personne est conservé et ses heures recalculées, avec l'écart « 70 h → 140 h (ETP
-conservé) » sous la ligne ; une date vidée ramène chaque ligne aux heures de sa référence ; une charge qui
+heures, heures stockées à 0,5 h près ; si la capacité de la période change, l'ETP de chaque personne est conservé
+et ses heures recalculées, avec l'écart « 52 h → 110 h (ETP conservé) » sous la ligne ; une date vidée ramène chaque ligne aux heures de sa référence ; une charge qui
 dépasserait la borne sur la nouvelle période garde ses heures et est signalée), de modifier un chantier, de créer
 tâches, sous-tâches et chantiers (« Nouvelle tâche » et « Nouveau chantier » au bout de la ligne des onglets,
 « Ajouter une sous-tâche », « + Tâche ») et de changer une tâche de chantier (ses sous-tâches suivent). Aucune date
