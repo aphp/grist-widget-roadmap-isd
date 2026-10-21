@@ -108,7 +108,9 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   `core/delete-plan.js` pour la fenêtre, `remove` du writer sur les tables relues, « Annuler » au même identifiant), glisser-déposer
   du Gantt (lot A : souris, doigt, mode clavier D, menu de ligne ; `core/gantt-drag.js`, `ui/drag.js`, `saveDates` /
   `runDates` ; charges illisibles ou en double et capacité changée → refus `charges-illisibles`) et étirement des
-  barres (lot B : poignées, Tab dans le mode D, menu « Changer le début / l’échéance »).
+  barres (lot B : poignées, Tab dans le mode D, menu « Changer le début / l’échéance »), glisser-déposer du Kanban
+  (lot C : statut et priorité, menu ⋯ « Statut… / Priorité… », touches S et P ; `core/kanban-drop.js`, `ctx.drop`,
+  `#kanban-live`, écriture par `runQuickChanges`).
 - **Tags** (Q3 B) : `Tasks.tags` et `Chantiers.tags` sont deux listes distinctes (ChoiceList, `['L', …]` ou `null`).
   Proposés : choix déclarés + valeurs utilisées. Un nom nouveau est écrit dans la cellule **sans être déclaré**
   (jamais d'option de colonne modifiée) et s'affiche « non déclaré » (pastille grise en pointillés). Writer : chaînes
@@ -124,7 +126,7 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
 - À tester dans le document de test avec le vrai Grist : messages d'erreur réels, droits (lecteur, règles d'accès),
   relecture des valeurs écrites, coût des relectures, `check_writes.py`, suppression et restauration au même
   identifiant (AddRecord à identifiant fixe, colonnes de données recopiées, manualSort, refus d'un identifiant pris).
-- Lots suivants : glisser-déposer du Kanban, gestion des tags (lot 2g, reportée).
+- Lots suivants : changer une tâche de chantier par glisser-déposer (lot D), gestion des tags (lot 2g, reportée).
 - Décisions en attente (touchent la structure de la Feuille) : détection automatique de l'utilisateur (table
   d'aide), gestion des tags (créer, renommer, recolorer, supprimer : options de colonne), échelle de priorité,
   demandeur par chantier. Pas de création de rôle. `Team.capaciteHebdo` et `Team.aph` restent en lecture tant que
