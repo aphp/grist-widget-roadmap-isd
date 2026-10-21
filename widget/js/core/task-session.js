@@ -249,21 +249,14 @@ export function batchWithCharges(batch, charges, fresh) {
 }
 
 /**
- * Statut rapide : la ligne est relue (envoi réel) pour décider de la date de clôture sur des valeurs à jour,
- * puis statut (et clôture éventuelle) partent dans un seul lot.
+ * Écriture rapide d'un champ (statut, priorité) : la ligne est relue (envoi réel) et `compute` décide des colonnes
+ * à écrire sur ces valeurs à jour (jamais sur la base locale, sauf en mode essai), puis tout part dans un seul lot.
+ * @param {{table?:string, taskId:number, compute:(base:object)=>object, localBase?:object|null, writer:object,
+ *   fetchRow?:Function, timeoutMs?:number}} snap compute rend {} quand il n'y a rien à écrire
  * @returns {Promise<{kind:'nothing'}|{kind:'saved', entry:object}|{kind:'missing'}|{kind:'reread-failed', error:string}
- *   |{kind:'failed', error:Error}>}
+ *   |{kind:'unknown', stored:object|null|undefined, changes:object}|{kind:'failed', error:Error}>}
  */
-export async function runQuickStatus({
-  taskId,
-  status,
-  localBase,
-  writer,
-  fetchRow,
-  today,
-  timeoutMs,
-  table = 'Tasks',
-}) {
+export async function runQuickChanges({ table = 'Tasks', taskId, compute, localBase, writer, fetchRow, timeoutMs }) {
   timeoutMs ||= DEFAULT_TIMEOUT_MS;
   let base = localBase;
   if (writer.mode === 'on') {
@@ -275,7 +268,7 @@ export async function runQuickStatus({
     if (base === null) return { kind: 'missing' };
   }
   if (!base) return { kind: 'missing' };
-  const changes = table === 'Chantiers' ? chantierStatusChanges(base, status) : statusChanges(base, status, today);
+  const changes = compute(base);
   if (!Object.keys(changes).length) return { kind: 'nothing' };
   try {
     return {
@@ -287,6 +280,19 @@ export async function runQuickStatus({
       return unknownOutcome(fetchRow, taskId, timeoutMs, changes);
     return { kind: 'failed', error };
   }
+}
+
+/**
+ * Statut rapide : runQuickChanges, la date de clôture décidée sur la ligne relue ; statut (et clôture éventuelle)
+ * partent dans un seul lot.
+ */
+export function runQuickStatus({ status, today, table = 'Tasks', ...snap }) {
+  return runQuickChanges({
+    ...snap,
+    table,
+    compute: (base) =>
+      table === 'Chantiers' ? chantierStatusChanges(base, status) : statusChanges(base, status, today),
+  });
 }
 
 /**

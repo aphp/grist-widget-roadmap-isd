@@ -19,6 +19,7 @@ import {
   conflictBatch,
   failureKind,
   runDates,
+  runQuickChanges,
   runQuickStatus,
   runSave,
 } from '../widget/js/core/task-session.js';
@@ -282,6 +283,45 @@ test('statut rapide : clôture calculée sur la ligne relue, pas sur une copie a
     today,
   });
   assert.equal(failureKind(v.error), 'document');
+});
+
+test('runQuickChanges : compute sur la ligne RELUE (pas la base locale), {} → nothing, mode essai sur la base locale', async () => {
+  const { g, writer, fetchRow } = setup();
+  const stale = { ...(await fetchRow(1002)), priorite: '3' };
+  g.otherUserSets('Tasks', 1002, { priorite: '2' });
+  const seen = [];
+  const compute = (base) => {
+    seen.push(base.priorite);
+    return base.priorite === '2' ? {} : { priorite: '2' };
+  };
+  const n = await runQuickChanges({ taskId: 1002, compute, localBase: stale, writer, fetchRow });
+  assert.equal(n.kind, 'nothing');
+  assert.deepEqual(seen, ['2']);
+  assert.equal(g.batches.length, 0);
+  const r = await runQuickChanges({
+    taskId: 1002,
+    compute: (b) => (b.priorite === '1' ? {} : { priorite: '1' }),
+    localBase: stale,
+    writer,
+    fetchRow,
+  });
+  assert.equal(r.kind, 'saved');
+  assert.deepEqual(g.batches.at(-1)[0][3], { priorite: '1' });
+  assert.deepEqual(r.entry.before, { priorite: '2' }, '« Annuler » rend la valeur relue');
+  assert.equal(
+    (await runQuickChanges({ taskId: 9, compute: () => ({ priorite: '1' }), writer, fetchRow })).kind,
+    'missing',
+  );
+  const dry = setup({ mode: 'dry-run' });
+  const d = await runQuickChanges({
+    taskId: 1002,
+    compute: (b) => ({ priorite: b.priorite === '3' ? '1' : 'x' }),
+    localBase: stale,
+    writer: dry.writer,
+    fetchRow: () => assert.fail(),
+  });
+  assert.equal(d.entry.sent, false);
+  assert.deepEqual(d.entry.after, { priorite: '1' });
 });
 
 test('périmètre (M3) et arrêt d’urgence avant envoi (I3) : contrôlés par le writer lui-même', async () => {

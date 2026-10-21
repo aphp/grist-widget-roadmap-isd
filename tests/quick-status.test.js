@@ -15,6 +15,10 @@ import {
 } from '../widget/js/core/quick-status.js';
 import { myTasksHtml } from '../widget/js/views/my-tasks.js';
 import { feuille } from './fixtures/feuille.js';
+import { createFakeGrist, lookupOf } from './fixtures/fake-grist.js';
+import { createGateway } from '../widget/js/core/grist-gateway.js';
+import { EXPECTED_TYPES, WRITABLE, createWriter } from '../widget/js/core/grist-writer.js';
+import { createTaskEditor } from '../widget/js/ui/task-editor.js';
 
 const model = buildModel(feuille());
 const ON = { mode: 'on', canEdit: true, reason: 'ok' };
@@ -144,4 +148,94 @@ test('isRepeatedChoice : Entrée ou Espace maintenues ignorées ; appui franc et
   assert.equal(isRepeatedChoice({ key: 'Enter', repeat: false }), false);
   assert.equal(isRepeatedChoice({ key: 'Enter' }), false);
   assert.equal(isRepeatedChoice({ key: 'ArrowDown', repeat: true }), false);
+});
+
+/** Faux Grist, writer (envoi réel ou essai), contrôleur des fiches sans formulaire ouvert ; messages notés. */
+function editorSetup({ mode = 'on', columns = {}, fetchRow, getBase = () => null } = {}) {
+  const tables = feuille().tables;
+  for (const [name, ops] of Object.entries(WRITABLE))
+    for (const c of new Set([...ops.update, ...ops.add])) tables[name][c] ??= tables[name].id.map(() => null);
+  const g = createFakeGrist(tables, {});
+  const gw = createGateway(g);
+  const meta = Object.fromEntries(Object.entries(EXPECTED_TYPES).map(([k, type]) => [k, { type, isFormula: false }]));
+  const writer = createWriter({ docApi: g.docApi, mode, columns: { ...meta, ...columns }, lookup: lookupOf(g) });
+  const out = { g, writer, toasts: [], written: [], undos: 0 };
+  out.editor = createTaskEditor({
+    root: { addEventListener() {}, contains: () => false, querySelector: () => null },
+    chrome: {},
+    getModel: () => buildModel({ tables: g.data }),
+    getBase,
+    getWriter: () => writer,
+    fetchRow: fetchRow ?? ((table, id) => gw.fetchRow(table, id)),
+    today: () => dayOfIso('2026-10-19'),
+    storage: null,
+    toast: { show: (text, opts = {}) => out.toasts.push({ text, ...opts }) },
+    onWritten: (e) => out.written.push(e),
+    onUndo: () => (out.undos += 1),
+    onUnknown() {},
+    onSessionReadOnly() {},
+    timeoutMs: () => 40,
+  });
+  return out;
+}
+const T2000 = { table: 'Tasks', id: 2000 };
+
+test('quickPriority : valeur écrite seule, message « Priorité : … » avec « Annuler » (chemin commun)', async () => {
+  const s = editorSetup();
+  assert.equal(await s.editor.quickPriority(T2000, '1'), 'saved');
+  assert.deepEqual(s.g.batches.at(-1), [['UpdateRecord', 'Tasks', 2000, { priorite: '1' }]]);
+  assert.equal(s.written.length, 1);
+  assert.equal(s.toasts[0].text, 'Priorité : Priorité 1.');
+  s.toasts[0].onAction();
+  assert.equal(s.undos, 1);
+  assert.equal(await s.editor.quickPriority(T2000, '1'), 'nothing', 'déjà la valeur relue : rien envoyé');
+  assert.equal(s.g.batches.length, 1);
+  assert.equal(await s.editor.quickPriority(T2000, ''), 'saved');
+  assert.equal(s.toasts.at(-1).text, 'Priorité : Sans priorité.');
+});
+
+test('quickPriority : priorité héritée → message qui dit que la tâche a maintenant sa propre priorité', async () => {
+  const s = editorSetup();
+  assert.equal(await s.editor.quickPriority({ table: 'Tasks', id: 2001 }, '3', { inherited: true }), 'saved');
+  assert.match(s.toasts[0].text, /Priorité 3/);
+  assert.match(s.toasts[0].text, /sa propre priorité/);
+});
+
+test('quickPriority : relue sur la ligne de la Feuille, pas sur la base locale', async () => {
+  const s = editorSetup({ getBase: () => ({ priorite: '' }) });
+  s.g.otherUserSets('Tasks', 2000, { priorite: '2' });
+  assert.equal(await s.editor.quickPriority(T2000, '2'), 'nothing');
+  assert.equal(s.g.batches.length, 0);
+});
+
+test('quickPriority : colonne non modifiable → refused:colonne, rien lu ni envoyé ; busy ; relecture impossible ; essai', async () => {
+  const off = editorSetup({ columns: { 'Tasks.priorite': { type: 'Choice', isFormula: true } } });
+  const kind = await off.editor.quickPriority(T2000, '1');
+  assert.match(kind, /^refused:/);
+  assert.match(off.toasts[0].text, /refusé/);
+  assert.equal(off.g.batches.length, 0);
+  let release;
+  const gate = new Promise((ok) => (release = ok));
+  const slow = editorSetup({
+    fetchRow: async () => {
+      await gate;
+      return null;
+    },
+  });
+  const first = slow.editor.quickPriority(T2000, '1');
+  assert.equal(await slow.editor.quickPriority(T2000, '2'), 'busy');
+  assert.equal(await slow.editor.quickStatus(T2000, 'done'), 'busy', 'même garde que le statut rapide');
+  release();
+  assert.equal(await first, 'missing');
+  const broken = editorSetup({
+    fetchRow: async () => {
+      throw new Error('réseau');
+    },
+  });
+  assert.equal(await broken.editor.quickPriority(T2000, '1'), 'reread');
+  assert.match(broken.toasts[0].text, /Impossible de relire/);
+  const dry = editorSetup({ mode: 'dry-run', getBase: () => ({ priorite: '3' }) });
+  assert.equal(await dry.editor.quickPriority(T2000, '1'), 'saved');
+  assert.match(dry.toasts[0].text, /Mode essai/);
+  assert.equal(dry.g.batches.length, 0);
 });

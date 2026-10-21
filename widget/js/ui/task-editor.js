@@ -14,6 +14,7 @@ import {
   failureKind,
   runDates,
   runDelete,
+  runQuickChanges,
   runQuickStatus,
   runSave,
 } from '../core/task-session.js';
@@ -50,9 +51,10 @@ import { personFormBody } from '../views/person-form.js';
 import { EncodeError, dayFromInput, parseNumberFr } from '../core/write-encode.js';
 import { tagsWriteProblem } from '../core/tags-edit.js';
 import { tagItems, tagListHtml, tagStatusHtml, tagsBlocked } from '../views/tags-field.js';
-import { datesRight, deleteRight, draftChangeRight, quickStatusRight } from '../core/write-rights.js';
+import { datesRight, deleteRight, draftChangeRight, quickFieldRight, quickStatusRight } from '../core/write-rights.js';
 import { chargeMaxOf } from '../core/charges-edit.js';
 import { formatDayShort } from '../core/dates.js';
+import { priorityText } from '../core/kanban-data.js';
 import { hasLabel, label, statusLabel } from '../labels.js';
 import {
   chargesFootHtml,
@@ -666,6 +668,61 @@ export function createTaskEditor(deps) {
   }
 
   /**
+   * Priorité rapide d'une tâche (dépôt d'une carte dans le Kanban par priorité, menu) : même garde et mêmes échecs
+   * que le statut rapide ; rien n'est envoyé si la ligne relue porte déjà cette valeur. inherited : la priorité
+   * affichée venait du chantier ou du projet, le message dit que la tâche a maintenant la sienne.
+   * @param {{table:'Tasks', id:number}} ref
+   * @param {string} value valeur déclarée de Tasks.priorite ('' : sans priorité)
+   * @returns {Promise<string>} genre du résultat ('saved', 'nothing', 'unknown', 'busy', échec…)
+   */
+  async function quickPriority(ref, value, { inherited = false } = {}) {
+    const gate = quickGate((w) => quickFieldRight(w, ref.table, 'priorite'));
+    if (gate) return gate;
+    const w = writer();
+    quickBusy = true;
+    const cur = st && st.ref.table === ref.table && st.ref.id === ref.id ? st : null;
+    let result;
+    try {
+      result = await runQuickChanges({
+        table: ref.table,
+        taskId: ref.id,
+        compute: (base) => ((base.priorite ?? '') === value ? {} : { priorite: value }),
+        localBase: cur?.base ?? deps.getBase(ref.table, ref.id),
+        writer: w,
+        fetchRow: fetchRowOf(ref.table),
+        timeoutMs: deps.timeoutMs?.(),
+      });
+    } finally {
+      quickBusy = false;
+    }
+    if (result.kind === 'nothing') return 'nothing';
+    if (result.kind === 'saved') {
+      if (cur && st === cur) {
+        rebaseOnto(cur, result.entry.after);
+        render();
+      }
+      const priorite = priorityText(value) || label('kanban.noPriority');
+      announce(result.entry, inherited ? 'toast.priorityInherited' : 'toast.priority', { priorite });
+      return 'saved';
+    }
+    if (result.kind === 'unknown') {
+      deps.onUnknown?.();
+      if (cur && st === cur && result.stored) {
+        rebaseOnto(cur, result.stored);
+        render();
+      }
+      deps.toast.show(label('toast.unknownPriority'), { tone: 'error' });
+      return 'unknown';
+    }
+    return quickFail(result, {
+      reread: 'quickStatus.fail.reread',
+      acl: 'form.fail.acl',
+      missing: 'form.fail.missing',
+      other: 'form.fail.other',
+    });
+  }
+
+  /**
    * Dates glissées dans le Gantt (tâche, sous-tâche, jalon, chantier) : même garde que le statut rapide (un envoi
    * à la fois), droit relu, runDates (relecture, conflit, charges recalculées à ETP gardé). Le formulaire ouvert sur
    * la même ligne suit les valeurs écrites pour les champs non touchés. Message avec « Annuler », et « Voir les
@@ -1236,6 +1293,7 @@ export function createTaskEditor(deps) {
   return {
     open,
     quickStatus,
+    quickPriority,
     saveDates,
     refreshFromModel,
     requestLeave,

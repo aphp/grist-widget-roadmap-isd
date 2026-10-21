@@ -8,6 +8,7 @@ import {
   deleteRight,
   draftChangeRight,
   personDialogRight,
+  quickFieldRight,
   quickStatusRight,
   rightFailure,
 } from '../widget/js/core/write-rights.js';
@@ -83,6 +84,14 @@ test('fenêtres des personnes et statut rapide : la colonne ou la table de l’a
   assert.equal(quickStatusRight(w, 'Tasks').ok, true);
   assert.deepEqual(quickStatusRight(w, 'Chantiers'), { ok: false, reason: 'formule' });
   assert.equal(quickStatusRight(null, 'Tasks').reason, 'off');
+});
+
+test('quickFieldRight : colonne relue au moment d’agir (priorité non permise → raison du writer)', () => {
+  const w = fakeWriter({ cols: { 'Tasks.priorite': 'colonne' } });
+  assert.deepEqual(quickFieldRight(w, 'Tasks', 'priorite'), { ok: false, reason: 'colonne' });
+  assert.deepEqual(quickFieldRight(w, 'Tasks', 'statut'), OK);
+  assert.equal(quickFieldRight(null, 'Tasks', 'priorite').reason, 'off');
+  assert.equal(quickFieldRight(fakeWriter({ mode: 'off' }), 'Tasks', 'priorite').reason, 'off');
 });
 
 test('suppression depuis la fiche : droit du writer relu (canRemove), writer coupé ou absent, ancien writer', () => {

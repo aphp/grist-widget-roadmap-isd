@@ -1165,6 +1165,13 @@ const FR = Object.freeze({
     'Une seule tabulation par colonne. Flèches haut et bas : se déplacer dans la colonne ; flèches gauche et droite : changer de colonne ; Entrée : ouvrir la fiche ; S ou Maj+F10 : changer le statut de la carte.',
   'toast.status': 'Statut changé en « {statut} ».',
   'toast.statusDry': 'Mode essai : statut « {statut} » noté, rien n’a été envoyé.',
+  'toast.priority': 'Priorité : {priorite}.',
+  'toast.priorityDry': 'Mode essai : priorité « {priorite} » notée, rien n’a été envoyé.',
+  'toast.priorityInherited':
+    'Priorité : {priorite}. La tâche a maintenant sa propre priorité, elle ne suit plus celle du chantier ou du projet.',
+  'toast.priorityInheritedDry':
+    'Mode essai : priorité « {priorite} » notée (la tâche aurait sa propre priorité), rien n’a été envoyé.',
+  'toast.unknownPriority': 'Pas de réponse de Grist : la priorité a peut-être changé. Vérifiez la tâche.',
   'toast.undo': 'Annuler',
   'toast.dates': 'Dates enregistrées : {debut} → {fin}.',
   'toast.datesDry': 'Mode essai : dates {debut} → {fin} notées, rien n’a été envoyé.',
