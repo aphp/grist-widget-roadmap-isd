@@ -44,7 +44,10 @@ export const id = 'stats';
 
 const TOP_PEOPLE = 15;
 const LATE = new Set(['w1', 'w4', 'more']);
-const fr = (n) => n.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+/** Formats créés une fois : toLocaleString en recrée un à chaque appel (des centaines par rendu). */
+const FR1 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
+const ETP1 = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const fr = (n) => FR1.format(n);
 const monthLabel = (ym) => `${MONTHS_FR[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)}`;
 const tip = (text, value) => `${text} : ${label('stats.value', { valeur: fr(value) })}`;
 
@@ -123,7 +126,7 @@ function timelineBars(line) {
   </ul>`;
 }
 
-const etp1 = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const etp1 = (n) => ETP1.format(n);
 const ZERO = etp1(0);
 const roleName = (k) => (k === 'Mgmt' ? label('stats.roles.Mgmt') : etpLabel(k));
 const roleTone = (k) => `role-${k.toLowerCase()}`;
