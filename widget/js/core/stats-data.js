@@ -1,7 +1,6 @@
 /** Statistiques : qualité des données et agrégations sur les tâches visibles. Fonctions pures (spec §4.4). */
-import { monthKey, monthRange, monthsFrom } from './dates.js';
-import { fteHours, hoursToEtp, spreadHours } from './capacity.js';
-import { ETP_SPLIT, etpRoleKey, priorityText, taskPeople, taskPriority } from './kanban-data.js';
+import { monthKey, monthsFrom } from './dates.js';
+import { priorityText, taskPeople, taskPriority } from './kanban-data.js';
 import { breadcrumb, detailLevel } from './detail-data.js';
 import { label, statusLabel } from '../labels.js';
 
@@ -171,53 +170,6 @@ export function timeline(model, taskIds, today, months = TIMELINE_MONTHS) {
 export function shiftMonth(ym, n) {
   const [y, m] = ym.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
-}
-
-/** Fenêtre de la charge par profil : 3 mois passés, le mois courant et 8 mois à venir (12 mois). */
-export const ROLE_WINDOW = Object.freeze({ before: 3, after: 8 });
-
-/**
- * Charge par profil et par mois, en ETP moyen du mois : les heures de chaque charge (Tasks.charges) sont
- * réparties sur les jours de la tâche au prorata de la capacité standard (spreadHours), cumulées par profil
- * (etpRoleKey : PO, DA, DS, DE, Mgmt = Management de l'équipe ISD, Autre), puis converties avec
- * 1 ETP = capacité standard du mois (fteHours). Tâches sans dates valides ignorées ; vide sans
- * aucune charge dans la fenêtre.
- * @param {number} today jour courant
- * @returns {{month:string, total:number, PO:number, DA:number, DS:number, DE:number, Mgmt:number, Autre:number}[]}
- */
-export function roleLoad(model, taskIds, today, { before, after } = ROLE_WINDOW) {
-  const window = monthsFrom(shiftMonth(monthKey(today), -before), before + 1 + after);
-  const hours = new Map(window.map((m) => [m, Object.fromEntries(ETP_SPLIT.map((k) => [k, 0]))]));
-  let any = false;
-  for (const id of known(model, taskIds)) {
-    const t = model.tasks.get(id);
-    for (const c of t.charges) {
-      const spread = spreadHours(c.heures, t.start, t.end);
-      if (!spread) continue;
-      const key = etpRoleKey(model.people.get(c.personId), model);
-      for (const [m, h] of spread) {
-        if (!hours.has(m) || !(h > 0)) continue;
-        hours.get(m)[key] += h;
-        any = true;
-      }
-    }
-  }
-  if (!any) return [];
-  return window.map((month) => {
-    const { start, end } = monthRange(month);
-    const fte = fteHours(start, end);
-    const row = { month, total: 0 };
-    for (const k of ETP_SPLIT) {
-      row[k] = hoursToEtp(hours.get(month)[k], fte);
-      row.total += row[k];
-    }
-    return row;
-  });
-}
-
-/** Profils à tracer : PO, DA, DS, DE et Mgmt toujours ; « Autre » seulement s'il a une charge dans la fenêtre. */
-export function roleSeries(rows) {
-  return ETP_SPLIT.filter((k) => k !== 'Autre' || rows.some((r) => r.Autre > 0));
 }
 
 export const DELAY_BUCKETS = Object.freeze(['early', 'onTime', 'w1', 'w4', 'more']);

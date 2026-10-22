@@ -173,7 +173,7 @@ function test(name, opts, fn) {
   });
 }
 
-const TABS = ['gantt', 'kanban', 'table', 'portfolio', 'stats', 'synthesis', 'team'];
+const TABS = ['gantt', 'kanban', 'table', 'stats', 'synthesis', 'team'];
 
 before(async () => {
   if (SKIP) return;
@@ -1614,7 +1614,7 @@ for (const query of ['', '?edition=1&doc=doc-dev-local&ecritures=lecteur', '?edi
     { skip: SKIP },
     async () => {
       await open(query);
-      for (const tab of ['kanban', 'table', 'gantt', 'portfolio']) {
+      for (const tab of ['kanban', 'table', 'gantt']) {
         await w(`D.getElementById('tab-${tab}').click(); return true;`);
         await until(`D.querySelector('#view-panel[data-view="${tab}"] .view-heading')`);
         assert.equal(await w(`return D.querySelectorAll('[data-create]').length;`), 0, tab);
@@ -2301,10 +2301,107 @@ test('statistiques : charge par profil tracée sur 12 mois, légende et tableau 
   assert.equal(r.current, 1);
   assert.ok(r.segs > 0, 'aucun segment tracé');
   assert.equal(r.heads[0], 'Mois');
-  assert.equal(r.heads.at(-1), 'Total');
+  assert.deepEqual(r.heads.slice(-2), ['Total', 'Capacité PO, DA, DS, DE']);
   assert.equal(r.axes.length, 2);
   assert.equal(await w(`return W.__writes.length;`), 0);
 });
+
+/** Centre d'un élément de l'iframe, en coordonnées de la page (après l'avoir amené dans la fenêtre). */
+const centerOf = (sel) =>
+  w(`const b = D.querySelector(${JSON.stringify(sel)}); b.scrollIntoView({ block: 'center' });
+    await new Promise((r) => setTimeout(r, 100));
+    const r = b.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+    return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+const rolesState = `const p = D.getElementById('roles-panel-title');
+  const on = D.querySelector('.rbars__seg[aria-pressed="true"]');
+  return { title: p?.textContent ?? null, pressed: on ? on.dataset.seg + ' ' + on.dataset.month : null,
+    tasks: D.querySelectorAll('[data-roles-panel] .plan__task').length,
+    tabbable: D.querySelectorAll('.rbars__seg[tabindex="0"]').length,
+    active: D.activeElement?.classList.contains('rbars__seg') ? D.activeElement.dataset.seg + ' ' + D.activeElement.dataset.month : D.activeElement?.id ?? null };`;
+
+test(
+  'statistiques : segment de la charge par profil, survol → infobulle, clic → tâches, relecture, Échap, clavier',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    await w(`D.getElementById('tab-stats').click(); return true;`);
+    await until(`D.querySelector('.rbars__row--current .rbars__seg')`);
+    const sel = '.rbars__row--current .rbars__seg';
+    const seg = await w(
+      `const b = D.querySelector('${sel}'); return { k: b.dataset.seg, m: b.dataset.month, aria: b.getAttribute('aria-label') };`,
+    );
+    assert.match(seg.aria, /^.+ · \S+ \d{4} : [\d,]+ ETP \([\d\s\u202f]+ h\)/);
+    assert.match(seg.aria, /Afficher les tâches$/);
+    // Une seule tabulation entre dans le graphique
+    assert.equal((await w(rolesState)).tabbable, 1);
+    // Survol : infobulle au texte du segment
+    const at = await centerOf(sel);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await until(`!D.querySelector('[data-tip-box]').hidden`);
+    const tip = await w(`return D.querySelector('[data-tip-text]').textContent;`);
+    assert.ok(seg.aria.startsWith(tip), `${tip} / ${seg.aria}`);
+    assert.match(tip, /ETP de capacité|sans capacité|hors capacité/);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+    await until(`D.querySelector('[data-tip-box]').hidden`);
+    // Clic : panneau des tâches du segment
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await until(`D.getElementById('roles-panel-title')`);
+    const opened = await w(rolesState);
+    assert.equal(opened.pressed, `${seg.k} ${seg.m}`);
+    assert.match(opened.title, new RegExp(`· \\S+ ${seg.m.slice(0, 4)}$`));
+    assert.ok(opened.tasks > 0, 'aucune tâche listée');
+    assert.equal(opened.active, 'roles-panel-title');
+    // Heures triées par ordre décroissant
+    const hours = await w(
+      `return [...D.querySelectorAll('[data-roles-panel] .plan__task-hours')].map((x) => Number(x.textContent.replace(/[^\\d]/g, '')));`,
+    );
+    assert.ok(
+      hours.every((x) => x > 0),
+      hours.join(', '),
+    );
+    assert.deepEqual(
+      hours,
+      [...hours].sort((a, b) => b - a),
+    );
+    // Relecture : panneau et segment gardés
+    const id = await w(`return (await W.grist.docApi.fetchTable('Tasks')).id[0];`);
+    await remoteChange(['UpdateRecord', 'Tasks', id, { titre: 'Modifiée ailleurs' }]);
+    const kept = await w(rolesState);
+    assert.deepEqual([kept.title, kept.pressed, kept.tasks], [opened.title, opened.pressed, opened.tasks]);
+    // Échap dans le panneau : fermeture, focus rendu au segment
+    await w(`D.getElementById('roles-panel-title').focus(); return true;`);
+    await hit('Escape');
+    await until(`!D.getElementById('roles-panel-title')`);
+    const closed = await w(rolesState);
+    assert.deepEqual([closed.pressed, closed.active], [null, `${seg.k} ${seg.m}`]);
+    // Clavier : flèche vers un autre segment, Entrée ouvre, même segment (Espace) referme
+    const keys = await w(
+      `return [...D.querySelectorAll('.rbars__row--current .rbars__seg')].map((b) => b.dataset.seg);`,
+    );
+    if (keys.length > 1) {
+      await w(`D.querySelector('.rbars__row--current .rbars__seg').focus(); return true;`);
+      await hit('ArrowRight');
+      assert.equal((await w(rolesState)).active, `${keys[1]} ${seg.m}`);
+      assert.equal((await w(rolesState)).tabbable, 1);
+    }
+    await hit('ArrowDown');
+    const below = (await w(rolesState)).active;
+    assert.ok(below && !below.endsWith(seg.m), `↓ : ${below}`);
+    await hit('Enter');
+    await until(`D.getElementById('roles-panel-title')`);
+    assert.equal((await w(rolesState)).pressed, below);
+    await w(`D.querySelector('.rbars__seg[aria-pressed="true"]').focus(); return true;`);
+    await press(' ');
+    await until(`!D.getElementById('roles-panel-title')`);
+    // Titre d'une tâche du panneau → fiche
+    await clickOn(sel);
+    await until(`D.querySelector('[data-roles-panel] .plan__task')`);
+    await w(`D.querySelector('[data-roles-panel] .plan__task').click(); return true;`);
+    await until(`D.getElementById('btn-detail-close')`);
+    assert.equal(await w(`return W.__writes.length;`), 0);
+  },
+);
 
 test(
   'statistiques : « Contrôle qualité des données » repliée par défaut, total affiché, état retenu',
@@ -3095,7 +3192,7 @@ test(
   },
 );
 
-test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio', { skip: SKIP }, async () => {
+test('profil « Mgmt » : filtre, étiquette et charge par profil des Statistiques', { skip: SKIP }, async () => {
   await open('');
   await w(
     `const s = D.getElementById('f-profile'); s.value = 'Mgmt'; s.dispatchEvent(new W.Event('change', { bubbles: true })); return true;`,
@@ -3104,14 +3201,36 @@ test('profil « Mgmt » : filtre, étiquette et charge par profil du Portfolio',
   assert.match(await w(`return D.getElementById('chip-profile').textContent;`), /Profil : Management/);
   assert.equal(await w(`return D.querySelector('#f-profile option[value="Mgmt"]').textContent.trim();`), 'Mgmt');
   await until(`D.querySelector('#view-panel[data-view="kanban"] .kcard')`);
-  // Portfolio, charge : une colonne et une synthèse « Mgmt » avec sa capacité
-  await w(`D.getElementById('tab-portfolio').click(); return true;`);
-  await until(`D.querySelector('#view-panel[data-view="portfolio"]')`);
-  await until(`D.getElementById('pf-tab-load')`);
-  await w(`D.getElementById('pf-tab-load').click(); return true;`);
-  await until(`D.querySelector('.pf-load .pf-swatch--Mgmt') && D.querySelector('.pf-sum .pf-swatch--Mgmt')`);
+  // Statistiques, charge par profil : une synthèse « Management ISD » avec sa capacité, des segments Mgmt
+  await w(`D.getElementById('tab-stats').click(); return true;`);
+  await until(`D.querySelector('.rsum .tone--role-mgmt')`);
+  const mgmt = await w(`return D.querySelector('.rsum .tone--role-mgmt').closest('li').textContent;`);
+  assert.match(mgmt, /Management ISD/);
+  assert.match(mgmt, /Capacité de \d+ personnes?/);
+  assert.ok(await w(`return D.querySelectorAll('.rbars__seg[data-seg="Mgmt"]').length > 0;`));
   assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
 });
+
+test(
+  'onglet Portfolio retiré : absent des onglets, ?vue=portfolio et vue d’accueil enregistrée ouvrent le Gantt',
+  { skip: SKIP },
+  async () => {
+    await open('');
+    assert.equal(await w(`return Boolean(D.getElementById('tab-portfolio'));`), false);
+    assert.doesNotMatch(await w(`return D.getElementById('app-tabs').textContent;`), /Portfolio/);
+    const host = `${BASE}/dev/host.html`;
+    await send('Runtime.evaluate', {
+      expression: `localStorage.setItem('roadmap-isd:prefs', JSON.stringify({ mePrompted: true, homeView: 'portfolio', homeViewV: 2, view: 'portfolio' }))`,
+    });
+    for (const q of ['?donnees=synthetiques&vue=portfolio', '?donnees=synthetiques']) {
+      await send('Page.navigate', { url: `${host}${q}` });
+      await loaded(`${host}${q}`);
+      await until(`D.querySelector('#view-panel[data-view="gantt"]')`);
+      assert.equal(await w(`return D.querySelector('[role="tab"][aria-selected="true"]')?.id ?? null;`), 'tab-gantt');
+    }
+    assert.equal(await w(`return W.__writes?.length ?? 0;`), 0);
+  },
+);
 
 // ---------- Bloc « Personnes » des fenêtres de création ----------
 

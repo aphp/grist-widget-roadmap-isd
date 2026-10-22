@@ -179,7 +179,7 @@ export function filterUsers(model, { query = '', role = null, includeInactive = 
 /** Clé de section des personnes sans rôle. */
 export const NO_ROLE = '';
 
-/** Teinte d'un rôle (classe CSS) : profils ISD comme le Portfolio, Management, autres rôles, sans rôle. */
+/** Teinte d'un rôle (classe CSS) : profils ISD comme la charge par profil des Statistiques, Management, autres rôles, sans rôle. */
 export function roleTone(roleText) {
   if (!roleText) return 'none';
   if (roleText === 'Management') return 'mgmt';

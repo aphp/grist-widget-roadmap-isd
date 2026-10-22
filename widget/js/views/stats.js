@@ -13,21 +13,32 @@ import {
   priorityTones,
   qualityRows,
   qualityTotal,
-  roleLoad,
-  roleSeries,
   statusTone,
   timeline,
   topN,
   visibleChantierIds,
   visibleProjectIds,
 } from '../core/stats-data.js';
+import { PROFILE_KEYS, taskPaths } from '../core/kanban-data.js';
+import {
+  profileHeadcount,
+  roleLoad,
+  roleSeries,
+  segmentMove,
+  segmentTasks,
+  summarizeMonths,
+} from '../core/role-load.js';
 import { h, infoTip } from '../ui/kit.js';
 import { viewHeading } from '../ui/heading.js';
 import { etpLabel, label, taskCount } from '../labels.js';
 import { mountLoadPlan } from './load-plan.js';
+import { LEVEL_ICON, hoursText, loadPanelHtml, panelTasks, pctText } from './load-panel.js';
 
-/** Listes dépliées (anomalies, « Voir plus » des personnes), gardées d'un rendu à l'autre (relecture). */
-const opened = { kinds: new Set(), more: false };
+/**
+ * Listes dépliées (anomalies, « Voir plus » des personnes) et segment de la charge par profil dont le détail est
+ * ouvert, gardés d'un rendu à l'autre (relecture) : sinon la page raccourcirait et le défilement remonterait.
+ */
+const opened = { kinds: new Set(), more: false, segment: null };
 
 export const id = 'stats';
 
@@ -38,8 +49,9 @@ const monthLabel = (ym) => `${MONTHS_FR[Number(ym.slice(5)) - 1]} ${ym.slice(0, 
 const tip = (text, value) => `${text} : ${label('stats.value', { valeur: fr(value) })}`;
 
 /** Alternative textuelle : tableau lisible, replié sous le graphique. */
-function dataTable(caption, heads, rows) {
+function dataTable(caption, heads, rows, note = '') {
   return h`<details class="stats__alt"><summary>${label('stats.table.show')}</summary>
+    ${note ? h`<p class="stats__table-note">${note}</p>` : ''}
     <table class="stats__table"><caption class="fr-sr-only">${caption}</caption>
       <thead><tr>${heads.map((x) => h`<th scope="col">${x}</th>`)}</tr></thead>
       <tbody>${rows.map((r) => h`<tr>${r.map((c, i) => (i ? h`<td>${c}</td>` : h`<th scope="row">${c}</th>`))}</tr>`)}</tbody>
@@ -115,29 +127,58 @@ const etp1 = (n) => n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximu
 const ZERO = etp1(0);
 const roleName = (k) => (k === 'Mgmt' ? label('stats.roles.Mgmt') : etpLabel(k));
 const roleTone = (k) => `role-${k.toLowerCase()}`;
+const longMonth = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const monthLong = (ym) => longMonth.format(new Date(`${ym}-01T00:00:00Z`));
+const hasCapacity = (k) => PROFILE_KEYS.includes(k);
+/** Classe d'un taux (mêmes couleurs que le plan de charge) : sans charge, neutre. */
+const levelClass = (load, level) => (load > 0 && level !== 'none' ? `tcell--${level}` : 'tcell--idle');
+
+/**
+ * Texte d'un segment (infobulle, nom accessible, sans l'action) : profil, mois, charge en ETP et en heures,
+ * capacité et taux du profil, puis l'état s'il est en tension ou en dépassement.
+ * @returns {{text:string, state:string}}
+ */
+export function segmentText(r, k) {
+  const base = { profil: roleName(k), mois: monthLong(r.month), etp: etp1(r[k]), h: hoursText(r.hours[k]) };
+  if (!hasCapacity(k)) return { text: label('stats.roles.seg.other', base), state: '' };
+  const rate = r.rates[k];
+  const text =
+    rate.rate === null
+      ? label('stats.roles.seg.noCap', base)
+      : label('stats.roles.seg', { ...base, cap: etp1(r.capacity[k]), taux: pctText(rate.rate) });
+  const state = rate.level === 'tension' || rate.level === 'over' ? label(`stats.roles.state.${rate.level}`) : '';
+  return { text, state };
+}
 
 /**
  * Charge par profil : une ligne par mois, barre empilée par profil (ordre fixe PO DA DS DE Mgmt Autre, mêmes
- * teintes que l'onglet Équipe), total écrit au bout ; le mois courant est marqué. Pas d'infobulle (ni clavier
- * ni tactile) : le détail par profil est dans le tableau de valeurs. Un segment qui s'afficherait « 0,0 » est omis.
+ * teintes que l'onglet Équipe), repère de la capacité PO, DA, DS, DE, total écrit au bout ; le mois courant est
+ * marqué. Chaque segment est un bouton (infobulle au survol et au focus, clic ou Entrée : tâches du segment), un
+ * seul dans l'ordre de tabulation (focus itinérant, flèches). Un segment qui s'afficherait « 0,0 » est omis.
  */
 function roleBars(rows, keys, current) {
-  const max = Math.max(...rows.map((r) => r.total));
-  return h`<div class="rbars">
+  const max = Math.max(...rows.map((r) => Math.max(r.total, r.isdCapacity)));
+  let r0 = 0;
+  return h`<div class="rbars" data-rbars>
     <p class="rbars__axis rbars__axis--y" aria-hidden="true">${label('stats.roles.axisMonth')}</p>
     <ul class="list hbars rbars__list" aria-label="${label('stats.chart.roles')}">
       ${rows.map((r) => {
         const m = monthLabel(r.month);
         const cur = r.month === current;
+        const shown = keys.filter((k) => etp1(r[k]) !== ZERO);
+        const ri = shown.length ? r0++ : -1;
         return h`<li class="hbars__row${raw(cur ? ' rbars__row--current' : '')}">
           <span class="hbars__label">${m}${cur ? h`<span class="fr-sr-only"> (${label('stats.roles.current')})</span>` : ''}</span>
-          <span class="hbars__track">
-            <span class="rbars__stack" style="--p:${barPercent(r.total, max).toFixed(1)}">
-              ${keys
-                .filter((k) => etp1(r[k]) !== ZERO)
-                .map(
-                  (k) => h`<span class="rbars__seg tone--${roleTone(k)}" style="flex-grow:${r[k].toFixed(4)}"></span>`,
-                )}
+          <span class="rbars__track">
+            <span class="rbars__plot">
+              <span class="rbars__stack" style="--p:${barPercent(r.total, max).toFixed(1)}">
+                ${shown.map((k, ci) => {
+                  const t = segmentText(r, k);
+                  const aria = [t.text, t.state, label('stats.roles.seg.action')].filter(Boolean).join('. ');
+                  return h`<button type="button" class="rbars__seg tone--${roleTone(k)}" style="flex-grow:${r[k].toFixed(4)}" data-seg="${k}" data-month="${r.month}" data-r="${ri}" data-c="${ci}" tabindex="-1" aria-pressed="false" aria-label="${aria}" aria-describedby="stats-roles-keys" data-tip="${t.text}" data-state="${t.state}"></button>`;
+                })}
+              </span>
+              ${r.isdCapacity > 0 ? h`<span class="rbars__cap" style="--c:${barPercent(r.isdCapacity, max).toFixed(1)}" aria-hidden="true"></span>` : ''}
             </span>
             <span class="hbars__value">${etp1(r.total)}</span>
           </span>
@@ -145,27 +186,238 @@ function roleBars(rows, keys, current) {
       })}
     </ul>
     <p class="rbars__axis rbars__axis--x" aria-hidden="true">${label('stats.roles.axisEtp')}</p>
+    <div class="rbars__tip" data-tip-box aria-hidden="true" hidden><span data-tip-text></span><strong data-tip-state></strong></div>
   </div>`;
+}
+
+const peopleText = (n) =>
+  n === 0
+    ? label('stats.roles.people.none')
+    : n === 1
+      ? label('stats.roles.people.one')
+      : label('stats.roles.people', { n });
+
+/** Synthèse par profil, du mois courant à la fin de la fenêtre : pic, mois en dépassement et en tension, moyenne. */
+function summaryHtml(rows, current, headcount) {
+  const from = rows.some((r) => r.month === current) ? current : rows[0].month;
+  const sum = summarizeMonths(rows, from);
+  const title = label('stats.roles.summary', { debut: monthLabel(from), fin: monthLabel(rows.at(-1).month) });
+  return h`<h4 class="rsum__title">${title}</h4>
+    <ul class="list rsum" aria-label="${title}">
+    ${PROFILE_KEYS.map((k) => {
+      const s = sum[k];
+      const peak = s.peak;
+      const value = peak ? (peak.rate === null ? label('stats.roles.sum.noCapacity') : pctText(peak.rate)) : '';
+      return h`<li class="rsum__item rsum__item--${s.level}">
+        <p class="rsum__name"><span class="stats__swatch tone--${roleTone(k)}" aria-hidden="true"></span>${roleName(k)}</p>
+        ${
+          peak
+            ? h`<p class="rsum__value">${s.level === 'over' || s.level === 'tension' ? LEVEL_ICON[s.level] : ''}${label('stats.roles.sum.peak', { valeur: value })}</p>
+              <p class="rsum__rate">${label('stats.roles.sum.peakMonth', { niveau: label(`stats.roles.level.${s.level}`), mois: monthLong(peak.month) })}</p>
+              <p class="rsum__line">${label('stats.roles.sum.over', { n: s.overMonths, total: s.loadedMonths })}${s.tensionMonths ? `, ${label('stats.roles.sum.tension', { n: s.tensionMonths })}` : ''}</p>
+              <p class="rsum__line">${label('stats.roles.sum.avg', { charge: etp1(s.avgLoaded.load), capacite: etp1(s.avgLoaded.capacity) })}</p>`
+            : h`<p class="rsum__value">${label('stats.roles.sum.none')}</p>`
+        }
+        ${headcount ? h`<p class="rsum__hint">${peopleText(headcount[k])}</p>` : ''}
+      </li>`;
+    })}
+  </ul>`;
+}
+
+/** Cellule du tableau de valeurs : « charge / capacité (taux) » pour un profil, la charge seule pour « Autre ». */
+function roleCell(r, k) {
+  if (!hasCapacity(k)) return etp1(r[k]);
+  const rate = r.rates[k];
+  const taux = rate.rate === null ? label('stats.roles.sum.noCapacity') : pctText(rate.rate);
+  return `${etp1(r[k])} / ${etp1(r.capacity[k])} (${taux})`;
 }
 
 export function rolesCard(rows, keys, ctx) {
   const T = label('stats.chart.roles');
   const tip = infoTip('tip-fte-stats', label('capacity.fte.about'), label('capacity.fte.help'));
   if (!rows.length) return card('roles', T, empty(), { wide: true, tip });
+  const current = monthKey(ctx.today);
   const sub = label('stats.roles.sub', { debut: monthLabel(rows[0].month), fin: monthLabel(rows.at(-1).month) });
   const other = keys.includes('Autre') ? label('stats.roles.other') : label('stats.roles.noOther');
+  const headcount = ctx.model ? profileHeadcount(ctx.model) : null;
   return card(
     'roles',
     T,
-    h`${legend(keys.map((k) => [roleTone(k), roleName(k)]))}${roleBars(rows, keys, monthKey(ctx.today))}
-      <p class="stats__foot">${other}</p>
+    h`${summaryHtml(rows, current, headcount)}
+      <h4 class="rsum__title">${label('stats.roles.byMonth')}</h4>
+      <ul class="list stats__legend">
+        ${keys.map((k) => h`<li><span class="stats__swatch tone--${roleTone(k)}" aria-hidden="true"></span>${roleName(k)}</li>`)}
+        <li><span class="rbars__cap-key" aria-hidden="true"></span>${label('stats.roles.capacity')}</li>
+      </ul>
+      <p class="stats__help" id="stats-roles-keys">${label('stats.roles.keys')}</p>
+      ${roleBars(rows, keys, current)}
+      <p class="stats__foot">${other} ${label('stats.roles.thresholds')}</p>
+      <div class="rbars__panel-slot" data-roles-panel></div>
       ${dataTable(
         T,
-        [label('stats.col.month'), ...keys.map(roleName), label('stats.roles.total')],
-        rows.map((r) => [monthLabel(r.month), ...keys.map((k) => etp1(r[k])), etp1(r.total)]),
+        [label('stats.col.month'), ...keys.map(roleName), label('stats.roles.total'), label('stats.roles.capacity')],
+        rows.map((r) => [monthLabel(r.month), ...keys.map((k) => roleCell(r, k)), etp1(r.total), etp1(r.isdCapacity)]),
+        label('stats.roles.table.note'),
       )}`,
     { wide: true, sub, tip },
   );
+}
+
+/** Panneau des tâches d'un segment (profil k, mois) : chiffres du segment puis la liste des tâches. */
+function segmentPanelHtml(ctx, r, k, paths) {
+  const seg = segmentTasks(ctx.model, ctx.view.taskIds, k, r.month);
+  const rate = r.rates[k];
+  const stats = [[label('plan.load'), label('stats.roles.panel.etp', { etp: etp1(r[k]), h: hoursText(r.hours[k]) })]];
+  if (hasCapacity(k))
+    stats.push(
+      [
+        label('plan.capacity'),
+        label('stats.roles.panel.etp', { etp: etp1(r.capacity[k]), h: hoursText(r.capacityHours[k]) }),
+      ],
+      [
+        label('plan.rate'),
+        h`<span class="plan__badge ${levelClass(r.hours[k], rate.level)}">${LEVEL_ICON[rate.level] ?? ''}${pctText(rate.rate)}</span> ${label(`stats.roles.level.${rate.level}`)}`,
+      ],
+    );
+  else stats.push([label('plan.capacity'), label('stats.roles.panel.noCapacity')]);
+  return loadPanelHtml({
+    titleId: 'roles-panel-title',
+    title: label('stats.roles.panel.title', { profil: roleName(k), mois: monthLong(r.month) }),
+    stats,
+    tasks: panelTasks(
+      ctx.model,
+      paths,
+      seg.tasks.map((t) => [t.taskId, t.hours, t.people.map((p) => p.nom || label('common.untitled'))]),
+    ),
+  });
+}
+
+/**
+ * Comportement du graphique de charge par profil : infobulle (survol, focus), focus itinérant (flèches, Début,
+ * Fin), détail d'un segment (clic, Entrée, Espace ; même segment ou Échap : fermeture, focus rendu au segment).
+ * @param {HTMLElement} box carte de la charge par profil
+ */
+function mountRoles(box, rows, ctx) {
+  const chart = box.querySelector('[data-rbars]');
+  const slot = box.querySelector('[data-roles-panel]');
+  if (!chart || !slot) return;
+  const tipBox = chart.querySelector('[data-tip-box]');
+  const segs = [...chart.querySelectorAll('.rbars__seg')];
+  const grid = [];
+  for (const b of segs) (grid[Number(b.dataset.r)] ??= []).push(b);
+  const byMonth = new Map(rows.map((r) => [r.month, r]));
+  let paths = null;
+  let sel = null;
+
+  const segOf = (k, month) => segs.find((b) => b.dataset.seg === k && b.dataset.month === month) ?? null;
+  const setRoving = (btn) => {
+    for (const b of segs) b.tabIndex = b === btn ? 0 : -1;
+  };
+  const curRow = segs.find((b) => b.closest('.rbars__row--current'));
+  setRoving(curRow ?? segs[0]);
+
+  function showTip(btn) {
+    tipBox.querySelector('[data-tip-text]').textContent = btn.dataset.tip;
+    const state = tipBox.querySelector('[data-tip-state]');
+    state.textContent = btn.dataset.state;
+    state.hidden = !btn.dataset.state;
+    tipBox.hidden = false;
+    const c = chart.getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    const w = tipBox.offsetWidth;
+    const left = Math.max(0, Math.min(c.width - w, b.left - c.left + b.width / 2 - w / 2));
+    tipBox.style.left = `${left}px`;
+    tipBox.style.top = `${b.top - c.top - tipBox.offsetHeight - 6}px`;
+  }
+  const hideTip = () => {
+    tipBox.hidden = true;
+  };
+
+  /** Ouvre (ou ferme, btn null) le détail d'un segment ; restore : rendu suivant une relecture, ni focus ni défilement. */
+  function select(btn, { restore = false } = {}) {
+    for (const b of segs) b.setAttribute('aria-pressed', 'false');
+    if (!btn) {
+      sel = null;
+      opened.segment = null;
+      slot.innerHTML = '';
+      return;
+    }
+    btn.setAttribute('aria-pressed', 'true');
+    setRoving(btn);
+    sel = btn;
+    opened.segment = { k: btn.dataset.seg, month: btn.dataset.month };
+    paths ??= taskPaths(ctx.view.tree);
+    slot.innerHTML = segmentPanelHtml(ctx, byMonth.get(btn.dataset.month), btn.dataset.seg, paths).toString();
+    if (restore) return;
+    box.querySelector('#roles-panel-title')?.focus({ preventScroll: true });
+    slot.firstElementChild?.scrollIntoView?.({ block: 'nearest' });
+  }
+  function closePanel() {
+    const back = sel;
+    select(null);
+    back?.focus();
+  }
+
+  if (opened.segment) {
+    const btn = segOf(opened.segment.k, opened.segment.month);
+    if (btn) select(btn, { restore: true });
+    else opened.segment = null;
+  }
+
+  chart.addEventListener('pointerover', (e) => {
+    const b = e.target.closest?.('.rbars__seg');
+    if (b) showTip(b);
+  });
+  chart.addEventListener('pointerout', (e) => {
+    if (e.target.closest?.('.rbars__seg') && !e.relatedTarget?.closest?.('.rbars__seg')) hideTip();
+  });
+  chart.addEventListener('focusin', (e) => {
+    const b = e.target.closest?.('.rbars__seg');
+    if (!b) return;
+    setRoving(b);
+    showTip(b);
+  });
+  chart.addEventListener('focusout', hideTip);
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('.rbars__seg');
+    if (b) {
+      e.stopPropagation();
+      return b === sel ? closePanel() : select(b);
+    }
+    if (e.target.closest('[data-roles-panel] [data-close-panel]')) {
+      e.stopPropagation();
+      return closePanel();
+    }
+    const t = e.target.closest('[data-roles-panel] [data-task]');
+    if (t) {
+      e.stopPropagation();
+      ctx.openDetail({ table: 'Tasks', id: Number(t.dataset.task) });
+    }
+  });
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const wasTip = !tipBox.hidden;
+      hideTip();
+      if (sel && (slot.contains(e.target) || e.target === sel)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return closePanel();
+      }
+      if (wasTip) e.stopPropagation();
+      return;
+    }
+    const b = e.target.closest?.('.rbars__seg');
+    if (!b) return;
+    const pos = { row: Number(b.dataset.r), col: Number(b.dataset.c) };
+    const next = segmentMove(
+      grid.map((row) => row.map((x) => x.dataset.seg)),
+      pos,
+      e.key,
+    );
+    if (!next) return;
+    e.preventDefault();
+    grid[next.row][next.col].focus();
+  });
 }
 
 function legend(items) {
@@ -346,6 +598,8 @@ export function render(el, ctx) {
   </div>`.toString();
 
   mountLoadPlan(el.querySelector('[data-plan]'), ctx);
+  const rolesBox = el.querySelector('#stats-roles')?.closest('section');
+  if (rolesBox) mountRoles(rolesBox, roles, ctx);
   // Listes dépliées avant une relecture : rouvertes, pour que la page garde sa hauteur et son défilement
   for (const kind of opened.kinds) {
     const k = el.querySelector(`[data-kind="${CSS.escape(kind)}"]`);

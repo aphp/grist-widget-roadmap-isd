@@ -2,8 +2,6 @@
 import { GROUPS, PROFILE_KEYS, SORTS, profileKey } from './kanban-data.js';
 import { COLUMNS, DEFAULT_COLUMNS, ROLE_ETP_COLUMNS } from './table-data.js';
 import { COLOR_BY, DEFAULT_LEVEL, GANTT_LEVELS, MAX_EXPANDED, SCALES, sanitizeLabelWidth } from './gantt-data.js';
-import { PORTFOLIO_MONTHS, PORTFOLIO_TABS } from './portfolio-data.js';
-import { dayOfIso, isoOfDay } from './dates.js';
 import { normalize } from './text.js';
 import { chantierInvolvesIsd, projectInvolvesIsd, taskInvolvesIsd } from './model.js';
 import { defaultScope, firstChoicePrefs, SCOPES } from './home-view.js';
@@ -66,10 +64,6 @@ export const DEFAULT_PREFS = Object.freeze({
   ganttExpanded: null,
   /** Largeur de la colonne des noms du Gantt (px) ; null = largeur par défaut (préférences d'avant : absente). */
   ganttLabelWidth: null,
-  portfolioTab: 'projets',
-  /** Début des frises (AAAA-MM-JJ) ; null = premier jour du mois courant. */
-  portfolioStart: null,
-  portfolioMonths: 12,
   /** Carte « Contrôle qualité des données » des Statistiques dépliée (repliée par défaut). */
   statsQualityOpen: false,
   filters: DEFAULT_FILTERS,
@@ -496,13 +490,6 @@ function sanitizeSort(v) {
   return COLUMNS.includes(key) ? { key, dir: v.dir === 'desc' ? 'desc' : 'asc' } : null;
 }
 
-/** Date AAAA-MM-JJ existante, sinon null. */
-function isoDateOrNull(v) {
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
-  const d = dayOfIso(v);
-  return Number.isFinite(d) && isoOfDay(d) === v ? v : null;
-}
-
 /**
  * Dépliage du Gantt : liste de clés bornée. Les clés de l'ancien niveau « famille » (« F:X ») deviennent celles
  * de la catégorie de même titre (« C:X »), sans doublon ; une clé qui ne désigne plus rien est sans effet.
@@ -513,8 +500,9 @@ function sanitizeExpanded(v) {
   return keys.slice(0, MAX_EXPANDED);
 }
 
-/** Anciens sous-onglets du portfolio → nouveaux. */
-const RENAMED_TABS = Object.freeze({ products: 'projets', tasks: 'taches' });
+/** Onglets retirés : une vue ou une vue d'accueil enregistrée sur l'un d'eux revient au Gantt (par défaut). */
+const REMOVED_VIEWS = new Set(['portfolio']);
+const keptView = (v, fallback) => (REMOVED_VIEWS.has(v) ? fallback : v);
 
 /**
  * Anciens filtres « famille » et « produit » (avant le vocabulaire de la Feuille) : la famille devient la catégorie
@@ -536,7 +524,6 @@ function sanitizePrefs(saved) {
   const s = isObject(saved) ? saved : {};
   const f = isObject(s.filters) ? s.filters : {};
   const legacy = legacyFilters(f);
-  const tab = RENAMED_TABS[s.portfolioTab] ?? s.portfolioTab;
   return {
     me: idOrNull(s.me),
     // Préférences d'avant l'invite : une personne déjà enregistrée vaut réponse
@@ -544,9 +531,9 @@ function sanitizePrefs(saved) {
     hiddenProjects:
       Array.isArray(s.hiddenProjects) && s.hiddenProjects.every((x) => Number.isFinite(x)) ? [...s.hiddenProjects] : [],
     theme: textOr(s.theme, DEFAULT_PREFS.theme),
-    view: textOr(s.view, DEFAULT_PREFS.view),
+    view: keptView(textOr(s.view, DEFAULT_PREFS.view), DEFAULT_PREFS.view),
     // Validée contre les onglets par sanitizeHomeView (main.js)
-    homeView: s.homeViewV === 2 ? textOr(s.homeView, null) : null,
+    homeView: s.homeViewV === 2 ? keptView(textOr(s.homeView, null), null) : null,
     homeViewV: 2,
     kanbanGroup: GROUPS.includes(s.kanbanGroup) ? s.kanbanGroup : DEFAULT_PREFS.kanbanGroup,
     kanbanSort: SORTS.includes(s.kanbanSort) ? s.kanbanSort : DEFAULT_PREFS.kanbanSort,
@@ -568,9 +555,6 @@ function sanitizePrefs(saved) {
       GANTT_LEVELS.includes(s.ganttLevel) || s.ganttLevel === 'custom' ? s.ganttLevel : DEFAULT_PREFS.ganttLevel,
     ganttExpanded: sanitizeExpanded(s.ganttExpanded),
     ganttLabelWidth: sanitizeLabelWidth(s.ganttLabelWidth),
-    portfolioTab: PORTFOLIO_TABS.includes(tab) ? tab : DEFAULT_PREFS.portfolioTab,
-    portfolioStart: isoDateOrNull(s.portfolioStart),
-    portfolioMonths: PORTFOLIO_MONTHS.includes(s.portfolioMonths) ? s.portfolioMonths : DEFAULT_PREFS.portfolioMonths,
     statsQualityOpen: s.statsQualityOpen === true,
     filters: {
       search: textOr(f.search, ''),

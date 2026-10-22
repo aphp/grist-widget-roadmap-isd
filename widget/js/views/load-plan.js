@@ -5,23 +5,18 @@
 import { MONTHS_FR } from '../core/dates.js';
 import { teamLoad, teamTotals } from '../core/team-data.js';
 import { taskPaths } from '../core/kanban-data.js';
-import { h, icon, infoTip, statusBadge } from '../ui/kit.js';
+import { byHoursDesc } from '../core/role-load.js';
+import { h, infoTip } from '../ui/kit.js';
 import { label, taskCount } from '../labels.js';
+import { LEVEL_ICON, hoursText, loadPanelHtml, panelTasks, pctText as ratePct } from './load-panel.js';
 
 const MONTHS = 12;
 const LEVELS = Object.freeze(['ok', 'tension', 'over']);
-const SEP = ' › ';
-const int = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const longMonth = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 const monthLong = (ym) => longMonth.format(new Date(`${ym}-01T00:00:00Z`));
 const monthShort = (ym) => MONTHS_FR[Number(ym.slice(5)) - 1];
-const pctText = (c) => (c.rate === null ? label('plan.rate.none') : `${int.format(Math.round(c.rate * 100))}\u202f%`);
-const hoursText = (x) => int.format(Math.round(x));
-const LEVEL_ICON = Object.freeze({
-  tension: icon('alert-line', 'tcell__icon'),
-  over: icon('error-warning-line', 'tcell__icon'),
-});
+const pctText = (c) => ratePct(c.rate);
 
 /**
  * Classe de la case : sans charge (taux 0 % ou capacité nulle sans charge), la case reste neutre
@@ -106,7 +101,7 @@ function cellTasks(rows, sel) {
   }
   return Object.entries(hours)
     .map(([k, v]) => [Number(k), v])
-    .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    .sort(byHoursDesc);
 }
 
 function panelHtml(ctx, rows, totals, sel, paths) {
@@ -116,35 +111,19 @@ function panelHtml(ctx, rows, totals, sel, paths) {
   const who = sel.person
     ? src.nom || label('common.untitled')
     : label('plan.total', { profil: label(`profile.${sel.role}`) });
-  const list = cellTasks(rows, sel);
-  return h`<section class="plan__panel" aria-labelledby="plan-panel-title">
-    <div class="plan__panel-head">
-      <h3 class="plan__panel-title" id="plan-panel-title" tabindex="-1">${label('plan.cell.title', { nom: who, mois: monthLong(c.ym) })}</h3>
-      <button type="button" class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline fr-icon-close-line fr-btn--icon-left" data-close-panel>${label('plan.cell.close')}</button>
-    </div>
-    <dl class="plan__stats">
-      <div><dt>${label('plan.capacity')}</dt><dd>${hoursText(c.capacity)} h</dd></div>
-      <div><dt>${label('plan.load')}</dt><dd>${hoursText(c.load)} h</dd></div>
-      <div><dt>${label('plan.rate')}</dt><dd><span class="plan__badge ${cellClass(c)}">${LEVEL_ICON[c.level] ?? ''}${pctText(c)}</span> ${label(`plan.level.short.${c.level}`)}</dd></div>
-    </dl>
-    <h4 class="plan__panel-sub">${label('plan.cell.tasks')} (${list.length})</h4>
-    ${
-      list.length
-        ? h`<ul class="list plan__tasks">${list.map(([tid, hrs]) => {
-            const t = ctx.model.tasks.get(tid);
-            const path = (paths.get(tid)?.path ?? []).join(SEP);
-            return h`<li><button type="button" class="plan__task" data-task="${tid}">
-              <span class="plan__task-main">
-                ${path ? h`<span class="plan__task-path" title="${path}">${path}</span>` : ''}
-                <span class="plan__task-title">${t?.title || label('common.untitled')}</span>
-              </span>
-              ${statusBadge(t?.status ?? '')}
-              <span class="plan__task-hours" title="${label('plan.cell.hoursTitle', { h: hoursText(hrs) })}">${label('plan.cell.hours', { h: hoursText(hrs) })}</span>
-            </button></li>`;
-          })}</ul>`
-        : h`<p class="plan__panel-empty">${label('plan.cell.empty')}</p>`
-    }
-  </section>`;
+  return loadPanelHtml({
+    titleId: 'plan-panel-title',
+    title: label('plan.cell.title', { nom: who, mois: monthLong(c.ym) }),
+    stats: [
+      [label('plan.capacity'), `${hoursText(c.capacity)} h`],
+      [label('plan.load'), `${hoursText(c.load)} h`],
+      [
+        label('plan.rate'),
+        h`<span class="plan__badge ${cellClass(c)}">${LEVEL_ICON[c.level] ?? ''}${pctText(c)}</span> ${label(`plan.level.short.${c.level}`)}`,
+      ],
+    ],
+    tasks: panelTasks(ctx.model, paths, cellTasks(rows, sel)),
+  });
 }
 
 /**

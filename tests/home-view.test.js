@@ -65,3 +65,18 @@ test('premier choix : plus de vue d’accueil posée ; le PO ouvre le Gantt au n
   assert.deepEqual(firstChoicePrefs({ me: 3, mePrompted: true }, po), {});
   assert.deepEqual(firstChoicePrefs({ me: null, mePrompted: true }, po), {});
 });
+
+test('onglet Portfolio retiré : vue et vue d’accueil « portfolio » enregistrées → Gantt, ?vue=portfolio → Gantt', async () => {
+  const { loadPrefs } = await import('../widget/js/core/filters.js');
+  assert.equal(TABS.includes('portfolio'), false);
+  const load = (v) => loadPrefs({ getItem: () => JSON.stringify(v) });
+  const p = load({ view: 'portfolio', homeView: 'portfolio', homeViewV: 2, portfolioTab: 'load', portfolioMonths: 18 });
+  assert.equal(p.view, 'gantt');
+  assert.equal(p.homeView, null);
+  for (const k of ['portfolioTab', 'portfolioStart', 'portfolioMonths']) assert.equal(k in p, false, k);
+  assert.equal(sanitizeHomeView(p.homeView, TABS), null);
+  assert.equal(initialView({ homeView: p.homeView }, '?vue=portfolio', TABS), 'gantt');
+  assert.equal(initialView({ homeView: 'portfolio' }, '', TABS), 'gantt');
+  // Les autres vues enregistrées restent
+  assert.equal(load({ view: 'stats', homeView: 'stats', homeViewV: 2 }).homeView, 'stats');
+});

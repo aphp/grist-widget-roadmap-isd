@@ -3,11 +3,11 @@
 Vue de pilotage de l'équipe ISD (avancement et charge) sur les tables de la Feuille de route EDS.
 
 **1 ETP** sur une période = la capacité d'une personne standard à temps plein sur cette période, partout dans le
-widget (charges des tâches, Kanban, Tableau, Statistiques, Portfolio, Mes tâches, plan de charge) :
+widget (charges des tâches, Kanban, Tableau, Statistiques, Mes tâches, plan de charge) :
 7 h par jour ouvré (hors week-ends et jours fériés), moins 44 jours de congés par an (au prorata des jours ouvrés de
 l'année), à 80 % en mai et en décembre, 60 % en juillet, 50 % en août (`core/capacity.js` : `fteHours`, `SLOWDOWN`).
 Les heures d'une charge se répartissent sur les jours ouvrés de la tâche au prorata de cette capacité (`hoursSharer`) :
-une tâche à 1 ETP compte 1 ETP chaque semaine et chaque mois (Statistiques, plan de charge, Portfolio, Mes tâches).
+une tâche à 1 ETP compte 1 ETP chaque semaine et chaque mois (Statistiques, plan de charge, Mes tâches).
 C'est la formule du plan de charge pour une personne à 35 h sans indisponibilité ; la quotité et les indisponibilités
 individuelles ne comptent que dans le plan de charge. Une période sans jour ouvré (un week-end) se traite comme une
 tâche sans dates (pas d'ETP, borne de 2 000 h), ses heures restant réparties sur ses jours calendaires. Les heures déjà stockées ne changent pas : leur ETP
@@ -43,8 +43,9 @@ session (jamais une personne : elle se désactive). Tout cela seulement si l'adr
 Le widget s'ouvre toujours sur l'onglet Gantt : la dernière vue consultée n'est pas restaurée et aucune vue d'accueil
 n'est posée au « Je suis… » (les vues d'accueil enregistrées avant cette règle ont été remises à zéro une fois).
 Seule une vue d'accueil choisie ensuite dans les Préférences l'emporte (« Gantt (par défaut) » = aucune).
-`?vue=<onglet>` (`mytasks`, `gantt`, `kanban`, `table`, `portfolio`, `stats`, `synthesis`, `team`) l'emporte sur
-tout et ouvre cet onglet ; une valeur inconnue est ignorée.
+`?vue=<onglet>` (`mytasks`, `gantt`, `kanban`, `table`, `stats`, `synthesis`, `team`) l'emporte sur
+tout et ouvre cet onglet ; une valeur inconnue est ignorée. L'onglet Portfolio a été retiré : `?vue=portfolio`, ou une
+vue d'accueil Portfolio enregistrée, ouvre le Gantt (sa charge est dans « Charge par profil » des Statistiques).
 
 La CSP n'autorise que la même origine et l'instance Grist `https://grist.numerique.gouv.fr`
 (`widget/js/config.js`), pour lire le niveau d'accès du compte.
@@ -57,7 +58,7 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
 - **Équipe ISD** : personnes actives de rôle DE, DA, DS ou PO Data, ou du Domaine ISD (le Management ISD en fait
   partie ; le Management d'un autre Domaine, non). Une personne du Domaine ISD d'un autre rôle (ni profil ISD ni
   Management) fait partie de l'équipe et du périmètre, mais n'a pas de profil : elle n'apparaît ni dans le filtre
-  Profil, ni dans les indicateurs et la charge par profil du Portfolio, ni dans le plan de charge.
+  Profil, ni dans la capacité de la charge par profil des Statistiques, ni dans le plan de charge.
 - **Périmètre ISD** : un projet en fait partie si une personne de l'équipe ISD en est responsable, est responsable
   ou contributrice d'un de ses chantiers, ou est assignée, responsable ou chargée sur une de ses tâches. Sponsor ou
   contributeur clé du projet : seulement les profils DE, DA, DS et PO (le Management ISD seulement sponsor du projet
@@ -71,8 +72,8 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   l'équipe ISD (Management ISD compris, personnes actives) n'intervient. Une tâche reste si un assigné, son
   responsable ou une personne chargée en fait partie, ou si une de ses sous-tâches (à toute profondeur) en est ; le
   parent reste alors pour garder l'arbre, sans les sous-tâches sans ISD. Un chantier reste s'il garde une tâche ou si
-  son responsable ou un contributeur est de l'équipe ISD (il apparaît vide dans le Gantt et le Portfolio). Un projet
-  sans rien de gardé disparaît des vues centrées tâches et ne reste dans le Gantt et le Portfolio que s'il est porté
+  son responsable ou un contributeur est de l'équipe ISD (il apparaît vide dans le Gantt). Un projet
+  sans rien de gardé disparaît des vues centrées tâches et ne reste dans le Gantt que s'il est porté
   par l'ISD (responsable, sponsor ou contributeur clé). Se combine avec les autres filtres, « Mes chantiers » et
   « Hors périmètre ISD aussi » ; sans effet sur « Mes tâches » et « Équipe » (vues non filtrées).
 - **Périmètre « Tout / Mes chantiers »** (actif seulement après « Je suis… ») : « Tout » ne restreint rien ;
@@ -90,8 +91,8 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   personne active de ce profil l'est ; Statut : statut de la tâche. Dès qu'un de ces filtres est actif, seuls
   restent les projets et chantiers qui ont une tâche retenue.
 - **Éléments sans tâche** : un projet ou un chantier sans tâche apparaît dans le Gantt, avec la mention « Aucune
-  tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), et dans le Portfolio (onglets Projets
-  et Chantiers), avec « Tout » ou « Mes chantiers » et sans filtre de tâche. Kanban, Tableau, Statistiques (dont le
+  tâche » (vue Liste des petits écrans exceptée : elle ne liste que des tâches), avec « Tout » ou « Mes chantiers »
+  et sans filtre de tâche. Kanban, Tableau, Statistiques (dont le
   plan de charge), Synthèse et l'onglet Mes tâches ne montrent que des tâches. L'onglet Équipe n'est pas filtré.
 - **Ordre du Gantt** : à chaque niveau (catégories, projets, chantiers, tâches, sous-tâches, « (sans chantier) »
   compris), les lignes sont classées par début de barre (période propre, sinon déduite), puis fin, puis titre ; sans
@@ -156,8 +157,19 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   Les touches proposées sont dans `aria-keyshortcuts` et l'aide du plateau, seulement quand l'action est permise.
   Quand des dates changent (glisser, étirer, fiche, création), l'ETP de chaque personne fait foi : les heures sont
   recalculées sur la nouvelle période.
-- **Charge du Portfolio** : une carte et une colonne par profil, Mgmt compris ; la barre, le repère de capacité et
-  le total portent sur les profils DE, DA, DS et PO seulement.
+- **Charge par profil** (Statistiques, seule vue de charge par profil) : 12 mois (3 passés, le mois courant, 8 à
+  venir), en ETP du mois (1 ETP = capacité standard, `fteHours`). Barres empilées par profil (PO, DA, DS, DE,
+  Management ISD, Autre), repère de la capacité PO, DA, DS, DE de chaque mois (le Management a sa carte et sa
+  capacité à part). Capacité d'un profil : somme des capacités du plan de charge (`personMonthCapacity` : quotité,
+  congés, ralentissements, indisponibilités) des personnes actives du profil ; taux = charge ÷ capacité, normal sous
+  85 %, tension de 85 à 100 %, dépassement au-delà (`loadRate`, `core/role-load.js`). Synthèse par profil du mois
+  courant à la fin : pic (taux et mois), mois en dépassement et en tension, moyenne des mois chargés, effectif.
+  Chaque segment coloré (un profil, un mois) donne au survol et au focus « Profil · mois : x ETP (h) sur c ETP de
+  capacité (taux) » et l'état ; un clic, Entrée ou Espace ouvre sous le graphique la liste des tâches qui portent de
+  la charge de ce profil ce mois-là (heures du profil, personnes, chemin, fiche au clic), triée par heures
+  décroissantes ; même segment ou Échap la referme. Focus itinérant : une seule tabulation, ←/→ entre profils,
+  ↑/↓ entre mois. Le segment ouvert est gardé à une relecture. Le tableau de valeurs donne charge, capacité et taux
+  par profil.
 
 ## Développement
 npm install · npm test · npm run lint · python3 dev/serve.py (http://localhost:8770/dev/host.html)

@@ -54,10 +54,10 @@
   --badge-purple-text: #5b21b6;
 
   /*
-   * Données visualisées (Gantt, Portfolio, Statistiques, Équipe) : palette catégorielle validée
+   * Données visualisées (Gantt, Statistiques, Équipe) : palette catégorielle validée
    * (skill dataviz, paires voisines : daltonisme et vision normale) sur la surface claire #ffffff et la
    * surface sombre #1e293b, toujours avec légende et libellé.
-   * --viz-1 à --viz-4 = profils PO, DA, DS, DE du Portfolio. Toutes les marques ≥ 3:1 sur la carte et sur
+   * --viz-1 à --viz-4 = profils PO, DA, DS, DE (charge par profil des Statistiques). Toutes les marques ≥ 3:1 sur la carte et sur
    * le fond de page, en clair (#ffffff / #f8fafc) comme en sombre (#1e293b / #0f172a) ; les 4 teintes restent
    * séparées deux à deux en protanopie et deutéranopie (ΔE OKLab ≥ 9, validateur dataviz, toutes paires).
    * En sombre, --viz-4 est un ambre plus clair que la bande de luminosité du validateur, pour rester

@@ -362,6 +362,10 @@
   color: var(--color-accent-text);
   font-weight: var(--font-weight-medium);
 }
+.plan__task-people {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
 .plan__task-hours {
   min-width: 4em;
   font-weight: var(--font-weight-bold);

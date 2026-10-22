@@ -9,8 +9,8 @@ import {
   loadPrefs,
 } from '../widget/js/core/filters.js';
 import { PROFILE_KEYS, profileKey } from '../widget/js/core/kanban-data.js';
-import { portfolioKpis, summarizeWeeks, weeklyLoadByProfile } from '../widget/js/core/portfolio-data.js';
-import { personWeekCapacity } from '../widget/js/core/capacity.js';
+import { profileHeadcount, roleLoad, summarizeMonths } from '../widget/js/core/role-load.js';
+import { personMonthCapacity } from '../widget/js/core/capacity.js';
 import { teamLoad, teamTotals } from '../widget/js/core/team-data.js';
 import { dayOfIso } from '../widget/js/core/dates.js';
 import { PROFILES } from '../widget/js/ui/kit.js';
@@ -65,20 +65,16 @@ test('préférences : profil « Mgmt » conservé, valeur inconnue retirée', ()
   assert.equal(load({ filters: { profile: 'DE' } }).filters.profile, 'DE');
 });
 
-test('Portfolio : personnes Mgmt dans les indicateurs, charge et capacité Mgmt par semaine', () => {
-  assert.deepEqual(portfolioKpis(m, view).personnes, { total: 4, PO: 1, DA: 1, DS: 0, DE: 1, Mgmt: 1 });
-  const week = dayOfIso('2026-10-26');
-  const rows = weeklyLoadByProfile(m, view.taskIds, week, 2);
-  // 14 h sur 14 jours (26 oct. – 8 nov.) : 7 h par semaine ; Gus (BNDMR) ignoré
-  assert.deepEqual(
-    rows.map((r) => r.Mgmt),
-    [7, 7],
-  );
-  // Capacité : mêmes règles que les autres profils (35 h par défaut, fériés, indisponibilités)
+test('Statistiques : effectif, charge et capacité Mgmt par mois (Management ISD seulement)', () => {
+  assert.deepEqual(profileHeadcount(m), { PO: 1, DA: 1, DS: 0, DE: 1, Mgmt: 1 });
+  const rows = roleLoad(m, view.taskIds, dayOfIso('2026-10-20'));
   const fanny = m.people.get(6);
-  for (const r of rows) assert.ok(Math.abs(r.capacity.Mgmt - personWeekCapacity(fanny, r.weekStart)) < 1e-6);
-  assert.ok(rows[0].capacity.Mgmt > 0);
-  assert.equal(summarizeWeeks(rows).Mgmt.loadedWeeks, 2);
+  // 14 h de Fanny sur la tâche 1002 ; Gus (BNDMR) compte dans « Autre », pas dans Mgmt
+  const hours = rows.reduce((s, r) => s + r.hours.Mgmt, 0);
+  assert.ok(Math.abs(hours - 14) < 1e-6, String(hours));
+  // Capacité : mêmes règles que les autres profils (35 h par défaut, fériés, indisponibilités)
+  for (const r of rows) assert.ok(Math.abs(r.capacityHours.Mgmt - personMonthCapacity(fanny, r.month)) < 1e-6);
+  assert.ok(summarizeMonths(rows, '2026-10').Mgmt.loadedMonths >= 1);
 });
 
 test('Plan de charge : ligne et total « Mgmt » pour le Management ISD', () => {

@@ -62,16 +62,7 @@ test('teintes foncées des chantiers ≥ 3:1 sur la carte (liseré des barres, b
       assert.ok(ratio(hex, surface) >= 3, `${hex} sur ${surface} (${theme}) : ${ratio(hex, surface).toFixed(2)}`);
 });
 
-for (const f of [
-  'gantt.css',
-  'portfolio.css',
-  'stats.css',
-  'synthesis.css',
-  'team.css',
-  'load-plan.css',
-  'detail.css',
-  'table.css',
-])
+for (const f of ['gantt.css', 'stats.css', 'synthesis.css', 'team.css', 'load-plan.css', 'detail.css', 'table.css'])
   test(`${f} n’utilise que les variables partagées`, () => {
     const css = readFileSync(`widget/css/${f}`, 'utf8');
     assert.equal(/#[0-9a-fA-F]{3,6}\b/.test(css), false);

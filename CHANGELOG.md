@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- Portfolio tab removed (view, its data module, styles, labels, PDF export, `portfolioTab`/`portfolioStart`/
+  `portfolioMonths` preferences). A saved view or home view "portfolio" and `?vue=portfolio` now open the Gantt.
+  Its load part is merged into "Charge par profil" (Statistics), now the single load-by-profile chart, still by month
+  (3 past months, the current one, 8 ahead; 1 ETP = standard capacity): capacity per profile (load-plan capacity of
+  the active people of the profile, `personMonthCapacity`), load/capacity rate with the same levels (normal, tension
+  from 85 %, overload above 100 %, `loadRate`), a summary per profile from the current month (peak rate and month,
+  months in overload and tension, average of loaded months, headcount), a marker for the PO, DA, DS, DE capacity of
+  each month, and capacity and rate per profile in the data table. Every coloured segment (one profile, one month)
+  is a button: hover or focus shows "Profil · mois : x ETP (h) sur c ETP de capacité (taux)" and the state; click,
+  Enter or Space opens under the chart the tasks carrying that profile's load that month (profile hours, people,
+  path, status; title opens the task), sorted by hours; the same segment or Escape closes it and refocuses the
+  segment. Roving focus (one Tab stop, ←/→ between profiles, ↑/↓ between months); the open segment survives a
+  Grist reload. New `core/role-load.js` (`roleLoad`, `summarizeMonths`, `segmentTasks`, `segmentMove`, `loadRate`)
+  and `views/load-panel.js`, the task panel now shared with the load plan (which lists people too when given).
 - Kanban: grouped by chantier, a top-level task card is dragged onto another chantier. The drop writes nothing:
   it opens the existing move dialog ("Changer de chantier") with that chantier preselected (its only project, or the
   task's current project when the chantier carries it; otherwise its first in-scope project, focus on the list and

@@ -443,19 +443,184 @@
 .rbars__list .hbars__row {
   grid-template-columns: 6rem minmax(0, 1fr);
 }
-/* La barre la plus longue laisse 3,5 rem au total écrit au bout */
+/* Piste : zone du graphique (barre empilée, repère de capacité), puis le total dans une colonne fixe */
+.rbars {
+  position: relative;
+}
+.rbars__track {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.rbars__plot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
 .rbars__stack {
   flex: none;
   display: flex;
   gap: 2px;
-  width: calc((100% - 3.5rem) * var(--p) / 100);
-  height: 16px;
-  overflow: hidden;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  width: calc(var(--p) * 1%);
+  height: 20px;
 }
 .rbars__seg {
   flex: 1 1 0;
-  min-width: 2px;
+  min-width: 4px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+.rbars__seg:last-child {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.rbars__seg:hover {
+  filter: brightness(1.12);
+}
+.rbars__seg:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.rbars__seg[aria-pressed='true'] {
+  box-shadow:
+    inset 0 0 0 2px var(--color-surface),
+    0 0 0 2px var(--color-title);
+}
+.rbars__track .hbars__value {
+  text-align: right;
+}
+/* Repère de la capacité PO, DA, DS, DE du mois */
+.rbars__cap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--c) * 1%);
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--color-title);
+  box-shadow: 0 0 0 1px var(--color-surface);
+  pointer-events: none;
+}
+.rbars__cap-key {
+  width: 3px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--color-title);
+}
+.rbars__tip {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(360px, 100%);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+}
+.rbars__tip[hidden] {
+  display: none;
+}
+.rbars__tip strong {
+  color: var(--color-title);
+}
+.rbars__tip strong[hidden] {
+  display: none;
+}
+.rbars__panel-slot:not(:empty) {
+  margin-top: var(--space-3);
+}
+.stats__table-note {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+}
+
+/* ---- Synthèse par profil (du mois courant à la fin de la fenêtre) ---- */
+.rsum__title {
+  margin: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-title);
+}
+.rsum {
+  display: grid;
+  /* Une carte par profil : PO, DA, DS, DE, Mgmt */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+.rsum__item {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.rsum__item p {
+  margin: 0;
+}
+.rsum__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+}
+.rsum__value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-title);
+  font-variant-numeric: tabular-nums;
+}
+.rsum__rate,
+.rsum__line {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.rsum__hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.rsum__item--tension {
+  border-left: 4px solid var(--load-tension-mark);
+}
+.rsum__item--over {
+  border-left: 4px solid var(--load-over-mark);
+}
+.rsum__item--tension .rsum__value,
+.rsum__item--tension .rsum__rate {
+  color: var(--load-text-tension);
+}
+.rsum__item--over .rsum__value,
+.rsum__item--over .rsum__rate {
+  color: var(--load-text-over);
+}
+@media (max-width: 1279px) {
+  .rsum {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .rsum__item {
+    grid-column: span 2;
+  }
+  .rsum__item:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+@media (max-width: 767px) {
+  .rsum {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rsum__item,
+  .rsum__item:nth-child(n + 4) {
+    grid-column: auto;
+  }
 }
 .rbars__row--current {
   border-radius: var(--radius-sm);

@@ -132,7 +132,7 @@ test('Préférences : « Vue d’accueil » étiquetée, dernière vue puis chaq
   assert.match(out, /<label class="fr-label popover__title" for="pref-home">Vue d’accueil<\/label>/);
   assert.match(out, /aria-describedby="pref-home-help"/);
   const options = [...out.matchAll(/<option value="(\w+)"/g)].map((x) => x[1]);
-  assert.deepEqual(options, ['last', 'mytasks', 'gantt', 'kanban', 'table', 'portfolio', 'stats', 'synthesis', 'team']);
+  assert.deepEqual(options, ['last', 'mytasks', 'gantt', 'kanban', 'table', 'stats', 'synthesis', 'team']);
   assert.match(out, /<option value="gantt" selected>Gantt<\/option>/);
   assert.match(homeViewFieldHtml(null).toString(), /<option value="last" selected>Gantt \(par défaut\)<\/option>/);
 });

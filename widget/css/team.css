@@ -1,7 +1,7 @@
 /*
  * Vue Équipe : cartes « Rôles » et « Équipe ISD » côte à côte (empilées sous 1 024 px), lignes cliquables
  * (aria-pressed), puis « Utilisateurs » groupés par rôle : une section repliable par rôle (pastille colorée,
- * effectif, capacité), puis ses personnes. Teintes des rôles : profils comme le Portfolio (--viz-1 à --viz-4),
+ * effectif, capacité), puis ses personnes. Teintes des rôles : profils comme les Statistiques (--viz-1 à --viz-4),
  * Management en violet, autres rôles et « Sans rôle » en neutre ; le libellé est toujours écrit.
  */
 .team {

@@ -32,7 +32,6 @@ import * as mytasks from './views/my-tasks.js';
 import * as kanban from './views/kanban.js';
 import * as table from './views/table.js';
 import * as gantt from './views/gantt.js';
-import * as portfolio from './views/portfolio.js';
 import * as stats from './views/stats.js';
 import * as synthesis from './views/synthesis.js';
 import * as team from './views/team.js';
@@ -59,7 +58,6 @@ export const VIEWS = Object.freeze({
   kanban,
   table,
   gantt,
-  portfolio,
   stats,
   synthesis,
   team,
@@ -72,7 +70,7 @@ const UNFILTERED_VIEWS = new Set(['mytasks', 'team']);
  * l'arbre, pas du nombre de tâches retenues. Kanban, Tableau, Plan de charge, Statistiques et Synthèse restent
  * centrés sur les tâches.
  */
-const TREE_VIEWS = new Set(['gantt', 'portfolio']);
+const TREE_VIEWS = new Set(['gantt']);
 
 const $ = (id) => document.getElementById(id);
 const el = {

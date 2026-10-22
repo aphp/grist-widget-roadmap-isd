@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildModel } from '../widget/js/core/model.js';
 import { applyFilters, DEFAULT_FILTERS, DEFAULT_PREFS } from '../widget/js/core/filters.js';
-import { ROLE_WINDOW, roleLoad, roleSeries, shiftMonth } from '../widget/js/core/stats-data.js';
+import { shiftMonth } from '../widget/js/core/stats-data.js';
+import { ROLE_WINDOW, roleLoad, roleSeries } from '../widget/js/core/role-load.js';
 import { dayOfIso, monthRange } from '../widget/js/core/dates.js';
 import { fteHours } from '../widget/js/core/capacity.js';
 import { feuille } from './fixtures/feuille.js';
@@ -143,7 +144,7 @@ test('filtres : seules les tâches visibles comptent', () => {
   close(eve.DA, etp(14, '2026-11'));
 });
 
-test('rendu : segments à « 0,0 » omis, mois courant marqué, pas d’infobulle, filtre Personne expliqué', async () => {
+test('rendu : segments à « 0,0 » omis, boutons avec infobulle, capacité, synthèse, tableau, filtre Personne expliqué', async () => {
   const { rolesCard } = await import('../widget/js/views/stats.js');
   const m = withTasks([
     {
@@ -157,18 +158,61 @@ test('rendu : segments à « 0,0 » omis, mois courant marqué, pas d’infobull
     },
   ]);
   const rows = roleLoad(m, [1], today);
-  const out = rolesCard(rows, roleSeries(rows), { today }).toString();
+  const out = rolesCard(rows, roleSeries(rows), { today, model: m }).toString();
   assert.equal((out.match(/class="rbars__seg /g) ?? []).length, 1);
-  assert.match(out, /class="rbars__seg tone--role-de"/);
+  assert.match(out, /<button type="button" class="rbars__seg tone--role-de"[^>]*data-seg="DE" data-month="2026-10"/);
   assert.doesNotMatch(out, /class="rbars__seg tone--role-po"/);
   assert.equal((out.match(/rbars__row--current/g) ?? []).length, 1);
-  assert.doesNotMatch(out, /rbars__seg[^>]*title=/);
+  // Nom accessible complet : profil, mois, ETP, heures, capacité, taux, état, action
+  const oct = rows.find((r) => r.month === '2026-10');
+  assert.equal(oct.rates.DE.level, 'over');
+  assert.match(
+    out,
+    /aria-label="DE · octobre 2026 : 1,2 ETP \(155 h\) sur [\d,]+ ETP de capacité \(\d+\s?%\)\. Dépassement \(plus de 100 %\)\. Afficher les tâches"/,
+  );
+  assert.match(out, /aria-pressed="false"/);
+  assert.match(out, /tabindex="-1"/);
+  // Repère de capacité PO, DA, DS, DE sur chaque mois, légende
+  assert.equal((out.match(/class="rbars__cap"/g) ?? []).length, 12);
+  assert.match(out, /Capacité PO, DA, DS, DE/);
+  // Synthèse : une carte par profil, du mois courant à la fin de la fenêtre
+  assert.equal((out.match(/class="rsum__item /g) ?? []).length, 5);
+  assert.match(out, /Synthèse de oct\. 2026 à juin 2027/);
+  assert.match(out, /rsum__item--over/);
+  assert.match(out, /Capacité de 1 personne/);
   assert.match(out, /Le filtre Personne retient des tâches et compte toutes leurs charges/);
-  // Le tableau garde la colonne PO (0,0)
+  // Tableau : capacité et taux par profil, capacité totale
   assert.match(out, /<th scope="col">PO<\/th>/);
+  assert.match(out, /<td>1,2 \/ [\d,]+ \(\d+\s?%\)<\/td>/);
+  assert.match(out, /<th scope="col">Capacité PO, DA, DS, DE<\/th>/);
   // Pastille « i » à côté du titre : explication de l'ETP, reliée au bouton
   assert.match(out, /<div class="stats__card-head"><h3 class="stats__card-title" id="stats-roles">/);
   assert.match(out, /aria-label="À propos de l’ETP" aria-describedby="tip-fte-stats"/);
   assert.match(out, /id="tip-fte-stats">1 ETP = une personne à temps plein sur la période/);
   assert.match(rolesCard([], [], { today }).toString(), /tip-fte-stats/);
+});
+
+test('texte d’un segment : sans capacité, « Autre », état seulement en tension ou dépassement', async () => {
+  const { segmentText } = await import('../widget/js/views/stats.js');
+  const m = withTasks([
+    {
+      id: 1,
+      start: '2026-11-01',
+      end: '2026-11-30',
+      charges: [
+        { personId: 2, heures: 10 },
+        { personId: 4, heures: 20 },
+        { personId: 3, heures: 20 }, // DS inactif → Autre ; DS sans capacité
+      ],
+    },
+  ]);
+  const r = row(roleLoad(m, [1], today), '2026-11');
+  const po = segmentText(r, 'PO');
+  assert.match(po.text, /^PO · novembre 2026 : 0,1 ETP \(10 h\) sur [\d,]+ ETP de capacité/);
+  assert.equal(po.state, '');
+  assert.match(segmentText(r, 'Autre').text, /hors capacité de l’équipe ISD$/);
+  assert.equal(segmentText(r, 'Autre').state, '');
+  const ds = { ...r, DS: 0.1, hours: { ...r.hours, DS: 10 }, rates: { ...r.rates, DS: { rate: null, level: 'over' } } };
+  assert.match(segmentText(ds, 'DS').text, /sans capacité$/);
+  assert.equal(segmentText(ds, 'DS').state, 'Dépassement (plus de 100 %)');
 });
