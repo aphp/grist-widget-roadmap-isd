@@ -84,11 +84,14 @@ EDS ». Interface en français uniquement. Aucune étape de construction : modul
   (`isdOnly`), qui masque chantiers et tâches sans personne ISD dans les projets affichés.
   Les sélecteurs d'ajout ne proposent que l'équipe ISD ; les personnes hors ISD déjà saisies dans la Feuille restent
   affichées et conservées. Personne : `isdTeam` = membre actif de l'équipe ISD (périmètre ISD, `inScope`, écritures) ;
-  `isd` = profil ISD actif seul (DE, DA, DS, PO). Profils affichés (filtre Profil, charge et capacité du Portfolio,
-  plan de charge) : `PROFILE_KEYS` / `profileKey` de kanban-data.js, PO, DA, DS, DE puis Mgmt (Management ISD actif,
+  `isd` = profil ISD actif seul (DE, DA, DS, PO). Profils affichés (filtre Profil, charge et capacité par profil des
+  Statistiques, plan de charge) : `PROFILE_KEYS` / `profileKey` de kanban-data.js, PO, DA, DS, DE puis Mgmt (Management ISD actif,
   teinte `--viz-mgmt`). Règles d'affichage : README.
-- Vues : Gantt et Portfolio (Projets, Chantiers) montrent aussi projets et chantiers sans tâche (état vide sur
-  l'arbre, `TREE_VIEWS` de main.js) ; Kanban, Tableau, Statistiques, Synthèse et Mes tâches restent centrés tâches.
+- Vues : le Gantt montre aussi projets et chantiers sans tâche (état vide sur l'arbre, `TREE_VIEWS` de main.js) ;
+  Kanban, Tableau, Statistiques, Synthèse et Mes tâches restent centrés tâches. Onglet Portfolio retiré (vue ou vue
+  d'accueil « portfolio » enregistrée et `?vue=portfolio` → Gantt) ; sa charge est dans « Charge par profil » des
+  Statistiques (`core/role-load.js` : capacité `personMonthCapacity`, `loadRate`, synthèse, tâches d'un segment ;
+  panneau commun avec le plan de charge, `views/load-panel.js`).
 
 ## Commandes
 - `npm install` · `npm test` · `npm run test:coverage` · `npm run lint`
