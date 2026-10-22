@@ -2394,6 +2394,31 @@ test(
     await w(`D.querySelector('.rbars__seg[aria-pressed="true"]').focus(); return true;`);
     await press(' ');
     await until(`!D.getElementById('roles-panel-title')`);
+    // Échap avec le focus sur un autre segment du graphique : fermeture, focus rendu au segment ouvert
+    await clickOn(sel);
+    await until(`D.getElementById('roles-panel-title')`);
+    await w(
+      `[...D.querySelectorAll('.rbars__seg')].find((b) => b.getAttribute('aria-pressed') !== 'true').focus(); return true;`,
+    );
+    await hit('Escape');
+    await until(`!D.getElementById('roles-panel-title')`);
+    assert.equal((await w(rolesState)).active, `${seg.k} ${seg.m}`);
+    // Cible d'au moins 24 px de haut
+    assert.ok((await w(`return D.querySelector('${sel}').getBoundingClientRect().height;`)) >= 24);
+    // Sans place au-dessus, l'infobulle passe sous le segment
+    const top = await w(`const b = D.querySelector('.rbars__seg'); b.scrollIntoView({ block: 'start' });
+      await new Promise((r) => setTimeout(r, 100));
+      const r = b.getBoundingClientRect(); const f = W.frameElement.getBoundingClientRect();
+      return { x: f.left + r.left + r.width / 2, y: f.top + r.top + r.height / 2 };`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: top.x, y: top.y });
+    await until(`!D.querySelector('[data-tip-box]').hidden`);
+    assert.ok(
+      await w(`const t = D.querySelector('[data-tip-box]').getBoundingClientRect();
+        const b = D.querySelector('.rbars__seg').getBoundingClientRect();
+        return t.top >= b.bottom && t.top >= 0;`),
+      'infobulle sous le segment',
+    );
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
     // Titre d'une tâche du panneau → fiche
     await clickOn(sel);
     await until(`D.querySelector('[data-roles-panel] .plan__task')`);

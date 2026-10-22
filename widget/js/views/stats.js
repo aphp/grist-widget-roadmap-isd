@@ -297,7 +297,8 @@ function segmentPanelHtml(ctx, r, k, paths) {
 
 /**
  * Comportement du graphique de charge par profil : infobulle (survol, focus), focus itinérant (flèches, Début,
- * Fin), détail d'un segment (clic, Entrée, Espace ; même segment ou Échap : fermeture, focus rendu au segment).
+ * Fin), détail d'un segment (clic, Entrée, Espace ; même segment, ou Échap dans le graphique ou le panneau :
+ * fermeture, focus rendu au segment ouvert).
  * @param {HTMLElement} box carte de la charge par profil
  */
 function mountRoles(box, rows, ctx) {
@@ -308,6 +309,8 @@ function mountRoles(box, rows, ctx) {
   const segs = [...chart.querySelectorAll('.rbars__seg')];
   const grid = [];
   for (const b of segs) (grid[Number(b.dataset.r)] ??= []).push(b);
+  /** Profils de chaque mois, construits une fois par rendu (focus itinérant). */
+  const keys = grid.map((row) => row.map((x) => x.dataset.seg));
   const byMonth = new Map(rows.map((r) => [r.month, r]));
   let paths = null;
   let sel = null;
@@ -330,7 +333,9 @@ function mountRoles(box, rows, ctx) {
     const w = tipBox.offsetWidth;
     const left = Math.max(0, Math.min(c.width - w, b.left - c.left + b.width / 2 - w / 2));
     tipBox.style.left = `${left}px`;
-    tipBox.style.top = `${b.top - c.top - tipBox.offsetHeight - 6}px`;
+    // Au-dessus du segment, ou au-dessous s'il n'y a pas la place dans la fenêtre
+    const above = b.top - tipBox.offsetHeight - 6 >= 0;
+    tipBox.style.top = `${above ? b.top - c.top - tipBox.offsetHeight - 6 : b.bottom - c.top + 6}px`;
   }
   const hideTip = () => {
     tipBox.hidden = true;
@@ -401,7 +406,7 @@ function mountRoles(box, rows, ctx) {
     if (e.key === 'Escape') {
       const wasTip = !tipBox.hidden;
       hideTip();
-      if (sel && (slot.contains(e.target) || e.target === sel)) {
+      if (sel && (slot.contains(e.target) || chart.contains(e.target))) {
         e.preventDefault();
         e.stopPropagation();
         return closePanel();
@@ -412,11 +417,7 @@ function mountRoles(box, rows, ctx) {
     const b = e.target.closest?.('.rbars__seg');
     if (!b) return;
     const pos = { row: Number(b.dataset.r), col: Number(b.dataset.c) };
-    const next = segmentMove(
-      grid.map((row) => row.map((x) => x.dataset.seg)),
-      pos,
-      e.key,
-    );
+    const next = segmentMove(keys, pos, e.key);
     if (!next) return;
     e.preventDefault();
     grid[next.row][next.col].focus();

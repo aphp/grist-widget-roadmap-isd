@@ -162,7 +162,9 @@ La CSP n'autorise que la même origine et l'instance Grist `https://grist.numeri
   Management ISD, Autre), repère de la capacité PO, DA, DS, DE de chaque mois (le Management a sa carte et sa
   capacité à part). Capacité d'un profil : somme des capacités du plan de charge (`personMonthCapacity` : quotité,
   congés, ralentissements, indisponibilités) des personnes actives du profil ; taux = charge ÷ capacité, normal sous
-  85 %, tension de 85 à 100 %, dépassement au-delà (`loadRate`, `core/role-load.js`). Synthèse par profil du mois
+  85 %, tension de 85 à 100 %, dépassement au-delà, sur le pourcentage arrondi affiché (`loadRate` de
+  `core/role-load.js` s'appuie sur `rateLevel` du plan de charge : mêmes niveaux dans les deux). Charge par
+  `profileKey`, comme le plan de charge : une personne inactive (Management ISD compris) compte dans « Autre ». Synthèse par profil du mois
   courant à la fin : pic (taux et mois), mois en dépassement et en tension, moyenne des mois chargés, effectif.
   Chaque segment coloré (un profil, un mois) donne au survol et au focus « Profil · mois : x ETP (h) sur c ETP de
   capacité (taux) » et l'état ; un clic, Entrée ou Espace ouvre sous le graphique la liste des tâches qui portent de

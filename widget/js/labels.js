@@ -1188,7 +1188,7 @@ const FR = Object.freeze({
   'stats.chart.roles': 'Charge par profil (ETP par mois)',
   'stats.roles.sub':
     'ETP moyen du mois (1 ETP = une personne à temps plein sur le mois), d’après les charges des tâches filtrées réparties sur leurs jours ouvrés, au prorata de la capacité standard, de {debut} à {fin} : 3 mois passés et 8 à venir, comme un plan de charge. Le filtre Personne retient des tâches et compte toutes leurs charges : ce n’est pas la charge propre de la personne (voir le plan de charge).',
-  'stats.roles.other': 'Autre : personnes hors équipe ISD ou sans profil.',
+  'stats.roles.other': 'Autre : personnes hors équipe ISD, sans profil ou inactives (comme le plan de charge).',
   'stats.roles.noOther': 'Aucune charge « Autre » (hors équipe ISD) sur la période.',
   'stats.roles.axisMonth': 'Mois',
   'stats.roles.axisEtp': 'ETP (charge planifiée, empilée par profil)',

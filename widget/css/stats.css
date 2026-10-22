@@ -465,14 +465,18 @@
   display: flex;
   gap: 2px;
   width: calc(var(--p) * 1%);
-  height: 20px;
+  height: 24px;
 }
+/* Cible de 24 px de haut (taille de cible), barre dessinée sur 20 px (fond limité au contenu) */
 .rbars__seg {
   flex: 1 1 0;
   min-width: 4px;
-  padding: 0;
+  padding: 2px 0;
   border: 0;
   cursor: pointer;
+}
+.rbars__seg.rbars__seg {
+  background-clip: content-box;
 }
 .rbars__seg:last-child {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;

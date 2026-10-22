@@ -6,11 +6,12 @@
  */
 import { monthKey, monthRange, monthsFrom } from './dates.js';
 import { fteHours, hoursToEtp, personMonthCapacity, spreadHours } from './capacity.js';
-import { ETP_ROLES, ETP_SPLIT, PROFILE_KEYS, etpRoleKey, profileKey } from './kanban-data.js';
+import { ETP_ROLES, ETP_SPLIT, PROFILE_KEYS, profileKey } from './kanban-data.js';
+import { TENSION_FROM, rateLevel } from './team-data.js';
 import { shiftMonth } from './stats-data.js';
 
 /** Seuil de tension du taux de charge (spec §4.5) : 85 % ; au-delà de 100 %, dépassement. */
-export const RATE_TENSION = 0.85;
+export const RATE_TENSION = TENSION_FROM / 100;
 
 /** Fenêtre de la charge par profil : 3 mois passés, le mois courant et 8 mois à venir (12 mois). */
 export const ROLE_WINDOW = Object.freeze({ before: 3, after: 8 });
@@ -21,21 +22,21 @@ const round6 = (x) => Math.round(x * 1e6) / 1e6;
 export const byHoursDesc = (a, b) => b[1] - a[1] || a[0] - b[0];
 
 /**
- * Taux de charge et niveau : < 85 % ok, 85 à 100 % tension, > 100 % dépassement (« over ») ;
- * capacité nulle : dépassement s'il y a de la charge, sinon « none ».
+ * Taux de charge et niveau, même règle que le plan de charge (rateLevel, sur le pourcentage arrondi affiché) :
+ * < 85 % ok, 85 à 100 % tension, > 100 % dépassement (« over ») ; capacité nulle : dépassement s'il y a de la
+ * charge, sinon « none ».
  * @returns {{rate:number|null, level:'ok'|'tension'|'over'|'none'}}
  */
 export function loadRate(load, capacity) {
   if (!(capacity > 0)) return { rate: null, level: load > 0 ? 'over' : 'none' };
-  const rate = Math.round((load / capacity) * 1e4) / 1e4;
-  return { rate, level: rate > 1 ? 'over' : rate >= RATE_TENSION ? 'tension' : 'ok' };
+  return { rate: Math.round((load / capacity) * 1e4) / 1e4, level: rateLevel(load / capacity, load) };
 }
 
 const known = (model, taskIds) => [...new Set(taskIds)].filter((id) => model.tasks.has(id)).sort((a, b) => a - b);
 
 /**
  * Parcourt les heures des charges des tâches, mois par mois (spreadHours : au prorata de la capacité standard des
- * jours de la tâche) : fn(taskId, personId, clé de profil (etpRoleKey), mois, heures > 0), mois de `wanted` seulement.
+ * jours de la tâche) : fn(taskId, personId, clé de profil (profileKey, sinon « Autre »), mois, heures > 0), mois de `wanted` seulement.
  * Tâches inconnues, doublons et tâches sans dates valides ignorés.
  */
 function eachCharge(model, taskIds, wanted, fn) {
@@ -47,7 +48,7 @@ function eachCharge(model, taskIds, wanted, fn) {
       let key = null;
       for (const [m, h] of spread) {
         if (!wanted.has(m) || !(h > 0)) continue;
-        key ??= etpRoleKey(model.people.get(c.personId), model);
+        key ??= profileKey(model.people.get(c.personId), model) ?? 'Autre';
         fn(id, c.personId, key, m, h);
       }
     }
@@ -71,7 +72,7 @@ export function profileHeadcount(model) {
 
 /**
  * Charge par profil et par mois, sur les 12 mois de la fenêtre (ROLE_WINDOW). Charge : heures de chaque charge
- * réparties sur les jours de la tâche (spreadHours), cumulées par profil (etpRoleKey : PO, DA, DS, DE, Mgmt =
+ * réparties sur les jours de la tâche (spreadHours), cumulées par profil (profileKey, comme le plan de charge : PO, DA, DS, DE, Mgmt =
  * Management de l'équipe ISD, Autre), en ETP du mois (1 ETP = fteHours du mois). Capacité : somme des capacités du
  * plan de charge (personMonthCapacity) des personnes actives du profil (profileKey), sans « Autre » ; taux = charge
  * sur capacité en heures (loadRate). Vide sans aucune charge dans la fenêtre.

@@ -249,3 +249,47 @@ test('filtres : seules les tâches visibles comptent dans les tâches d’un seg
     false,
   );
 });
+
+test('règle de taux unique : la charge par profil et le plan de charge donnent le même niveau (100,3 % = tension)', async () => {
+  const { rateLevel, teamLoad, teamTotals } = await import('../widget/js/core/team-data.js');
+  assert.equal(loadRate(1003, 1000).level, 'tension');
+  assert.equal(loadRate(1003, 1000).level, rateLevel(1.003, 1003));
+  assert.equal(loadRate(1006, 1000).level, 'over');
+  assert.equal(loadRate(845, 1000).level, rateLevel(0.845, 845));
+  // Même modèle, mêmes mois : niveau de chaque profil identique dans les deux vues
+  const m = buildModel(feuille());
+  const ids = [...applyFilters(m, DEFAULT_FILTERS, DEFAULT_PREFS).taskIds];
+  const rows = roleLoad(m, ids, today);
+  const totals = teamTotals(
+    teamLoad(
+      m,
+      ids,
+      rows.map((r) => r.month),
+    ),
+  );
+  for (const t of totals)
+    t.months.forEach((c, i) => {
+      close(rows[i].hours[t.role], c.load, `${t.role} ${c.ym} charge`);
+      assert.equal(rows[i].rates[t.role].level, c.level, `${t.role} ${c.ym}`);
+    });
+});
+
+test('Management ISD inactif : ses heures vont dans « Autre », comme le plan de charge', () => {
+  const raw = feuille();
+  raw.tables.Team.actif[raw.tables.Team.id.indexOf(6)] = false;
+  const m = buildModel(raw);
+  m.tasks.clear();
+  m.tasks.set(1, {
+    id: 1,
+    title: 'T',
+    start: dayOfIso('2026-11-01'),
+    end: dayOfIso('2026-11-30'),
+    charges: [{ personId: 6, heures: 40 }],
+  });
+  const r = row(roleLoad(m, [1], today), '2026-11');
+  assert.equal(r.hours.Mgmt, 0);
+  close(r.hours.Autre, 40);
+  assert.equal(r.capacityHours.Mgmt, 0);
+  assert.equal(segmentTasks(m, [1], 'Mgmt', '2026-11').tasks.length, 0);
+  close(segmentTasks(m, [1], 'Autre', '2026-11').hours, 40);
+});
